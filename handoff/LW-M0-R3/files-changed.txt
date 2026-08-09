@@ -1,0 +1,34 @@
+LW-M0-R3 — files changed
+=========================
+
+CREATED (2)
+  docs/CONTINUOUS_PLAY_CONTRACT.md
+  handoff/LW-M0-R3/                       (this handoff artifact)
+
+MODIFIED (12)
+  CURRENT_WORK.md
+  docs/REFERENCE_PRODUCT_NOTES.md
+  docs/PRODUCT_VISION.md
+  docs/CORE_LOOPS.md
+  docs/MVP_SPEC.md
+  docs/UX_CONTRACT.md
+  docs/DOMAIN_MODEL.md
+  docs/TECHNICAL_ARCHITECTURE.md
+  docs/ROADMAP.md
+  docs/DECISIONS.md
+  docs/AGENT_TOOLING.md
+  docs/M0_R2_REVIEW.md                    (supersession notice only; findings intact)
+
+UNCHANGED — reviewed in full, no correction needed (2)
+  docs/MOTION_GUIDELINES.md
+  docs/USER_RESEARCH_SYNTHESIS.md
+
+DELETED
+  none
+
+NOT TOUCHED — inspected only, deliberately not modified
+  .agents/skills/                         (40 files; canonical content store)
+  .claude/skills/                         (2 NTFS junctions into .agents/skills/)
+  agent/skills/                           (40 files; alternate frontmatter rendering)
+  skills-lock.json
+  handoff/LW-M0-R2/                       (frozen record of the previous session)

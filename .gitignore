@@ -1,0 +1,86 @@
+# Lorewish .gitignore
+# Created as the first act of LW-M1-R1, before any dependency install or scaffold,
+# per docs/AGENT_TOOLING.md and docs/ROADMAP.md M1 first steps.
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native build output
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+ios/
+android/
+!ios/.gitkeep
+!android/.gitkeep
+
+# EAS
+.eas/
+
+# Metro / bundler
+.metro-health-check*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.cer
+*credentials*
+*secret*
+*.secrets.json
+supabase/.env
+supabase/.temp/
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# OS / editor caches
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Generated handoff archives (source of truth is handoff/, not the zip)
+Lorewish_*_handoff.zip
+
+# Local scratch
+*.local
+
+# Installed agent skills (installer-managed content; skills-lock.json is the
+# reproducible record per docs/AGENT_TOOLING.md — "ignore installed skills
+# entirely and treat skills-lock.json as the reproducible record").
+# .claude/skills/* are NTFS junctions and are not portable to commit anyway.
+.agents/skills/
+agent/skills/
+.claude/skills/

@@ -1,0 +1,17 @@
+﻿LW-M0-R3 repository state snapshot - 2026-08-10
+
+branch: main
+HEAD: none - repository has zero commits (git rev-parse HEAD does not resolve)
+remote: none configured
+commit created by this task: none
+files deleted by this task: none
+
+git status --porcelain:
+?? .agents/
+?? .claude/
+?? CURRENT_WORK.md
+?? Lorewish_LW-M0-R2_handoff.zip
+?? agent/
+?? docs/
+?? handoff/
+?? skills-lock.json

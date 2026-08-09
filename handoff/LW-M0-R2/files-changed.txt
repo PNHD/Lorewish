@@ -1,0 +1,31 @@
+﻿LW-M0-R2 — Files Changed
+Baseline HEAD: none (repository has zero commits)
+Generated: 2026-08-10
+
+CREATED (4)
+docs/M0_R2_REVIEW.md
+docs/AGENT_TOOLING.md
+docs/REFERENCE_PRODUCT_NOTES.md
+handoff/LW-M0-R2/ (this handoff artifact)
+
+MODIFIED (10)
+CURRENT_WORK.md
+docs/PRODUCT_VISION.md
+docs/USER_RESEARCH_SYNTHESIS.md
+docs/CORE_LOOPS.md
+docs/MVP_SPEC.md
+docs/UX_CONTRACT.md
+docs/DOMAIN_MODEL.md
+docs/TECHNICAL_ARCHITECTURE.md
+docs/ROADMAP.md
+docs/DECISIONS.md
+
+UNCHANGED (reviewed in full, no corrections needed)
+docs/MOTION_GUIDELINES.md
+
+DELETED
+(none)
+
+NOTE: git reports all files as untracked (??) because the repository has no
+commits. 'Modified' above is relative to the LW-M0-R2 baseline documents as
+they existed at task start, not relative to a git HEAD.
