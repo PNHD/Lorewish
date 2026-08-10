@@ -1,0 +1,103 @@
+ .claude/launch.json                             |    11 +
+ .gitignore                                      |     2 +-
+ CURRENT_WORK.md                                 |   354 +-
+ app.json                                        |    48 +
+ assets/expo.icon/Assets/expo-symbol 2.svg       |     3 +
+ assets/expo.icon/Assets/grid.png                |   Bin 0 -> 53681 bytes
+ assets/expo.icon/icon.json                      |    40 +
+ assets/images/android-icon-background.png       |   Bin 0 -> 17549 bytes
+ assets/images/android-icon-foreground.png       |   Bin 0 -> 78796 bytes
+ assets/images/android-icon-monochrome.png       |   Bin 0 -> 4140 bytes
+ assets/images/favicon.png                       |   Bin 0 -> 1129 bytes
+ assets/images/icon.png                          |   Bin 0 -> 799005 bytes
+ assets/images/splash-icon.png                   |   Bin 0 -> 3317 bytes
+ eslint.config.js                                |    10 +
+ package-lock.json                               | 11821 ++++++++++++++++++++++
+ package.json                                    |    44 +
+ src/app/_layout.tsx                             |    31 +
+ src/app/index.tsx                               |     5 +
+ src/app/preview.tsx                             |     5 +
+ src/components/composer-shared.ts               |    44 +
+ src/components/composer.tsx                     |   110 +
+ src/components/composer.web.tsx                 |   130 +
+ src/components/language-switcher.tsx            |    51 +
+ src/components/reading/action-button.tsx        |    47 +
+ src/components/reading/choice-list.tsx          |    57 +
+ src/components/reading/dialogue-line.tsx        |    37 +
+ src/components/reading/narrative-block.tsx      |    25 +
+ src/components/reading/play-state-badge.tsx     |    34 +
+ src/components/reading/player-action-banner.tsx |    30 +
+ src/components/reading/state-change-panel.tsx   |    61 +
+ src/components/themed-text.tsx                  |    38 +
+ src/content/preview/en.ts                       |    63 +
+ src/content/preview/index.ts                    |    12 +
+ src/content/preview/types.ts                    |    41 +
+ src/content/preview/vi.ts                       |    66 +
+ src/hooks/use-auto-grow-height.ts               |    30 +
+ src/hooks/use-color-scheme.ts                   |     1 +
+ src/hooks/use-color-scheme.web.ts               |    25 +
+ src/i18n/context.tsx                            |    91 +
+ src/i18n/i18n.ts                                |    14 +
+ src/i18n/index.ts                               |     3 +
+ src/i18n/locale.ts                              |    19 +
+ src/i18n/locales/en.json                        |    33 +
+ src/i18n/locales/vi.json                        |    33 +
+ src/i18n/use-translation.ts                     |    24 +
+ src/screens/home/index.tsx                      |    68 +
+ src/screens/preview/index.tsx                   |   181 +
+ src/theme/tokens.ts                             |   115 +
+ src/theme/use-app-theme.ts                      |     9 +
+ tsconfig.json                                   |    20 +
+ 50 files changed, 13761 insertions(+), 125 deletions(-)
+
+--- name-status ---
+A	.claude/launch.json
+M	.gitignore
+M	CURRENT_WORK.md
+A	app.json
+A	assets/expo.icon/Assets/expo-symbol 2.svg
+A	assets/expo.icon/Assets/grid.png
+A	assets/expo.icon/icon.json
+A	assets/images/android-icon-background.png
+A	assets/images/android-icon-foreground.png
+A	assets/images/android-icon-monochrome.png
+A	assets/images/favicon.png
+A	assets/images/icon.png
+A	assets/images/splash-icon.png
+A	eslint.config.js
+A	package-lock.json
+A	package.json
+A	src/app/_layout.tsx
+A	src/app/index.tsx
+A	src/app/preview.tsx
+A	src/components/composer-shared.ts
+A	src/components/composer.tsx
+A	src/components/composer.web.tsx
+A	src/components/language-switcher.tsx
+A	src/components/reading/action-button.tsx
+A	src/components/reading/choice-list.tsx
+A	src/components/reading/dialogue-line.tsx
+A	src/components/reading/narrative-block.tsx
+A	src/components/reading/play-state-badge.tsx
+A	src/components/reading/player-action-banner.tsx
+A	src/components/reading/state-change-panel.tsx
+A	src/components/themed-text.tsx
+A	src/content/preview/en.ts
+A	src/content/preview/index.ts
+A	src/content/preview/types.ts
+A	src/content/preview/vi.ts
+A	src/hooks/use-auto-grow-height.ts
+A	src/hooks/use-color-scheme.ts
+A	src/hooks/use-color-scheme.web.ts
+A	src/i18n/context.tsx
+A	src/i18n/i18n.ts
+A	src/i18n/index.ts
+A	src/i18n/locale.ts
+A	src/i18n/locales/en.json
+A	src/i18n/locales/vi.json
+A	src/i18n/use-translation.ts
+A	src/screens/home/index.tsx
+A	src/screens/preview/index.tsx
+A	src/theme/tokens.ts
+A	src/theme/use-app-theme.ts
+A	tsconfig.json
