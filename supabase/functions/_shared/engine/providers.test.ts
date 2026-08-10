@@ -1,13 +1,15 @@
 /**
- * Gemini adapter unit tests (LW-M2-R2). No live network call — global.fetch
- * is mocked throughout, matching this task's credential-safety rule (no
- * GEMINI_API_KEY exists in this environment; see
- * docs/NARRATIVE_MODEL_EVALUATION.md, GEMINI_API_KEY_REQUIRED). These tests
- * verify the adapter's own parsing/error-normalization contract, not real
- * narrative quality.
+ * Gemini + DeepSeek adapter unit tests (LW-M2-R2). No live network call in
+ * this suite — global.fetch is mocked throughout, so this suite runs the
+ * same in CI (no credentials) as it does locally with a real
+ * GEMINI_API_KEY/DEEPSEEK_API_KEY loaded (docs/NARRATIVE_MODEL_EVALUATION.md).
+ * These tests verify each adapter's own parsing/error-normalization
+ * contract, not real narrative quality — real-quality evidence comes only
+ * from the owner-initiated `npm run bakeoff` runs recorded in
+ * handoff/LW-M2-R2/ and narrative-samples/.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GeminiNarrativeProvider } from "./providers.ts";
+import { DeepSeekNarrativeProvider, GeminiNarrativeProvider } from "./providers.ts";
 import { ProviderTransportError } from "./types.ts";
 import type { NarrativeContext } from "./types.ts";
 
@@ -181,6 +183,142 @@ describe("GeminiNarrativeProvider — malformed structured provider response", (
   it("a malformed response is a normal Error, not a ProviderTransportError — it must not trigger the transport auto-retry", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { candidates: [] })));
     const provider = new GeminiNarrativeProvider("fake-key");
+    await expect(provider.generateTurn(baseContext())).rejects.not.toBeInstanceOf(ProviderTransportError);
+  });
+});
+
+function deepSeekResponse(status: number, content: string, usage: Record<string, number> = {}): Response {
+  return jsonResponse(status, {
+    id: "test",
+    object: "chat.completion",
+    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 100, completion_tokens: 50, ...usage },
+  });
+}
+
+describe("DeepSeekNarrativeProvider — construction", () => {
+  it("fails fast on an unrecognized model id (no network call attempted)", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    expect(() => new DeepSeekNarrativeProvider("fake-key", "deepseek-not-a-real-model")).toThrow(/unrecognized model/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("DeepSeekNarrativeProvider — successful parse + accounting", () => {
+  it("extracts the structured result and computes cost with no cache split reported (full prompt treated as cache-miss)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT))));
+    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-pro");
+    const { result, metadata } = await provider.generateTurn(baseContext());
+
+    expect(result).toEqual(VALID_RESULT);
+    expect(metadata.provider).toBe("deepseek");
+    expect(metadata.model).toBe("deepseek-v4-pro");
+    expect(metadata.inputTokens).toBe(100);
+    expect(metadata.outputTokens).toBe(50);
+    // deepseek-v4-pro: $0.435/1M input (no separate cache-hit rate documented), $0.87/1M output.
+    expect(metadata.costMicros).toBe(Math.round(100 * 0.435 + 50 * 0.87));
+  });
+
+  it("uses the discounted cache-hit rate for deepseek-v4-flash when the API reports a cache split", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        deepSeekResponse(200, JSON.stringify(VALID_RESULT), {
+          prompt_tokens: 1000,
+          prompt_cache_hit_tokens: 800,
+          prompt_cache_miss_tokens: 200,
+        })
+      )
+    );
+    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-flash");
+    const { metadata } = await provider.generateTurn(baseContext());
+    // 800 cache-hit @ $0.0028/1M + 200 cache-miss @ $0.14/1M + 50 output @ $0.28/1M.
+    expect(metadata.costMicros).toBe(Math.round(800 * 0.0028 + 200 * 0.14 + 50 * 0.28));
+  });
+
+  it("sends the API key via the Authorization: Bearer header, never in the request URL", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const provider = new DeepSeekNarrativeProvider("super-secret-key");
+    await provider.generateTurn(baseContext());
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).not.toContain("super-secret-key");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer super-secret-key");
+  });
+
+  it("instructs the target JSON shape in the prompt, since response_format=json_object does not enforce one", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await provider.generateTurn(baseContext());
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const requestBody = JSON.parse(init.body as string);
+    expect(requestBody.response_format).toEqual({ type: "json_object" });
+    expect(requestBody.messages[0].content).toMatch(/narrative/);
+    expect(requestBody.messages[0].content).toMatch(/boundary_kind/);
+  });
+});
+
+describe("DeepSeekNarrativeProvider — error normalization", () => {
+  it("normalizes HTTP 500 as a transport error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("server exploded", { status: 500 })));
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await expect(provider.generateTurn(baseContext())).rejects.toBeInstanceOf(ProviderTransportError);
+  });
+
+  it("normalizes HTTP 429 as a transport error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("rate limited", { status: 429 })));
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await expect(provider.generateTurn(baseContext())).rejects.toBeInstanceOf(ProviderTransportError);
+  });
+
+  it("normalizes a network-level fetch failure as a transport error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("getaddrinfo ENOTFOUND")));
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await expect(provider.generateTurn(baseContext())).rejects.toThrow(ProviderTransportError);
+  });
+
+  it("normalizes a request timeout (AbortError) as a transport error", async () => {
+    const abortError = Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/timed out/i);
+  });
+
+  it("a non-ok, non-transport status throws a normal Error carrying the provider's own body, never the API key", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid request", { status: 400 })));
+    const provider = new DeepSeekNarrativeProvider("super-secret-key");
+    try {
+      await provider.generateTurn(baseContext());
+      throw new Error("expected generateTurn to throw");
+    } catch (err) {
+      expect((err as Error).message).toMatch(/HTTP 400/);
+      expect((err as Error).message).not.toContain("super-secret-key");
+    }
+  });
+});
+
+describe("DeepSeekNarrativeProvider — malformed structured provider response", () => {
+  it("throws a clean error when the response has no choices", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { choices: [] })));
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/no usable message content/i);
+  });
+
+  it("throws a clean error when the message content is not valid JSON (the exact failure mode DeepSeek's own docs warn about)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(deepSeekResponse(200, "not { valid json")));
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/not valid JSON/i);
+  });
+
+  it("a malformed response is a normal Error, not a ProviderTransportError", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { choices: [] })));
+    const provider = new DeepSeekNarrativeProvider("fake-key");
     await expect(provider.generateTurn(baseContext())).rejects.not.toBeInstanceOf(ProviderTransportError);
   });
 });

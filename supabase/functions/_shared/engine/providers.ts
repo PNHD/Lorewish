@@ -4,11 +4,16 @@
  * change to turn-pipeline.ts, quality-gate.ts, or context-assembler.ts,
  * which is the whole point of the NarrativeProvider interface.
  *
- * IMPORTANT — none of these real adapters has been exercised against a live
- * API in this task: no OpenAI/Anthropic/Gemini/DeepSeek credential is
- * configured in this environment (checked via `env`, not printed — see
- * docs/NARRATIVE_MODEL_EVALUATION.md, NARRATIVE_PROVIDER_CREDENTIAL_REQUIRED,
- * GEMINI_API_KEY_REQUIRED, DEEPSEEK_API_KEY_REQUIRED).
+ * IMPORTANT — credential status as of the LW-M2-R2 owner-initiated local
+ * bakeoff: `GEMINI_API_KEY` and `DEEPSEEK_API_KEY` were supplied by the owner
+ * in a local, gitignored `.env.local`, loaded only via an explicit env-file
+ * mechanism (`node --env-file=.env.local`) for the `npm run bakeoff` CLI —
+ * never inherited by this process's ambient environment, never committed,
+ * never logged, never present in CI, and never set as a Supabase Edge
+ * Function secret (the deployed `submit-turn` function is untouched by this
+ * bakeoff and still has no real provider configured). `OPENAI_API_KEY` and
+ * `ANTHROPIC_API_KEY` remain absent everywhere. See
+ * docs/NARRATIVE_MODEL_EVALUATION.md for the full credential/result record.
  * The Anthropic adapter's request shape was verified against
  * https://platform.claude.com/docs/en/api/messages on 2026-08-10 (endpoint,
  * headers, tool-forced structured output via tool_choice, and the
@@ -32,11 +37,17 @@
  * exercised against a real response — no GEMINI_API_KEY exists in this
  * environment.
  *
- * DeepSeek is NOT implemented in this task: no DEEPSEEK_API_KEY exists
- * either, and the task brief's credential-safety rule for a missing DeepSeek
- * key is "continue Gemini work, report DEEPSEEK_API_KEY_REQUIRED" — not
- * "build the adapter blind". Current model ids are recorded in
- * docs/NARRATIVE_MODEL_EVALUATION.md for when a credential exists.
+ * The DeepSeek adapter's request shape was verified against
+ * https://api-docs.deepseek.com/api/create-chat-completion on 2026-08-10
+ * (OpenAI-compatible `/chat/completions` endpoint, `Authorization: Bearer`
+ * header, `response_format: {type: "json_object"}`). DeepSeek's JSON mode
+ * does not enforce a response *shape* the way Gemini/Anthropic's schema-based
+ * approaches do, so the target shape is additionally spelled out in the
+ * prompt itself (DEEPSEEK_SCHEMA_INSTRUCTION) — an adaptation at the provider
+ * boundary, not a change to the canonical StructuredGenerationResultSchema.
+ * DEEPSEEK_API_KEY was supplied by the owner in a local, gitignored
+ * `.env.local` for an owner-initiated bakeoff — never committed, never
+ * logged, loaded only via an explicit env-file mechanism.
  */
 
 import type { NarrativeContext, NarrativeProvider, ProviderCallResult } from "./types.ts";
@@ -219,21 +230,143 @@ export class OpenAiNarrativeProvider implements NarrativeProvider {
 }
 
 /**
- * Not implemented in this task — no DEEPSEEK_API_KEY was available (checked
- * as a variable name only, never printed). Present so the registry
- * demonstrates provider-agnosticism and so a future task with a credential
- * has a typed slot to fill in. Current DeepSeek model ids
- * (`deepseek-v4-pro` / `deepseek-v4-flash`) are recorded in
- * docs/NARRATIVE_MODEL_EVALUATION.md §8 for that future task, per the task
- * brief's MODEL DISCOVERY instruction to verify current docs before hardcoding
- * any model id even when an adapter isn't being built yet.
+ * Pricing per 1M tokens — re-verified against https://api-docs.deepseek.com/quick_start/pricing
+ * on 2026-08-10 (docs/NARRATIVE_MODEL_EVALUATION.md §8). `inputCacheHit` is DeepSeek's documented
+ * 98%-discounted rate for prompt tokens served from their prompt cache; only `deepseek-v4-flash`
+ * has that discount independently documented — `deepseek-v4-pro`'s cache-hit rate is not
+ * separately published, so it is conservatively treated as equal to its cache-miss rate rather
+ * than assumed to also get a discount that was never confirmed.
+ */
+const DEEPSEEK_PRICING_USD_PER_1M: Record<string, { inputCacheMiss: number; inputCacheHit: number; output: number }> = {
+  "deepseek-v4-flash": { inputCacheMiss: 0.14, inputCacheHit: 0.0028, output: 0.28 },
+  "deepseek-v4-pro": { inputCacheMiss: 0.435, inputCacheHit: 0.435, output: 0.87 },
+};
+
+/**
+ * DeepSeek's `response_format: {type: "json_object"}` guarantees syntactically valid JSON but,
+ * unlike Gemini's `responseSchema` or Anthropic's tool-forced schema, does NOT enforce a specific
+ * shape (https://api-docs.deepseek.com/api/create-chat-completion, verified 2026-08-10) — the docs
+ * explicitly warn the caller must additionally instruct the desired shape via the prompt itself, or
+ * generation can run to the token limit as whitespace. This is the provider-boundary adaptation the
+ * task brief calls for ("If provider structured output behavior differs: adapt at the provider
+ * boundary. Do NOT weaken the Lorewish canonical schema to fit one provider.") — the canonical
+ * StructuredGenerationResultSchema is unchanged; this is an extra prompt instruction, appended only
+ * for this adapter, describing that same shape in plain JSON-Schema-shaped text.
+ */
+const DEEPSEEK_SCHEMA_INSTRUCTION = `Respond with ONLY a single JSON object — no markdown code fences, no commentary before or after — matching exactly this shape:
+{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
+"narrative" and "boundary_kind" are required. Every other field must still be present — use an empty array/object when there is nothing to report, never omit the key.`;
+
+/**
+ * Real server-side adapter against DeepSeek's OpenAI-compatible chat completions endpoint
+ * (https://api-docs.deepseek.com/api/create-chat-completion, verified 2026-08-10).
+ * LOREWISH_NARRATIVE_MODEL selects between the two model ids recorded in
+ * docs/NARRATIVE_MODEL_EVALUATION.md §8 (`deepseek-v4-pro` quality tier, `deepseek-v4-flash` cheap
+ * tier); an unrecognized model id fails fast at construction, same as GeminiNarrativeProvider.
  */
 export class DeepSeekNarrativeProvider implements NarrativeProvider {
   readonly id = "deepseek";
-  generateTurn(_context: NarrativeContext): Promise<ProviderCallResult> {
-    throw new Error(
-      "DeepSeekNarrativeProvider is not implemented — no DEEPSEEK_API_KEY was available to build or verify this adapter. See docs/NARRATIVE_MODEL_EVALUATION.md."
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly pricing: { inputCacheMiss: number; inputCacheHit: number; output: number };
+  private readonly timeoutMs = 30_000;
+
+  constructor(apiKey: string, model = "deepseek-v4-pro") {
+    const pricing = DEEPSEEK_PRICING_USD_PER_1M[model];
+    if (!pricing) {
+      throw new Error(
+        `DeepSeekNarrativeProvider: unrecognized model "${model}" — no pricing entry exists, so cost accounting would be silently wrong. ` +
+          `Known models: ${Object.keys(DEEPSEEK_PRICING_USD_PER_1M).join(", ")}. See docs/NARRATIVE_MODEL_EVALUATION.md.`
+      );
+    }
+    this.apiKey = apiKey;
+    this.model = model;
+    this.pricing = pricing;
+  }
+
+  async generateTurn(context: NarrativeContext): Promise<ProviderCallResult> {
+    const { system, user } = buildPrompt(context);
+    const started = performance.now();
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.apiKey}`,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { role: "system", content: `${system}\n\n${DEEPSEEK_SCHEMA_INSTRUCTION}` },
+            { role: "user", content: user },
+          ],
+          max_tokens: 2048,
+          response_format: { type: "json_object" },
+        }),
+      });
+    } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        throw new ProviderTransportError(`deepseek request timed out after ${this.timeoutMs}ms`);
+      }
+      throw new ProviderTransportError(`deepseek fetch failed: ${(err as Error).message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (response.status >= 500 || response.status === 429) {
+      throw new ProviderTransportError(`deepseek transport error: HTTP ${response.status}`);
+    }
+    if (!response.ok) {
+      // Provider error body only — never the key, which is never included in
+      // any request/response body to begin with.
+      throw new Error(`deepseek API error: HTTP ${response.status} ${await response.text()}`);
+    }
+
+    const body = await response.json();
+    const content = body?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") {
+      throw new Error("deepseek response contained no usable message content");
+    }
+
+    let parsedResult: unknown;
+    try {
+      parsedResult = JSON.parse(content);
+    } catch {
+      throw new Error("deepseek response content was not valid JSON");
+    }
+
+    const latencyMs = Math.round(performance.now() - started);
+    const usage = body?.usage ?? {};
+    const cacheHitTokens = usage.prompt_cache_hit_tokens ?? 0;
+    // If the API does not report a cache split, treat the full prompt as a
+    // cache miss — the conservative default, never assuming an unconfirmed
+    // discount.
+    const cacheMissTokens = usage.prompt_cache_miss_tokens ?? (usage.prompt_tokens ?? 0) - cacheHitTokens;
+    const inputTokens = usage.prompt_tokens ?? cacheHitTokens + cacheMissTokens;
+    const outputTokens = usage.completion_tokens ?? 0;
+    const costMicros = Math.round(
+      cacheHitTokens * this.pricing.inputCacheHit +
+        cacheMissTokens * this.pricing.inputCacheMiss +
+        outputTokens * this.pricing.output
     );
+
+    return {
+      result: parsedResult,
+      metadata: {
+        provider: this.id,
+        model: this.model,
+        inputTokens,
+        outputTokens,
+        costMicros,
+        latencyMs,
+      },
+    };
   }
 }
 
@@ -390,7 +523,11 @@ export function selectProvider(env: { get(key: string): string | undefined }): N
     if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=gemini but neither GEMINI_API_KEY nor GOOGLE_AI_API_KEY is set");
     return new GeminiNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "gemini-3.6-flash");
   }
-  if (configured === "deepseek") return new DeepSeekNarrativeProvider();
+  if (configured === "deepseek") {
+    const key = env.get("DEEPSEEK_API_KEY");
+    if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=deepseek but DEEPSEEK_API_KEY is not set");
+    return new DeepSeekNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-pro");
+  }
 
   console.warn(
     "[lorewish] LOREWISH_NARRATIVE_PROVIDER is not set to a real provider — using FakeNarrativeProvider. " +
