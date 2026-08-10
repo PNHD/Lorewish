@@ -126,6 +126,53 @@ describe("quality gate — QUALITY test category", () => {
     expect(gate.failures).toContain("meta_ai_language");
   });
 
+  it("LW-M2-R2: does not flag correct Vietnamese prose as language_mixing (regression — real repro from the live Gemini bakeoff)", () => {
+    // Real narrative captured from a live gemini-3.6-flash bakeoff run. The
+    // pre-fix detectLanguageMixing regex (`\b[a-zA-Z]+(?:\s+[a-zA-Z]+){3,}\b`)
+    // treated JS's ASCII-only `\b`/`\w` boundary next to a diacritic letter as
+    // splitting "mắt" into the ASCII fragment "m", which chained with
+    // "nghi"/"trong" into a false 4-word "English run" ("nghi trong m") —
+    // entirely correct Vietnamese prose, wrongly failed on every affected
+    // case. See quality-gate.ts's detectLanguageMixing for the fix.
+    const result = baseResult({
+      narrative:
+        "Dưới ánh đuốc chập chờn của trạm gác đèo Sương Thần, vị tướng già nheo mắt nhìn kỹ con dấu sáp đỏ trên tờ chiếu chỉ. " +
+        "Gió lạnh từ phương bắc rít qua từng khe đá, mang theo mùi khét nhạt nhòa của ma thuật tàn tích. " +
+        "Ông ta chậm rãi cuộn tờ giấy lại, ngón tay gõ nhịp đều đặn lên chuôi kiếm chằng chịt vết sẹo. " +
+        "Sự hoài nghi trong mắt vị tướng vẫn chưa hề tan biến khi ánh nhìn của ông ta dừng lại ở chiếc hộp phong ấn trên lưng bạn.",
+    });
+    const gate = runQualityGate(result, "vi");
+    expect(gate.failures).not.toContain("language_mixing");
+    expect(gate.passed).toBe(true);
+  });
+
+  it("still detects a genuine 4+-word English sentence fragment embedded in Vietnamese prose", () => {
+    const result = baseResult({
+      narrative:
+        "Ánh đèn lồng chao đảo khi bạn bước vào hành lang tối. " +
+        "She looked at him and smiled warmly before turning away. " +
+        "Đâu đó phía trước, một cánh cửa tự đóng sầm lại.",
+    });
+    const gate = runQualityGate(result, "vi");
+    expect(gate.failures).toContain("language_mixing");
+  });
+
+  it("does not flag a short (<=3 word) English proper-noun-shaped fragment as mixing", () => {
+    // "chữ" and "được" both carry diacritics, so they correctly bound the
+    // English run to exactly 3 words (Grand, Hotel, Lobby) — below the >= 4
+    // threshold. (An earlier draft of this test used an accent-free
+    // Vietnamese word directly adjacent to the English fragment, which
+    // legitimately extends the counted run — a real, pre-existing limitation
+    // of an accent-presence heuristic, not something this fix changes.)
+    const result = baseResult({
+      narrative:
+        "Ánh đèn lồng chao đảo khi bạn bước vào hành lang tối, nơi tấm biển đề chữ Grand Hotel Lobby được treo lệch. " +
+        "Đâu đó phía trước, một cánh cửa tự đóng sầm lại.",
+    });
+    const gate = runQualityGate(result, "vi");
+    expect(gate.failures).not.toContain("language_mixing");
+  });
+
   it("flags cosmetic-paraphrase choices as malformed", () => {
     const result = baseResult({
       next_choices: [

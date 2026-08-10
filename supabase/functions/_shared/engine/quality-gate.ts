@@ -108,14 +108,41 @@ function detectLanguageMismatch(
   return { wrongLanguage, drift };
 }
 
+/**
+ * A narrow, deliberately conservative check: a long run (>= 4 consecutive
+ * words) of plain-ASCII-only alphabetic words embedded inside otherwise
+ * clearly Vietnamese prose, excluding short/likely-proper-noun runs.
+ *
+ * LW-M2-R2 fix: the original implementation used `\b[a-zA-Z]+(?:\s+[a-zA-Z]+){3,}\b`,
+ * which JS's ASCII-only `\b`/`\w` treats as a word boundary right next to any
+ * Vietnamese diacritic letter (which is not in `\w`). That silently splits a
+ * single correct Vietnamese word like "mắt" into ASCII fragments ("m" before
+ * the diacritic "ắt"), which can then chain together with genuinely separate
+ * words into a false 4-token "English run" — found live via the Gemini
+ * bakeoff on entirely correct Vietnamese prose ("... trong mắt ..." flagged
+ * from the fragment "nghi trong m"). Operating on whole whitespace-delimited
+ * words instead of sub-word regex matches — and requiring the WHOLE word
+ * (after stripping surrounding punctuation) to be pure a-zA-Z — makes this
+ * impossible: a word containing any Vietnamese diacritic can never itself
+ * count as an "ASCII word", so it can never be silently fragmented into one.
+ */
 function detectLanguageMixing(text: string, expected: ContentLanguage): boolean {
-  // A narrow, deliberately conservative check: a long run (>= 4 consecutive
-  // words) of plain-ASCII-only alphabetic words embedded inside otherwise
-  // clearly Vietnamese prose, excluding short/likely-proper-noun runs.
   if (!expected.startsWith("vi")) return false;
   if (!VIETNAMESE_DIACRITIC_RE.test(text)) return false; // nothing to mix into
-  const asciiRun = /\b[a-zA-Z]+(?:\s+[a-zA-Z]+){3,}\b/;
-  return asciiRun.test(text);
+
+  const words = text.split(/\s+/).filter(Boolean);
+  let run = 0;
+  for (const raw of words) {
+    const core = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""); // strip surrounding punctuation
+    const isPureAsciiWord = core.length > 0 && /^[a-zA-Z]+$/.test(core);
+    if (isPureAsciiWord) {
+      run += 1;
+      if (run >= 4) return true;
+    } else {
+      run = 0;
+    }
+  }
+  return false;
 }
 
 function detectDuplicateSentences(text: string): boolean {
