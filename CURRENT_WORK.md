@@ -1,7 +1,282 @@
 # Current Work
 
-**Task**: LW-M1-R3 — Live Privilege Hardening + Repository/CI Closeout
-**Status**: **M1 PASS**, with Android runtime evidence explicitly deferred (see below).
+**Task**: LW-M2-R1 — Real Interactive Story Engine Vertical Slice
+**Status**: **ENGINE_IMPLEMENTATION_PASS. REAL_NARRATIVE_PROVIDER_PENDING.** Every layer of the
+vertical slice is implemented, live-deployed to `lorewish-dev`, and verified against real HTTP
+calls — turn state machine, atomic commit, idempotency, branch replay, canon isolation, RLS/grant
+adversarial probes. No AI provider credential exists in this environment, so no real-model
+narrative-quality claim is made; the engine runs against a documented fake deterministic provider.
+`REPOSITORY_VISIBILITY_REVIEW_REQUIRED` (M1) is unchanged and still open.
+
+## Baseline (verified, not assumed)
+
+- `origin/main` at task start: `20d27a36e6b849239a6a5d0bdd62b007ea44bdb4` — confirmed via `git fetch`
+  + `git rev-parse origin/main`, matching the task brief's (explicitly untrusted) value. The brief's
+  instruction to re-verify rather than trust it was followed.
+- Branch: **`feature/lw-m2-story-engine-v1`**, created from `origin/main` at that exact SHA (`git
+  checkout -b feature/lw-m2-story-engine-v1 origin/main`) — not from the old M1 feature branch.
+- **IMPLEMENTATION_HEAD: `f1d446c847115ea5a65466250ff202132b71b469`** — the commit containing the
+  full runtime schema, engine code, tests, UI, and CI changes. This CURRENT_WORK.md update is a
+  second, docs-only commit on top of it; handoff evidence is generated after both exist, per the
+  established M1 property that packaging never moves the head it describes.
+- Local Supabase CLI: no `deno`, no running Docker Desktop, `npx supabase` (v2.113.0) used
+  throughout — same environment shape as M1's sessions. `npx supabase projects list` confirmed the
+  linked project is `lorewish-dev` (`sfarcofvqfeobtcizxyv`, `linked: true`) and
+  `doodle-world-studio` (`etmqrpoefkcahyvaimiw`) is not linked, before any migration was pushed.
+
+## Runtime Domain — Schema
+
+`supabase/migrations/20260810190000_m2_story_engine_schema.sql`, applied to `lorewish-dev` via
+`supabase db push --linked` and confirmed via `supabase migration list --linked` (remote timestamp
+matches local). Tables: `player_runs`, `run_branches`, `scenes`, `turns`, `canon_facts`,
+`usage_counters`. No character-chat, credit-ledger, or moderation-audit tables — out of M2 scope.
+
+- **Branch-safe scene ordering**: scenes are ordered `(run_branch_id, seq_in_branch)`, branch-local
+  and starting at 0 — not one global sequence. "Replay from here" does not copy scenes; it stores
+  `fork_scene_id` (a pointer into the parent branch) and starts its own `seq_in_branch` at 0. The
+  full playable history of a branch is resolved by `lw_branch_scene_ids()`, a recursive SQL
+  function walking the branch-ancestor chain — reimplemented once more in TypeScript
+  (`supabase-repository.ts`, for the Edge Function's service-role reads, since granting the
+  internal helper to `service_role` was not verified) and a third time in the in-memory test
+  double, kept deliberately close to both so a divergence shows up as a failing test rather than
+  silent drift.
+- **Canon isolation**: `canon_facts.scope ∈ {run, branch}`. `run`-scope is visible from every branch
+  of the `PlayerRun`; `branch`-scope is visible only where the target branch's resolved scene
+  history includes the fact's `source_scene_id` — isolation falls out of the same
+  branch-ancestor-chain resolution rather than a second, separately-maintained rule. Verified live
+  (see Security below): a fact recorded on branch A after a fork point does not appear in branch
+  B's context, and a run-scoped fact appears on both.
+- **Turns**: `id` IS the client-generated `turn_id` (CONTINUOUS_PLAY_CONTRACT.md §7) — the primary
+  key itself is the idempotency guarantee. `generation_attempt_count`, `provider_cost_micros`
+  (micro-dollars, no floats), and `user_allowance_debited` are tracked as three separate concepts
+  per NARRATIVE_QUALITY_CONTRACT.md §D's billing rule, verified live to diverge correctly on a
+  forced failure (attempt_count=2, cost recorded, `user_allowance_debited=false`).
+- **No client mutation path exists** for `player_runs`/`run_branches`/`scenes`/`turns`/`canon_facts`:
+  `authenticated` holds `SELECT` only on all six new tables (verified live, see Security). Every
+  write goes through five `SECURITY DEFINER` functions — `lw_precheck_and_start_turn`,
+  `lw_commit_turn`, `lw_fail_turn`, `lw_replay_from_scene`, `lw_get_run_state` — each verifying
+  `(select auth.uid())` ownership itself rather than trusting any client-supplied id, and each
+  following the LW-M1-R3 rule (`revoke ... from public, anon, authenticated` before any selective
+  re-grant, with the authorization contract documented in the function's own header comment). A
+  sixth function, `lw_branch_scene_ids`, is a read-only internal helper with **no** grant to any
+  client role at all — confirmed live (`proacl` names neither `anon` nor `authenticated`).
+
+## Continuous Play Contract — Implemented as Executable Behavior
+
+`supabase/functions/_shared/engine/turn-pipeline.ts` implements the full
+PRECHECK → GENERATING → VALIDATING → COMMITTING → RESOLVED lifecycle:
+
+- Idempotent `turn_id`: a duplicate submission returns the committed result rather than
+  regenerating — verified both in unit tests and live (see below).
+- One transparent automatic retry for transport failure only; one automatic repair (with the
+  failure reason fed back into the prompt) for a quality-gate/moderation failure — never both paths
+  on the same failure class, matching NARRATIVE_QUALITY_CONTRACT.md §D and
+  CONTINUOUS_PLAY_CONTRACT.md §8.
+- `boundary_kind = ending` is set only from the provider's own structured field, never inferred
+  from prose shape — the quality gate additionally catches an *abrupt pseudo-ending* (prose that
+  reads like "The End." while `boundary_kind` is not `ending`) as a distinct failure class.
+- Failure never masquerades as an ending: `GENERATION_FAILED` never commits a Scene, never debits
+  allowance, and the run re-derives to `CONTINUE_READY` at the last durable scene — verified live
+  (see Security/Live probes below), not only in the in-memory unit tests.
+- "Replay from here" (`lw_replay_from_scene`) is a pure state write: no provider call, no
+  allowance touch, cannot fail for provider reasons. Verified live: the prior branch is retained,
+  not deleted.
+
+## Canonical-State Commit Point
+
+`lw_commit_turn` is the single atomic transaction per CONTINUOUS_PLAY_CONTRACT.md §4: Scene +
+CanonFacts + Turn success + allowance debit together, or none of it. Verified live with a forced
+quality-gate failure (`__SIMULATE_WRONG_LANGUAGE__`, fails both the initial attempt and the one
+repair): scene count stayed at 1 (no partial write), `generation_attempt_count = 2`,
+`user_allowance_debited = false`.
+
+## AI Provider Architecture
+
+`NarrativeProvider` (`supabase/functions/_shared/engine/types.ts`) is a one-method interface,
+implemented by `FakeNarrativeProvider` (deterministic, no network, used everywhere in this task's
+own verification) and `AnthropicNarrativeProvider` (`claude-sonnet-5`, request shape re-verified
+2026-08-10 against `https://platform.claude.com/docs/en/api/messages` — endpoint, headers,
+`tool_choice`-forced structured output, and the model's rejection of non-default
+temperature/top_p/top_k — **never exercised against a live network call**, since no
+`ANTHROPIC_API_KEY` exists in this environment). `OpenAiNarrativeProvider`/`GeminiNarrativeProvider`
+are typed stubs that throw a clear "not implemented, no credential" error. Provider selection is a
+`LOREWISH_NARRATIVE_PROVIDER`/`LOREWISH_NARRATIVE_MODEL` env-var configuration read inside the Edge
+Function — no call site in `turn-pipeline.ts`/`quality-gate.ts`/`context-assembler.ts` names a
+provider. No provider is called from the client, and no provider key is ever sent to the client
+(`supabase/functions/submit-turn/index.ts` is the sole server-side call site).
+
+**`NARRATIVE_PROVIDER_CREDENTIAL_REQUIRED`**: checked directly (variable names only, values never
+printed or searched for in history) — neither `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, nor
+`GEMINI_API_KEY`/`GOOGLE_AI_API_KEY` is set locally. Full detail, including exactly which env var(s)
+the owner needs to set for each provider: [docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md).
+
+## EN/VI Narrative Quality
+
+`quality-gate.ts` implements every deterministic check in NARRATIVE_QUALITY_CONTRACT.md §D's
+minimum set (expected language, language drift, language mixing, empty narrative, unresolved
+template tokens, duplicate sentences, excessive repetition, meta-AI phrase leakage, prohibited
+"to be continued" copy in every state, abrupt pseudo-ending, malformed/cosmetic-duplicate choices) —
+15 unit tests, all passing, each targeting one specific failure class with both a positive and
+negative case where meaningful. Vietnamese-language detection uses a word-level diacritic-ratio
+heuristic (not a sentence-count threshold, which under-triggered on single-sentence output during
+development — caught and fixed by the test suite itself before this was committed).
+
+The Narrative Golden Set (`supabase/functions/_shared/engine/golden-set/cases.ts`) has the required
+6 original scenarios (EN × Fantasy/Romance/Adventure, VI × Fantasy/Romance/Adventure), each
+specifying premise, player role, starting situation, character identity, an initial decision,
+expected invariant facts, and prohibited contradictions — Vietnamese cases additionally specify the
+four-slot address model (NARRATIVE_QUALITY_CONTRACT.md §C). The dev-only bakeoff harness (`npm run
+bakeoff`) ran once in this task, against the fake provider (no credential): **6/6 passed, 0 repairs
+required**. This proves the harness and pipeline wiring, not real narrative quality — no "reads
+like natural human narrative" claim is made for any real model. See
+[docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md) §5 for exactly what
+running it against a real provider would require.
+
+## Security — Verified Live, Not From Source Reading
+
+All of the following are real HTTP calls against the live `lorewish-dev` project and its two
+deployed Edge Functions (`submit-turn`, `replay-branch`), using two ephemeral test accounts created
+and deleted via the Auth Admin API (cleanup verified by re-query: 0 remaining test accounts
+afterward), plus a `service_role`-keyed read-only tooling client used only for assertions, never for
+writes outside the RPC boundary.
+
+- **Grants** (`information_schema.table_privileges`): `authenticated` holds `SELECT` only on all six
+  new tables; `anon` appears in zero rows. **Functions** (`pg_proc.proacl`): the five intentionally
+  client-callable `lw_*` functions grant `EXECUTE` to `authenticated` only (no `anon`, no bare
+  `PUBLIC`); the internal helper grants to neither client role.
+- **Advisors**: `security` — **5 expected `WARN`** ("Signed-In Users Can Execute SECURITY DEFINER
+  Function"), one per intentionally client-callable `lw_*` function — each does its own
+  `auth.uid()` ownership check, documented in its own header comment; this is the intended shape of
+  the RPC boundary, not an oversight. `performance` — **0 findings**.
+- **A real bug was found and fixed during live verification**: `SupabaseTurnRepository`'s
+  constructor originally passed the *user's JWT* as the Supabase client's `apikey`/`key` parameter
+  (`createClient(url, userJwt, ...)`), which both `submit-turn` and `replay-branch` call —
+  PostgREST/GoTrue correctly rejected this as "Invalid API key" on every call past `PRECHECK`,
+  since `apikey` must be the project's own anon/publishable key and the caller's identity belongs
+  only in the separate `Authorization: Bearer <jwt>` header. Found via a temporary, explicitly
+  time-boxed debug build that echoed the real error message (reverted before this record was
+  written — the shipped function never returns internal error detail to a caller), fixed in both
+  Edge Functions plus `supabase-repository.ts`, redeployed, and reverified.
+- **20/20 live adversarial/contract probes, both scripts run to completion**:
+  unauthenticated cannot call `submit-turn` (401); `anon` cannot execute `lw_precheck_and_start_turn`
+  over PostgREST (401); a real authenticated start-turn commits a real Scene; duplicate `turn_id`
+  submission is idempotent (identical Scene id, exactly 2 Scenes total after start + one retried
+  turn, not 3); User B's read of User A's run returns 0 rows (RLS); User B cannot submit a turn on
+  User A's run (blocked server-side, not just by RLS); the owning user cannot `INSERT` into `scenes`
+  directly (403 — no grant exists, regardless of ownership); `anon` cannot `INSERT` into `scenes` or
+  `SELECT` `player_runs` at all (401, object-level); "Replay from here" creates a distinct branch
+  and both branches are retained; a nonexistent `selected_choice_id` is rejected before any
+  generation call; a forced quality-gate failure resolves `GENERATION_FAILED` with exactly 2
+  generation attempts, no new Scene, `user_allowance_debited = false`, and `lw_get_run_state`
+  re-derives to `CONTINUE_READY` at the prior durable scene.
+- Two rejected-request paths return HTTP 500 rather than a clean 4xx (User B submitting on User A's
+  run; a malformed choice id) — both are correctly *rejected* by the SQL layer raising an exception,
+  caught by the Edge Function's generic error handler. Recorded as a known polish item (§ below),
+  not a security gap: the action is blocked either way.
+
+## EN Direct-Language Path / VI Direct-Language Path
+
+Both exercised end-to-end through the fake provider (not a real model — see above): the Golden Set
+covers 3 EN + 3 VI scenarios; `quality-gate.test.ts` has dedicated EN and VI positive/negative cases
+for the language-mismatch and drift checks; the live probe's `start` call used an EN premise and
+committed a real EN scene through the full pipeline. `content_language` is passed explicitly by the
+caller (Quick Start form / test scripts) in every case — never inferred from UI locale, per the
+task's explicit prohibition.
+
+## Dev UI — `/play`
+
+`/play` (Quick Start form: premise, genre chips, EN/VI language toggle) and `/play/[runId]`
+(reading view: PLAYER ACTION → narrative → dialogue → SYSTEM/state-change → choices/composer, per
+the existing Scene Readability Contract components reused unmodified from M1) — both EN+VI via the
+existing i18n system, both gated on `useAuth()` (`play.signInRequired` state for signed-out users,
+consistent with the task's ABUSE/COST GATE requirement: no anonymous path to a paid generation
+endpoint). `/preview` is untouched. Verified: `tsc --noEmit` clean, `expo lint` clean (one legitimate
+false-positive from the React Compiler's `set-state-in-effect` rule on a textbook fetch-on-mount
+effect, suppressed with the same scoped, justified pattern M1 already established for an analogous
+case), both routes render correctly in-browser for the signed-out gate state (no live-authenticated
+UI walkthrough was performed in this task — the live verification instead exercised the same
+Edge Functions directly over HTTP, which is the boundary the UI itself calls).
+
+## Tests / CI
+
+- **35 unit tests, 3 files, all passing** (`npm test`, vitest): 15 quality-gate cases, 6
+  context-assembler cases, 14 turn-pipeline domain cases (valid/invalid transition, idempotent
+  retry, atomic-failure-leaves-scene-unchanged, successful-commit-advances-run, explicit-only
+  terminal ending, checkpoint behavior, allowance exhaustion, branch replay creates a separate
+  branch, branch canon isolation, run-scoped canon visible everywhere, malformed-schema rejection,
+  one-repair-then-succeed). The SECURITY test category (cross-user isolation, no client mutation
+  path, unauthenticated cannot call the paid path, intended RPC path works, no accidental public
+  EXECUTE) is covered live instead of by a unit-test double — see Security above.
+- `tsc --noEmit`, `expo lint`, `npm run export:web` all clean, run after every meaningful change,
+  not only once at the end.
+- **CI**: added a `changes` job (`dorny/paths-filter`) so the two native jobs run only when a
+  native-relevant path changed (`src/**`, `app.json`, `eas.json`, `package.json`,
+  `package-lock.json`, `assets/**`, `ios/**`, `android/**`, `.github/workflows/ci.yml`) or the
+  workflow was manually dispatched — `supabase/**` (all of this task's server/domain code) and its
+  tests no longer trigger a native rebuild. Added the vitest suite to the `web` job (fast,
+  deterministic-provider-only, no secrets). Raised the iOS job's `timeout-minutes` from 30 to 40
+  per the task's explicit instruction, citing the LW-M1-R3 27m54s-against-30m evidence. **Not
+  verified on GitHub Actions in this task** — no commit has been pushed to the remote yet at the
+  time this section was written; see the handoff's `ci-results.txt` for whether a push happened
+  before the handoff was finalized.
+
+## Live Web
+
+**Not deployed.** WEB-FIRST DELIVERY in the task brief is conditioned on "once real generation
+works" — it does not, in this task, since no AI provider credential exists. Deploying an
+authenticated `/play` route backed only by a fake provider to the public production URL would not
+meet that condition and was judged not worth the ambiguity it would create for anyone visiting
+`lorewish.pages.dev`. `/preview` remains exactly as M1 left it; nothing was redeployed.
+
+## Known Issues / Unresolved
+
+- Two rejected-request paths (cross-user turn submission; invalid `selected_choice_id`) surface as
+  HTTP 500 rather than a clean 4xx from `submit-turn` — the security property holds (verified live),
+  but the error taxonomy could be tightened in a follow-up (catch the specific SQL exceptions in
+  `turn-pipeline.ts`/`supabase-repository.ts` and map them to 400/403 instead of falling through to
+  the generic 500 handler).
+  - **This was flagged via `spawn_task` for a follow-up session** (see chip) rather than fixed
+    inline, since it is out-of-scope polish, not a defect blocking this task's pass bar.
+- `usage_counters`' precheck-then-commit allowance check is a soft/approximate cap under heavy
+  concurrent load from the *same* user across *different* runs (the row lock that serializes
+  precheck is per-`player_run`, not per-user) — acceptable for MVP's "a counter with a reset
+  window, not a ledger" framing (DOMAIN_MODEL.md §3), flagged here rather than silently accepted.
+- No character-chat, CreditLedger, or real moderation-provider integration — all explicitly M3/M4
+  scope or dependent on a credential this task does not have.
+- OpenAI and Gemini provider adapters are typed stubs only, never implemented against a real API —
+  no credential existed to build or verify them against.
+- The live probe scripts (ephemeral Node scripts using the project's service-role key, read once
+  via `supabase projects api-keys` and never printed a second time, never written to any tracked
+  file) lived only in the session's scratchpad directory outside the repository and were deleted
+  after use; they are not included in the handoff package, per its "no service-role key" exclusion
+  list. `handoff/LW-M2-R1/rls-test-results.txt` is a transcript of their console output instead.
+
+## M2-R1 Verdict
+
+**ENGINE_IMPLEMENTATION_PASS. REAL_NARRATIVE_PROVIDER_PENDING.**
+
+Every structural pass-bar item this task can satisfy without a real AI credential is satisfied and
+verified live, not merely implemented: schema + grants + RLS live and adversarially probed (20/20),
+real persistent PlayerRun end-to-end through the deployed Edge Functions, predefined-choice and
+custom-action turns both produce real durable Scenes, reload resolves correctly via
+`lw_get_run_state`, replay-from-here creates a distinct retained branch, branch canon isolation
+holds, the Continuous Play Contract's failure path never masquerades as an ending and never debits
+a failed turn, idempotent retry produces exactly one Scene, EN and VI both exercised through the
+same pipeline, the quality gate is implemented and unit-tested, 35 automated tests are green, no
+client mutation path exists for authoritative state, no anonymous path reaches the generation
+endpoint, no full image generation was added, and Web/JS CI is green locally (not yet re-verified
+on GitHub Actions — no push has happened yet as of this section).
+
+**What is not claimed**: real generation quality in either language (no provider credential),
+GitHub Actions CI results for this branch (not yet pushed), and a full authenticated
+click-through of the `/play` UI in a browser (the same boundary was instead verified directly over
+HTTP, which is more precise for a security/contract claim, but is not the same as watching the
+screens render live data).
+
+**Recommended next task**: LW-M2-R2 or equivalent — obtain an `ANTHROPIC_API_KEY` (adapter already
+implemented and doc-verified) or another provider's key, run `npm run bakeoff` for real, read the
+two representative samples, and only then evaluate the EN/VI naturalness bar this task's engine
+work was built to be judged against.
 
 ## Baseline (verified, not taken from the prior report)
 
