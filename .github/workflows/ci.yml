@@ -50,7 +50,11 @@ jobs:
   android:
     name: Android (preview APK)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A cold Gradle cache (first-ever run: no prior actions/cache hit) took
+    # longer than 30 minutes to compile the full RN + Expo native stack from
+    # scratch — bumped so a first run has room to finish and populate the
+    # cache for subsequent ones.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -168,7 +172,10 @@ jobs:
 
       - name: Find built .app bundle
         run: |
-          APP_PATH=$(find DerivedData/Build/Products -maxdepth 1 -name "*.app" | head -n1)
+          # maxdepth 2: Products/<Configuration>-iphonesimulator/<App>.app —
+          # depth 1 only reaches the per-configuration directory itself, not
+          # the .app bundle one level inside it.
+          APP_PATH=$(find DerivedData/Build/Products -maxdepth 2 -name "*.app" | head -n1)
           if [ -z "$APP_PATH" ]; then
             echo "No .app bundle found under DerivedData/Build/Products" >&2
             find DerivedData/Build/Products -maxdepth 2 >&2 || true
