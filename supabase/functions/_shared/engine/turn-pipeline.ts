@@ -59,7 +59,19 @@ async function attemptGeneration(
     if (err instanceof ProviderTransportError) {
       return { ok: false, errorClass: "transport_failure", costMicros: 0 };
     }
-    throw err;
+    // LW-M2-R2 fix: any other adapter-level throw (a provider returning a
+    // response that could not even be parsed into a candidate `result` —
+    // e.g. DeepSeek's response_format=json_object occasionally producing
+    // text that isn't valid JSON, found live via the DeepSeek bakeoff) is
+    // this provider's own equivalent of "the output was unusable", exactly
+    // like a StructuredGenerationResultSchema validation failure below. It
+    // must resolve through the same one-repair-then-GENERATION_FAILED path,
+    // never propagate uncaught — an uncaught throw here would crash
+    // submitTurn entirely instead of resolving to one of
+    // CONTINUOUS_PLAY_CONTRACT.md §2's five defined play states. No cost is
+    // attributed: the adapter never returned a ProviderCallResult to read a
+    // cost from.
+    return { ok: false, errorClass: "unusable_output", costMicros: 0 };
   }
 
   const parsed = StructuredGenerationResultSchema.safeParse(raw.result);

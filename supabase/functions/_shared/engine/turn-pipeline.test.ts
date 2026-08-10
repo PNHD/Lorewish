@@ -333,6 +333,34 @@ describe("turn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)",
     expect(repo.scenes.size).toBe(sceneCountBefore); // no scene committed — the gate was never bypassed
   });
 
+  it("LW-M2-R2: a provider throwing a non-transport Error (e.g. unparseable response) resolves GENERATION_FAILED, never crashes submitTurn", async () => {
+    // Real repro shape: DeepSeekNarrativeProvider throws a plain Error (not
+    // ProviderTransportError) when response_format=json_object produces text
+    // that isn't valid JSON — found live via the DeepSeek bakeoff, which
+    // this test guards against regressing back to an uncaught crash instead
+    // of the existing GENERATION_FAILED/repair path.
+    class ThrowsUnparseableProvider implements NarrativeProvider {
+      readonly id = "throws-unparseable";
+      async generateTurn(_context: NarrativeContext): Promise<ProviderCallResult> {
+        throw new Error("provider response content was not valid JSON");
+      }
+    }
+
+    const repo = new InMemoryTurnRepository();
+    const { run } = await startRun(repo);
+    const sceneCountBefore = repo.scenes.size;
+
+    const result = await submitTurn(repo, new ThrowsUnparseableProvider(), {
+      turnId: randomUUID(),
+      playerRunId: run.id,
+      actionType: "custom_action",
+      rawAction: "push the door",
+    });
+
+    expect(result.status).toBe("GENERATION_FAILED");
+    expect(repo.scenes.size).toBe(sceneCountBefore); // no scene committed, no crash
+  });
+
   it("a forked branch inherits the parent's history up to (and including) the fork point", async () => {
     const repo = new InMemoryTurnRepository();
     const { run, firstSceneId } = await startRun(repo);

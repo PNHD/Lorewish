@@ -44,6 +44,8 @@ interface CaseResult {
   repairRequired: boolean;
   finalPass: boolean;
   narrativeSample: string;
+  /** Set when the provider itself threw (e.g. an unparseable response) rather than returning a schema-invalid result — LW-M2-R2, found live via DeepSeek. */
+  providerErrorNote: string | null;
 }
 
 function toContext(c: GoldenCase): NarrativeContext {
@@ -80,37 +82,58 @@ function toContext(c: GoldenCase): NarrativeContext {
   };
 }
 
+/**
+ * Wraps one provider.generateTurn call so a thrown, non-transport adapter
+ * error (e.g. DeepSeek's response_format=json_object occasionally producing
+ * text that isn't valid JSON — found live) is treated as "no usable result",
+ * the harness-level equivalent of turn-pipeline.ts's attemptGeneration fix
+ * (see turn-pipeline.ts), instead of crashing the whole bakeoff run.
+ */
+async function attemptOnce(
+  provider: ReturnType<typeof selectProvider>,
+  context: NarrativeContext
+): Promise<{ raw: Awaited<ReturnType<typeof provider.generateTurn>> | null; errorNote: string | null }> {
+  try {
+    return { raw: await provider.generateTurn(context), errorNote: null };
+  } catch (err) {
+    return { raw: null, errorNote: (err as Error).message };
+  }
+}
+
 async function runCase(provider: ReturnType<typeof selectProvider>, goldenCase: GoldenCase): Promise<CaseResult> {
   const context = toContext(goldenCase);
   let repairRequired = false;
 
-  let raw = await provider.generateTurn(context);
-  let parsed = StructuredGenerationResultSchema.safeParse(raw.result);
-  let gate = parsed.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
+  let attempt = await attemptOnce(provider, context);
+  let parsed = attempt.raw ? StructuredGenerationResultSchema.safeParse(attempt.raw.result) : null;
+  let gate = parsed?.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
 
-  if (!parsed.success || !gate.passed) {
+  if (!parsed?.success || !gate.passed) {
     repairRequired = true;
-    raw = await provider.generateTurn({ ...context, repairReason: parsed.success ? gate.failures.join(",") : "malformed_output" });
-    parsed = StructuredGenerationResultSchema.safeParse(raw.result);
-    gate = parsed.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
+    const repairReason = attempt.errorNote ?? (parsed?.success ? gate.failures.join(",") : "malformed_output");
+    attempt = await attemptOnce(provider, { ...context, repairReason });
+    parsed = attempt.raw ? StructuredGenerationResultSchema.safeParse(attempt.raw.result) : null;
+    gate = parsed?.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
   }
 
+  const raw = attempt.raw;
   return {
     caseId: goldenCase.id,
     language: goldenCase.language,
     genre: goldenCase.genre,
-    provider: raw.metadata.provider,
-    model: raw.metadata.model,
-    inputTokens: raw.metadata.inputTokens,
-    outputTokens: raw.metadata.outputTokens,
-    latencyMs: raw.metadata.latencyMs,
-    estimatedCostMicros: raw.metadata.costMicros,
-    schemaValid: parsed.success,
+    provider: raw?.metadata.provider ?? provider.id,
+    model: raw?.metadata.model ?? "unknown",
+    inputTokens: raw?.metadata.inputTokens ?? 0,
+    outputTokens: raw?.metadata.outputTokens ?? 0,
+    latencyMs: raw?.metadata.latencyMs ?? 0,
+    estimatedCostMicros: raw?.metadata.costMicros ?? 0,
+    schemaValid: parsed?.success ?? false,
     qualityGatePassed: gate.passed,
     qualityFailures: gate.failures,
     repairRequired,
-    finalPass: parsed.success && gate.passed,
-    narrativeSample: parsed.success ? parsed.data.narrative.slice(0, 400) : "(schema validation failed — no narrative to sample)",
+    finalPass: (parsed?.success ?? false) && gate.passed,
+    narrativeSample: parsed?.success ? parsed.data.narrative.slice(0, 400) : "(no usable narrative — see providerErrorNote/qualityFailures)",
+    providerErrorNote: attempt.errorNote,
   };
 }
 
