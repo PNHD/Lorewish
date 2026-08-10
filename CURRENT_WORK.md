@@ -1,5 +1,211 @@
 # Current Work
 
+**Task**: LW-M2-R2 — Real Narrative Provider Bakeoff + Production Model Selection Evidence
+**Status**: **PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_NOT_RUN. MODEL_SELECTION_REVIEW_REQUIRED.**
+Continues from LW-M2-R1's `REAL_NARRATIVE_PROVIDER_PENDING` verdict. No provider credential
+(`GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`) exists in this
+environment — checked as variable names only, values never printed — so no live bakeoff, no real
+narrative-quality comparison, and no narrative samples were produced for any candidate model,
+exactly as this task's credential-safety rules require. What this task *could* do without a
+credential was done and verified: a real Gemini adapter, two live-verified bug fixes, an allowance
+race fix, 19 new tests, and full model-discovery documentation. See
+[docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md) §0/§7–§10 for the
+provider-evaluation half of this record; this section covers the engine-layer work.
+
+## Baseline (verified, not trusted from the task brief)
+
+- `origin/main`: unchanged since LW-M2-R1 (this task did not touch `main`).
+- Branch: continued on **`feature/lw-m2-story-engine-v1`** (the task brief's own instruction:
+  "continue from the current M2 branch"), not a new branch — this task is a direct continuation of
+  LW-M2-R1's unfinished provider work, not a new vertical slice.
+- Starting HEAD: `68469d6` (`docs: LW-M2-R1 CURRENT_WORK.md record`) — confirmed via `git log`
+  before any change, matching the task brief's stated recent-commits list.
+- `handoff/LW-M1-R3/` and `handoff/LW-M2-R1/` were already untracked at task start (established
+  project pattern — handoff directories are packaging output, not source); left untouched.
+- Linked Supabase project reconfirmed unchanged: `lorewish-dev` / `sfarcofvqfeobtcizxyv` /
+  `ap-southeast-1`, via `npx supabase projects list` before any migration was pushed.
+- Read in full before any change, per the task brief's "do not trust prior summaries" instruction:
+  this file (then ending at LW-M2-R1's verdict), `docs/NARRATIVE_MODEL_EVALUATION.md`,
+  `docs/NARRATIVE_QUALITY_CONTRACT.md`, `docs/CONTINUOUS_PLAY_CONTRACT.md`, and every file under
+  `supabase/functions/_shared/engine/` plus both Edge Function entrypoints.
+
+## Credential check (names only, never printed, never searched for in history)
+
+`GEMINI_API_KEY`: absent. `GOOGLE_AI_API_KEY`: absent. `DEEPSEEK_API_KEY`: absent.
+`ANTHROPIC_API_KEY`: absent (also absent in LW-M2-R1; unchanged). `.env.local` contains only the two
+`EXPO_PUBLIC_SUPABASE_*` values, as in LW-M2-R1.
+
+Per the task brief: **`GEMINI_API_KEY_REQUIRED`** — Gemini live evaluation stopped before any network
+call. **`DEEPSEEK_API_KEY_REQUIRED`** — DeepSeek adapter work did not proceed past model-id
+documentation (see NARRATIVE_MODEL_EVALUATION.md §8); Gemini adapter work continued as instructed
+for a missing-DeepSeek-only case, and turned out to be blocked by the same missing-Gemini-key rule
+in the end, so the net live-bakeoff outcome is "not run for any provider," recorded honestly rather
+than as a partial/misleading result.
+
+## Gemini Adapter — Implemented, Never Called Live
+
+`GeminiNarrativeProvider` (`supabase/functions/_shared/engine/providers.ts`) replaces the LW-M2-R1
+typed stub with a real adapter against `generateContent`
+(`https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`), doc-verified
+2026-08-10 (full source list and findings: NARRATIVE_MODEL_EVALUATION.md §7):
+
+- Structured output via `generationConfig.responseSchema` / `responseMimeType: "application/json"`,
+  reusing the same JSON schema object the Anthropic adapter already uses for its tool definition —
+  one schema, two providers, no duplicated business logic in either adapter.
+- API key sent via the `x-goog-api-key` **header**, deliberately not the legacy `?key=` query
+  parameter, so it never appears in a URL or server access log.
+- Bounded 30s timeout via `AbortController`; HTTP 5xx/429 and a genuine timeout both normalize to
+  `ProviderTransportError` (triggers the pipeline's existing one-shot transport retry); any other
+  non-2xx, or a response with no usable candidate text, or candidate text that isn't valid JSON,
+  throws a plain `Error` — never the raw response body concatenated with the API key, since the key
+  is never part of any request/response body to begin with.
+- Real token usage (`usageMetadata.promptTokenCount` / `candidatesTokenCount`) and cost computed
+  from the exact per-model pricing table in NARRATIVE_MODEL_EVALUATION.md §7 — an unrecognized model
+  id fails at construction time rather than silently billing against the wrong tier.
+- `selectProvider()` now accepts `LOREWISH_NARRATIVE_PROVIDER=gemini` with
+  `GEMINI_API_KEY`/`GOOGLE_AI_API_KEY` and `LOREWISH_NARRATIVE_MODEL` (defaults to
+  `gemini-3.6-flash`); a `DeepSeekNarrativeProvider` typed stub was added for registry symmetry
+  (matches the OpenAI stub's existing shape) but is not wired to any credential-checked path since
+  none exists.
+- **Never exercised against a live network call** — no `GEMINI_API_KEY` in this environment. 12 new
+  unit tests (`providers.test.ts`) mock `fetch` to verify parsing, cost accounting, the
+  `x-goog-api-key`-not-query-string behavior, and every error-normalization branch (5xx, 429,
+  network failure, timeout, missing candidates, invalid JSON candidate text) — this is a test of the
+  adapter's own contract, not a narrative-quality claim.
+
+## Two Known M2-R1 Polish Issues — Fixed and Verified Live
+
+Both issues from LW-M2-R1's "Known Issues" section (cross-user turn submission and an invalid
+`selected_choice_id` both returning generic HTTP 500 instead of a clean 4xx) are fixed:
+
+- **Migration**: `supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql`,
+  applied to `lorewish-dev` via `supabase db push --linked` (confirmed via `migration list --linked`:
+  local and remote both list `20260810220000`). `lw_precheck_and_start_turn` now raises with an
+  explicit SQLSTATE for these two specific, already-existing exception sites — `42501`
+  (insufficient_privilege) for "run not found or not owned by caller" and for the idempotent-turn-id
+  ownership check, `22023` (invalid_parameter_value) for an invalid `selected_choice_id` and for a
+  `turn_id` reused across a different run. No other exception sites were touched — a deliberately
+  bounded change, not a general audit of every `raise exception` in the file.
+- **TypeScript boundary**: `repository.ts` gains `RepositoryForbiddenError`,
+  `RepositoryValidationError`, and a pure `mapRepositoryErrorToHttpStatus()` function — factored out
+  of the Deno-only `submit-turn/index.ts` specifically so this fix is unit-testable under
+  vitest/Node (4 new tests in `repository.test.ts`). `supabase-repository.ts` inspects
+  `PostgrestError.code` (the SQLSTATE PostgREST echoes back) and throws the typed error instead of a
+  generic `Error`; every other RPC error still falls through to a generic `Error` unchanged.
+  `submit-turn/index.ts`'s catch-all now calls `mapRepositoryErrorToHttpStatus()` instead of always
+  answering 500. `InMemoryTurnRepository` (the test double) throws the same typed errors for its
+  closest analogous conditions, so `turn-pipeline.test.ts` gained 2 new tests asserting the specific
+  error type, not just that *some* error was thrown.
+- **Live verification, not just source reading**: `submit-turn` was redeployed to `lorewish-dev`
+  (`supabase functions deploy submit-turn --import-map supabase/functions/deno.json` — the CLI's
+  auto-detection of `deno.json` did not fire without the explicit flag in this environment, a CLI
+  quirk unrelated to the fix itself) and a 7-probe live script — two ephemeral test accounts created
+  and deleted via the Auth Admin API, cleanup re-verified by re-query (0 remaining) — confirmed **all
+  7/7 pass**: cross-user submission → `403 {"error":"forbidden"}`; invalid choice id →
+  `400 {"error":"invalid_request"}`; the owner's own normal turn still succeeds (no regression); and
+  the daily `usage_counters` count for the owner ends at exactly 2 (start + the one real turn),
+  proving the two rejected attempts consumed no allowance. The probe script and its
+  service-role-key-bearing key file lived only in the session scratchpad, outside the repository, and
+  were deleted after use — not included in this task's handoff, matching LW-M2-R1's established
+  practice for this exact category of artifact.
+
+## Concurrent Allowance Overrun — Fixed (Option A, cheap reservation)
+
+LW-M2-R1's recorded known issue ("usage_counters may allow approximate overrun when the same user
+generates concurrently across different runs") is fixed in the same migration, not deferred to
+Option B (document-only):
+
+- The daily-cap check and the allowance reservation now happen **atomically in the same transaction**
+  as part of `lw_precheck_and_start_turn`: the existing `usage_counters` upsert already takes a row
+  lock on the caller's row, held for the rest of that transaction; the reservation increment was
+  moved to happen inside that same lock window (previously it happened only at `lw_commit_turn`, a
+  separate, later transaction after the network-bound provider call — the actual race window).
+  Concurrent precheck calls for the same user across *any* of their runs now serialize on this row,
+  closing the check-then-later-increment gap the old design had, not just the same-run case the
+  existing "one in-flight turn per run" guard already covered.
+- `lw_commit_turn` no longer increments `usage_counters` (already reserved at precheck).
+  `lw_fail_turn` releases the reservation (`generation_count - 1`, floored at 0, scoped to the
+  current UTC day) since a failed turn must not count against the cap — verified live by the same
+  probe run above (2 rejected/failed attempts, final count still exactly 2, not 4).
+- **Documented residual risk, not fixed further** (per the task brief's "do not overbuild a credit
+  ledger" instruction): if the Edge Function process is killed between the reservation and either
+  commit or fail (a platform execution-timeout kill, not a normal transport/quality-gate failure —
+  those already resolve via the existing retry/fail paths inside the same call), one allowance unit
+  leaks for that user until the next UTC day's reset. Judged acceptable for closed M2 testing; full
+  reservation-expiry/GC would start to resemble the M4 credit ledger this task is explicitly not
+  scoped to build.
+
+## Tests / CI
+
+- **54 tests, 5 files, all passing** (`npm test`, vitest) — was 35 in LW-M2-R1. New: 12
+  `providers.test.ts` (Gemini adapter parsing/cost/error-normalization/timeout/malformed-response),
+  4 `repository.test.ts` (the 403/400/500 HTTP-mapping cases), 3 new `turn-pipeline.test.ts` cases
+  (the two typed-error assertions above, plus a provider-agnostic proof that schema-valid-but-
+  quality-gate-failing output from *any* `NarrativeProvider` implementation — not only the fake
+  provider's own test hooks — is never committed as canon).
+- `tsc --noEmit`, `expo lint`, `npm run export:web` all re-run clean after this task's changes.
+- **CI**: unchanged from LW-M2-R1's shape. No provider keys, no paid/live model calls anywhere in
+  `.github/workflows/ci.yml` — the new `providers.test.ts` suite mocks `fetch` throughout, matching
+  the existing "deterministic, no network" rule for routine CI. Not yet re-verified on GitHub
+  Actions for this task's commits at the time this section was written; see the handoff's
+  `ci-results.txt` for whether a push happened before the handoff was finalized.
+
+## Security
+
+No new tables, RLS policies, or grants in this task's migration — only `create or replace` on three
+already-existing, already-least-privilege `SECURITY DEFINER` functions (same signatures, same
+`revoke ... from public, anon, authenticated` then explicit `grant ... to authenticated` pattern
+re-applied for auditability, per this project's standing rule that a function's grant is never
+assumed to persist correctly without being explicit in the migration that touches it).
+`supabase db advisors --linked`: **5 expected WARN** (unchanged — one per intentionally
+client-callable `lw_*` function, same as LW-M2-R1), **0 performance findings**. The live 7-probe
+verification above is itself a security regression check for the two functions this migration
+changed.
+
+## `PRODUCTION_POLICY_CONSTRAINT`
+
+Recorded in full in NARRATIVE_MODEL_EVALUATION.md §9, not repeated here in full: both Gemini's and
+DeepSeek's current API terms restrict the calling service to an 18+ audience, while Lorewish is an
+explicitly 13+, not-18+ product. **Lorewish's age policy was not changed** — this is flagged for
+owner/legal review before either provider is treated as production-eligible, per the task brief's
+explicit instruction not to resolve this automatically.
+
+## Known Issues / Unresolved (LW-M2-R2)
+
+- No real narrative-quality evidence exists for any provider — the entire point of this task's
+  brief — because no provider credential exists in this environment. This is not a partial result to
+  round up; `MODEL_SELECTION_REVIEW_REQUIRED` stands until an owner supplies a credential and a real
+  `npm run bakeoff` run happens.
+- The §9 policy constraint is a real, unresolved product/legal question, not a formality — it may
+  independently rule out Gemini and/or DeepSeek regardless of narrative quality.
+- DeepSeek's `response_format: json_object` does not enforce a response *shape* the way Gemini's
+  `responseSchema` or Anthropic's tool-forced schema do (NARRATIVE_MODEL_EVALUATION.md §8) — a real
+  capability gap a future DeepSeek adapter would need to design around (embedding the schema into
+  the prompt itself), not just a smaller implementation task than the other two adapters.
+- The crash-window allowance-leak tradeoff above (one unit, until next UTC day, only on a process
+  kill between reservation and commit/fail) is accepted, not eliminated.
+
+## M2-R2 Verdict
+
+**PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_NOT_RUN. MODEL_SELECTION_REVIEW_REQUIRED.**
+
+What is claimed: a real, doc-verified Gemini adapter exists and is unit-tested against its own
+contract; two known M2-R1 defects are fixed and verified with real live HTTP calls, not just code
+reading; the concurrent-allowance race is closed with a documented, bounded tradeoff; 54/54 tests
+pass; a real product/legal policy conflict was discovered and recorded rather than glossed over.
+
+What is **not** claimed: any real narrative-quality evidence, for any language, for any provider;
+any cost/latency/repair-rate data from a real model (§0 of NARRATIVE_MODEL_EVALUATION.md); a
+resolved model-selection decision; GitHub Actions CI results for this task's commits (not yet
+confirmed pushed-and-green at the time this section was written).
+
+**Recommended next task**: obtain `GEMINI_API_KEY` and, separately, resolve the §9 policy question —
+in either order, but both before running `npm run bakeoff` for real. If DeepSeek remains a candidate
+after §9 review, its adapter still needs to be built (§8's schema-shape gap should be designed for
+up front, not discovered mid-implementation).
+
+---
+
 **Task**: LW-M2-R1 — Real Interactive Story Engine Vertical Slice
 **Status**: **ENGINE_IMPLEMENTATION_PASS. REAL_NARRATIVE_PROVIDER_PENDING.** Every layer of the
 vertical slice is implemented, live-deployed to `lorewish-dev`, and verified against real HTTP
