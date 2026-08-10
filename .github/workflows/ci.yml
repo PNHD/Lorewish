@@ -143,8 +143,16 @@ jobs:
         run: |
           set -o pipefail
           WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -n1)
-          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json \
-            | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(d.workspace.schemes.find(s=>!s.includes('Pods'))||d.workspace.schemes[0]);")
+          # Expo prebuild names the main app scheme after the workspace itself
+          # (derived from app.json's "name"). The workspace also lists every
+          # CocoaPods dependency as its own scheme (EXConstants, RCTFabric,
+          # ...) — picking "the first non-Pods scheme" from that list is not
+          # reliable, since library schemes don't contain the literal string
+          # "Pods". Matching the workspace's own basename is exact instead of
+          # heuristic.
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          AVAILABLE_SCHEMES=$(xcodebuild -workspace "$WORKSPACE" -list -json | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(d.workspace.schemes.join(', '));")
+          echo "Available schemes: $AVAILABLE_SCHEMES"
           echo "WORKSPACE=$WORKSPACE" >> "$GITHUB_ENV"
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "Building $SCHEME from $WORKSPACE"
