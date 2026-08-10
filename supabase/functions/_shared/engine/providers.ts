@@ -308,6 +308,21 @@ export class DeepSeekNarrativeProvider implements NarrativeProvider {
           ],
           max_tokens: 2048,
           response_format: { type: "json_object" },
+          // LW-M2-R2 fix, found live: DeepSeek's V4 models default to a
+          // "thinking" mode whose reasoning tokens are drawn from the same
+          // max_tokens budget as the visible answer (confirmed via
+          // usage.completion_tokens_details.reasoning_tokens). For some
+          // prompts — Vietnamese narrative generation in particular —
+          // reasoning alone consumed the entire 2048-token budget, leaving
+          // ZERO tokens for the actual JSON content and producing an empty,
+          // unparseable response on every such call. Narrative generation
+          // has no use for chain-of-thought reasoning exposed to the
+          // player (the Anthropic adapter similarly never opts into
+          // extended thinking) — disabling it removes the failure mode
+          // entirely and is materially cheaper (verified live: 957 total
+          // tokens with thinking disabled vs. 2048 reasoning tokens and
+          // zero usable output with it left at its default).
+          thinking: { type: "disabled" },
         }),
       });
     } catch (err) {

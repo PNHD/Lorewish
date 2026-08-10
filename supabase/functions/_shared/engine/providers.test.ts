@@ -278,6 +278,18 @@ describe("DeepSeekNarrativeProvider — successful parse + accounting", () => {
     expect(requestBody.messages[0].content).toMatch(/narrative/);
     expect(requestBody.messages[0].content).toMatch(/boundary_kind/);
   });
+
+  it("LW-M2-R2: disables thinking mode — found live, default thinking can consume the entire max_tokens budget on reasoning and return empty content", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const provider = new DeepSeekNarrativeProvider("fake-key");
+    await provider.generateTurn(baseContext());
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const requestBody = JSON.parse(init.body as string);
+    expect(requestBody.thinking).toEqual({ type: "disabled" });
+  });
 });
 
 describe("DeepSeekNarrativeProvider — error normalization", () => {
