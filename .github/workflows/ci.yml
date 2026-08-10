@@ -32,8 +32,21 @@ on:
       - "handoff/**"
       - "*.md"
 
+# Keyed on the SOURCE branch, not github.ref. A push to a branch that has an
+# open PR raises two events, and github.ref differs between them
+# (refs/heads/<branch> vs refs/pull/<n>/merge), so the old key put them in
+# separate groups and both ran the full native matrix to completion — two
+# Android builds of one commit, ~80 minutes for ~40 minutes of information.
+# Observed directly on commit e4749e6: runs 31364937721 (push) and 31364972116
+# (pull_request) built the same SHA side by side.
+#
+# github.head_ref is set only for pull_request and holds the source branch;
+# github.ref_name is the branch for a push. Falling back between them puts both
+# events for one branch in one group, so cancel-in-progress leaves exactly one
+# matrix running. The surviving run is whichever event arrived last, and both
+# events describe the same commit, so no coverage is lost.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 env:

@@ -113,6 +113,18 @@ blindly.
   object privileges". This applies to every M2+ table (`PlayerRun`, `StoryState`, `CanonFact`,
   credit ledger, audit logs) without exception; run-scoped and billing tables are the ones where an
   over-broad default grant would hurt most.
+- **The same rule governs functions and sequences, and for the AI gateway it matters more than it
+  does for tables** *(added by LW-M1-R3)*. Postgres grants `EXECUTE` to the `PUBLIC` pseudo-role on
+  every new function by default, and this project's function default ACL additionally names `anon`
+  and `authenticated` — so a new `public` function is anonymously callable over the Data API's
+  `/rpc/` surface the moment it is created. **Every migration creating a function must
+  `revoke execute ... from public, anon, authenticated` first, and re-grant only when the function
+  is intentionally client-callable, with its intended caller role and authorization contract stated
+  in a comment.** This compounds with the `SECURITY DEFINER` point above: a definer-rights function
+  bypasses RLS completely, so one left at the default ACL is an anonymous, RLS-free entry point into
+  whatever it touches — precisely the shape the gateway, the materialization step and the allowance
+  check will have. Sequences follow the same pattern if `serial`/`identity` columns are ever
+  introduced (M1 uses `gen_random_uuid()`, so none exist).
 - **Realtime** is *not* needed for MVP (single-player, single-device-at-a-time experience per run).
   Justified use is deferred until a concrete need appears (e.g., a future multi-device
   "continue on another device instantly" feature) — do not wire it up speculatively.

@@ -139,7 +139,12 @@ Do not invert that. Do not write a migration that relies on the default being sa
 
 ### The rule, concretely
 
-Every migration creating a table in `public` must contain, for that table:
+The rule is about **every object kind whose default ACL can hand privileges to a client role** —
+tables, functions and sequences — not tables alone. Gap 2 above is not hypothetical: the function
+default still grants `EXECUTE` to `anon` and `authenticated`, so the *first* M2 RPC is anonymously
+callable the moment it is created unless its migration says otherwise.
+
+**Tables.** Every migration creating a table in `public` must contain, for that table:
 
 ```sql
 revoke all on table public.<name> from anon, authenticated;
@@ -148,21 +153,77 @@ grant <only the verbs the app actually calls> on public.<name> to authenticated;
 -- grant select on public.<name> to anon;
 ```
 
-Plus: enable RLS and write the policies. Plus: `revoke execute` on any new `public` function the
-client is not meant to call. Never grant TRUNCATE, TRIGGER or REFERENCES to a client role.
+Plus: enable RLS and write the policies. Never grant TRUNCATE, TRIGGER or REFERENCES to a client
+role.
 
-**Verify against the live database, never against the migration text.** The whole R2 defect was a
-migration that read correctly and a database that was not. The check is:
+**Functions / RPCs.** Every migration creating a function in `public` must **start** from no client
+access and add it back only deliberately:
 
 ```sql
+-- Always, immediately after create function — never omitted, never conditional:
+revoke execute on function public.<name>(<argtypes>) from public, anon, authenticated;
+
+-- Then, ONLY if this function is intentionally client-callable, re-grant to the
+-- narrowest role that must call it:
+-- grant execute on function public.<name>(<argtypes>) to authenticated;
+```
+
+`from public, anon, authenticated` — all three. `PUBLIC` is the pseudo-role Postgres grants `EXECUTE`
+to by default on every new function; revoking only `anon`/`authenticated` leaves the `PUBLIC` grant
+in place, and both roles still inherit it. The foundation migration's treatment of
+`handle_new_user()` is the correct pattern; `set_updated_at()` was the miss LW-M1-R3 closed.
+
+Every function that keeps a client `EXECUTE` grant must carry a comment stating its
+**authorization contract**:
+
+- which role is intended to call it (`authenticated`, or `service_role` / server-side only),
+- what it does with `auth.uid()` — a `SECURITY DEFINER` function runs with the definer's rights and
+  **bypasses RLS entirely**, so it must verify ownership itself rather than trusting any argument,
+- `set search_path = ''` with every reference schema-qualified, per Supabase's `SECURITY DEFINER`
+  guidance.
+
+A `SECURITY DEFINER` function granted to `anon` is a full RLS bypass reachable without a login.
+Treat any such grant as requiring an explicit, written justification, not a default.
+
+**Sequences.** If a table ever uses `serial`/`identity` (M1 uses `gen_random_uuid()` throughout, so
+none exist today), the same applies — a client role needs `USAGE` on the sequence to insert:
+
+```sql
+revoke all on sequence public.<name> from anon, authenticated;
+-- only if a client role genuinely inserts into the owning table:
+-- grant usage, select on sequence public.<name> to authenticated;
+```
+
+**Never assume the default ACL is safe for any of these three.** The R2 defect was exactly that
+assumption applied to tables; the function default is still live and still broad.
+
+**Verify against the live database, never against the migration text.** The whole R2 defect was a
+migration that read correctly and a database that was not. The checks are:
+
+```sql
+-- tables
 select grantee, table_name, string_agg(privilege_type, ', ' order by privilege_type)
 from information_schema.table_privileges
 where table_schema = 'public' and grantee in ('anon','authenticated')
 group by grantee, table_name order by grantee, table_name;
+
+-- functions: proacl must not name anon/authenticated, and must not be null
+-- (null = Postgres default = EXECUTE to PUBLIC), unless deliberately granted
+select p.proname, p.prosecdef as security_definer,
+       coalesce(p.proacl::text, '(null = default: EXECUTE to PUBLIC)') as proacl
+from pg_catalog.pg_proc p
+join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' order by p.proname;
+
+-- sequences
+select sequence_name, grantee, privilege_type
+from information_schema.usage_privileges
+where object_schema = 'public' and grantee in ('anon','authenticated');
 ```
 
-Run it with `supabase db query --linked "<sql>"` (Management API; needs no database password and no
-local Docker). `anon` must not appear at all for private tables.
+Run them with `supabase db query --linked "<sql>"` (Management API; needs no database password and no
+local Docker). `anon` must not appear at all for private tables, and a `proacl` of `(null)` on a new
+function means the revoke was forgotten.
 
 ## Auth — providers
 

@@ -82,12 +82,41 @@ the **function** default ACL, which still auto-grants `EXECUTE` to `anon`/`authe
 `public` functions; and any table created outside a `postgres`-role migration.
 
 **Therefore Option B is also adopted, as the primary control:** *every Lorewish migration creating
-an application table MUST revoke inherited/default client grants and then add exact explicit grants
-in the same migration.* Recorded as a non-negotiable rule in
+an application table, function or sequence MUST revoke inherited/default client grants and then add
+exact explicit grants in the same migration.* Recorded as a non-negotiable rule in
 [docs/DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md),
 [docs/TECHNICAL_ARCHITECTURE.md](docs/TECHNICAL_ARCHITECTURE.md) §4 and
 [docs/AGENT_TOOLING.md](docs/AGENT_TOOLING.md) standing rule 6. The default-privilege change is
 defence in depth, not the control.
+
+### Future public function / RPC privilege rule *(added by the R3 closeout correction)*
+
+The first statement of the Option-B rule was too table-centric. Gap 2 above — the still-broad
+**function** default ACL — is the one that will bite first, because M2 introduces RPCs and the AI
+gateway. Postgres grants `EXECUTE` to the `PUBLIC` pseudo-role on every new function by default, and
+this project's function default additionally names `anon` and `authenticated`, so a new `public`
+function is anonymously callable over `/rest/v1/rpc/` the moment it is created.
+
+Every future migration creating a `public` function must therefore:
+
+1. `revoke execute on function public.<name>(<argtypes>) from public, anon, authenticated;` —
+   **all three**. Revoking only `anon`/`authenticated` leaves the `PUBLIC` grant, which both roles
+   still inherit.
+2. Re-grant `EXECUTE` **only** when the function is intentionally client-callable, to the narrowest
+   role that must call it.
+3. Document the **intended caller role and authorization contract** in a comment: which role calls
+   it, what it does with `auth.uid()`, and — for `SECURITY DEFINER` — how it verifies ownership
+   itself, since definer rights bypass RLS entirely. A `SECURITY DEFINER` function granted to `anon`
+   is an anonymous, RLS-free entry point and needs written justification, never a default.
+4. **Never assume the function default ACL is safe.**
+
+The same explicit least-privilege principle applies to **sequences** if `serial`/`identity` columns
+are ever introduced — M1 uses `gen_random_uuid()` throughout, so none exist today.
+
+**The two existing helper functions were not touched by this correction.** Independent live
+inspection confirms `handle_new_user()` and `set_updated_at()` are already correctly restricted to
+`{postgres=X/postgres,service_role=X/postgres}`; this is a forward-looking rule, not a further
+migration.
 
 ## Security Regression — 30/30 PASS
 
@@ -124,13 +153,44 @@ accounts created and deleted via the Auth Admin API; cleanup verified by re-quer
   (not from a reported SHA), carries the R3 migration, docs and workflow change. A **draft** PR to
   `main` is open and deliberately **not merged** — the product owner / reviewer sees the R3 handoff
   first.
-- **CI cost fix**: `.github/workflows/ci.yml` gains `paths-ignore` (`docs/**`, `handoff/**`,
-  `*.md`) on both `push` and `pull_request`. Verified against real history: every one of the 16
-  files in `f97dd28` — the docs-only R2 commit that burned ~37 minutes of native runner time —
-  matches that list, so it would now be skipped entirely. `src/**`, `package.json`,
-  `package-lock.json`, `app.json`, `eas.json`, `assets/**`, `supabase/**` and `.github/**` are
-  deliberately absent and always trigger a full run. The workflow change itself is a `.github/**`
-  change and therefore does trigger one final full run, which is the intended and accepted cost.
+- **CI cost fix, part 1 — documentation-only pushes**: `.github/workflows/ci.yml` gains
+  `paths-ignore` (`docs/**`, `handoff/**`, `*.md`) on both `push` and `pull_request`. Verified
+  against real history: every one of the 16 files in `f97dd28` — the docs-only R2 commit that burned
+  ~37 minutes of native runner time — matches that list, so it would now be skipped entirely.
+  `src/**`, `package.json`, `package-lock.json`, `app.json`, `eas.json`, `assets/**`, `supabase/**`
+  and `.github/**` are deliberately absent and always trigger a full run.
+- **CI cost fix, part 2 — duplicate runs of one commit** *(added by the R3 closeout correction)*.
+  The first R3 commit `e4749e6` launched **two** full native matrices for the same SHA: run
+  `31364937721` (`push`) and run `31364972116` (`pull_request`). The concurrency key was
+  `${{ github.workflow }}-${{ github.ref }}`, and `github.ref` differs between the two events
+  (`refs/heads/feature/...` vs `refs/pull/1/merge`), so they landed in separate groups and neither
+  cancelled the other.
+
+  **This was not merely wasteful — the duplication caused both runs to fail.** The two matrices
+  contended for runners and each dragged the other past its own timeout, in *opposite* jobs:
+
+  | Job | `push` run `31364937721` | `pull_request` run `31364972116` | Solo baseline (R2) |
+  |---|---|---|---|
+  | Web / JS checks | success, 1m51s | success, 1m51s | ~2m |
+  | iOS Simulator | **success, 25m21s** | cancelled at 30m45s — hit `timeout-minutes: 30` | ~25m |
+  | Android (preview APK) | cancelled at 45m13s — hit `timeout-minutes: 45` | **success, 44m40s** | ~35m (runs `31352831669`, `31354813415`) |
+
+  Both runs therefore report `conclusion=cancelled`. The two Android jobs finished five seconds
+  apart (07:57:56Z and 07:58:01Z) after both being pulled from a ~35-minute solo baseline to ~45
+  minutes. **Every job in the matrix did pass for `e4749e6`** — iOS in the `push` run, Android in
+  the `pull_request` run, Web in both — so the commit itself is sound; the two runs simply sabotaged
+  each other. Neither timeout is evidence of a defect in the commit.
+
+  The key is now `${{ github.workflow }}-${{ github.head_ref || github.ref_name }}`: `head_ref` is
+  the source branch on `pull_request`, `ref_name` is the branch on `push`, so both events for one
+  branch share a group and `cancel-in-progress` leaves exactly one matrix running to completion.
+  Both events describe the same commit, so no coverage is lost. The conservative `paths-ignore`
+  behaviour is unchanged.
+
+  **Residual risk, recorded not fixed:** with contention removed the solo baselines (~25m iOS,
+  ~35m Android) sit inside the existing 30m / 45m caps, but the iOS margin is only ~18%. Raising
+  `timeout-minutes` was deliberately **not** bundled into this bounded correction; it is an open
+  recommendation for the owner.
 
 ## Native Evidence Status
 
@@ -146,13 +206,23 @@ accounts created and deleted via the Auth Admin API; cleanup verified by re-quer
 
 ## Implementation Head / Handoff Property
 
-Per this task's evidence rule, `IMPLEMENTATION_HEAD` is defined as the last committed
-source/schema/docs change required by the task — the single commit this task makes on
-`feature/lw-m1-foundation-closeout`. All handoff evidence is generated **from that commit, after it
-exists**, and `handoff/LW-M1-R3/` is deliberately **left untracked** so that packaging cannot move
-the head the evidence describes. Its exact SHA is recorded in `handoff/LW-M1-R3/HANDOFF.md`,
-`git-log.txt` and `git-status.txt` — this file does not guess at it, which is precisely the R2
-mistake (`handoff/LW-M1-R2/git-log.txt` stopped at an older HEAD than the report named).
+`IMPLEMENTATION_HEAD` is the last committed source/schema/docs change required by this task. It
+moved once, deliberately, during the R3 closeout:
+
+- **Superseded implementation head: `e4749e6`** — `fix: narrow M1 table privileges to least
+  privilege`. The privilege migration, the first docs pass and the `paths-ignore` CI filter. Its CI
+  run is what exposed the duplicate-run defect corrected below. Nothing in it was reverted.
+- **Current implementation head:** the single follow-up commit on
+  `feature/lw-m1-foundation-closeout` carrying the two closeout corrections — the
+  function/RPC/sequence privilege rule, and the CI concurrency key. Its exact SHA is recorded in
+  `handoff/LW-M1-R3/HANDOFF.md`, `git-log.txt` and `git-status.txt`.
+
+All handoff evidence was **regenerated in full** from the current head after it existed; nothing in
+the package describes only the superseded one. This file does not guess at either SHA in prose,
+which is precisely the R2 mistake (`handoff/LW-M1-R2/git-log.txt` stopped at an older HEAD than the
+report named). `handoff/LW-M1-R3/` is deliberately **left untracked** and
+`Lorewish_*_handoff.zip` is gitignored, so packaging cannot move the head its own evidence
+describes. No Supabase mutation was made after the privilege migration.
 
 ## M1 Verdict
 
