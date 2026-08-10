@@ -1,0 +1,44 @@
+=== npx expo export -p web ===
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+Static rendering is enabled. Learn more: https://docs.expo.dev/router/web/static-rendering/
+λ Bundled 1236ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1088 modules)
+Web Bundled 1444ms node_modules\expo-router\entry.js (970 modules)
+
+› web bundles (1):
+_expo/static/js/web/entry-fb8cdd4ada752c04d540f499c0a9890a.js (1.3MB)
+
+› Static routes (4):
+/ (index) (21KB)
+/preview (24KB)
+/_sitemap (17KB)
+/+not-found (17KB)
+
+Exported: dist
+
+=== dist/ contents ===
+dist
+dist/+not-found.html
+dist/_expo
+dist/_expo/.routes.json
+dist/_expo/static
+dist/_expo/static/js
+dist/_sitemap.html
+dist/assets
+dist/assets/node_modules
+dist/assets/node_modules/expo-router
+dist/favicon.ico
+dist/index.html
+dist/preview.html
+
+=== Cloudflare Pages deployment ===
+Project: lorewish (preferred name was available; no fallback needed)
+Live URL: https://lorewish.pages.dev
+Per-deployment URLs:
+  https://660f2a2e.lorewish.pages.dev (initial feature-branch-labeled deploy)
+  https://c1d0c3c4.lorewish.pages.dev (main-branch-labeled deploy, serves the root domain)
+Auth: pre-existing wrangler OAuth session on this machine (verified via 'wrangler whoami'
+  before acting; not configured by this task), account phamnhathaidang@gmail.com.
+No domain purchased. No paid Cloudflare plan. No Workers/Functions configured.

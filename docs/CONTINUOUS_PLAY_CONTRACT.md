@@ -275,6 +275,8 @@ cannot double-charge; a client that reconnects mid-generation reattaches instead
 | Precheck rejected the turn (allowance, ownership, input moderation) | **No** | No provider call was made |
 | User-initiated regeneration of a delivered scene | **Yes** | Per [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) §10 — no free unlimited retries |
 | "Replay from here" branch creation | **No** | No generation occurs (§6) |
+| Narrative quality-gate failure triggers the one automatic internal repair generation, and the repaired scene passes and commits | **Yes — exactly once** | One user intent, one debit, regardless of the internal repair — see [NARRATIVE_QUALITY_CONTRACT.md](NARRATIVE_QUALITY_CONTRACT.md) §D's billing rule. Provider cost may be incurred twice; the allowance debit is never doubled. |
+| Narrative quality-gate failure on both the initial attempt and the one repair attempt — turn resolves `GENERATION_FAILED`, no Scene committed | **No** | No canonical Scene exists to have been "delivered"; the platform absorbs the provider cost of the failed attempts (see [NARRATIVE_QUALITY_CONTRACT.md](NARRATIVE_QUALITY_CONTRACT.md) §D) |
 
 **Cost-abuse guard**: consecutive `output_blocked` turns on the same `scene_index` are capped
 (configuration, not a code constant). Beyond the cap the turn still resolves as

@@ -306,7 +306,34 @@ Permitted, bounded, never load-bearing.
 5. **Costed operations are owner-initiated**: cloud builds — including the **EAS iOS builds** that
    are now the project's default iOS path ([DECISIONS.md](DECISIONS.md) D24) — store submissions,
    and any paid AI API call.
-6. **Inspect before concluding, and inspect before deleting** *(added by LW-M0-R3)*. A repeated
+6. **Every migration creating an application table, function or sequence revokes default client
+   grants and adds exact explicit grants, in the same migration** *(added by LW-M1-R3,
+   non-negotiable)*. Never assume the project's default privileges are safe: LW-M1-R2 shipped a
+   migration whose explicit `grant` block was correct and whose live result gave `anon` all seven
+   table privileges, including `TRUNCATE`, because `pg_default_acl` had already granted `ALL` at
+   `create table` time. Grants and RLS are separate layers — correct row policies do not make an
+   unnecessary object privilege harmless.
+   - **Tables**: `revoke all ... from anon, authenticated`, then grant only the verbs the app calls.
+     Never TRUNCATE/TRIGGER/REFERENCES to a client role. Enable RLS and write policies.
+   - **Functions / RPCs**: `revoke execute on function ... from public, anon, authenticated` —
+     all three, because Postgres grants `EXECUTE` to the `PUBLIC` pseudo-role by default and this
+     project's function default ACL additionally names `anon`/`authenticated`. Re-grant only when
+     the function is intentionally client-callable, and state the intended caller role and the
+     authorization contract in a comment. A `SECURITY DEFINER` function bypasses RLS entirely, so
+     one left at the default ACL is an anonymous, RLS-free entry point.
+   - **Sequences**: same pattern if `serial`/`identity` is ever introduced.
+
+   The rule, the worked example and the residual gaps are in
+   [DEV_ENVIRONMENT.md](DEV_ENVIRONMENT.md) — "Data API object privileges".
+7. **A schema claim is verified against the live database, not against the migration text**
+   *(added by LW-M1-R3)*. "The migration says X" is not evidence that X is true of the database.
+   Query `information_schema.table_privileges`, `pg_policies` and `pg_default_acl` and paste the
+   result. `supabase db query --linked "<sql>"` does this through the Management API — no database
+   password, no local Docker. The same standard applies to a security probe's result: an anonymous
+   read returning `200 []` proves a row policy filtered the rows, **not** that the role lacks a
+   grant. If the claim is "no grant exists", the evidence must be a `42501 permission denied for
+   table ...` response or the privilege catalogue itself.
+8. **Inspect before concluding, and inspect before deleting** *(added by LW-M0-R3)*. A repeated
    directory name is not a duplicate; a junction is not a copy; a differing file is not
    necessarily drift. Establish what a thing *is* — link target, byte hash, creation time, which
    tool produced it — before recommending its removal. The skill-directory finding in the inventory

@@ -1,0 +1,4 @@
+{"migrations":[{"local":"20260810013158","remote":"20260810013158","time":"2026-08-10 01:31:58"}],"message":"Migrations listed"}
+
+--- gen types check ---
+src/types/database.types.ts generated via: supabase gen types typescript --project-id sfarcofvqfeobtcizxyv

@@ -1,0 +1,119 @@
+LW-M1-R2 — RLS Adversarial Security Probe Results
+Target: lorewish-dev (sfarcofvqfeobtcizxyv), public schema, tables: profiles, stories,
+story_configurations, worlds, characters.
+Method: real HTTPS calls to the Supabase Data API (PostgREST) using the modern publishable key
+(sb_publishable_...) plus real user JWTs obtained via password-grant login for two ephemeral test
+accounts (lw-r2-test-a@lorewish-test.dev / lw-r2-test-b@lorewish-test.dev), created and deleted via
+the Auth Admin API (service_role, used only from this ephemeral test tooling — never in client code,
+never committed). All test data (users, stories, worlds, story_configurations) was deleted after the
+run; nothing persists in the dev database from this probe.
+
+Supabase advisors (supabase db advisors --linked --type all --level info): 0 findings after the
+final probe run (see supabase-advisors.txt) — an earlier run reported 3 INFO-level "unused_index"
+performance notices on the newly-created FK indexes (stories_owner_user_id_idx, worlds_story_id_idx,
+characters_story_id_idx), which cleared once the probe run's queries exercised them.
+
+--- Probe 1: profiles auto-creation trigger ---
+A reads own profile (GET /rest/v1/profiles) immediately after signup, no explicit insert call made.
+status=200, body=[{"id":"<A>","preferred_ui_locale":"en"}]
+PASS — the auth.users trigger (handle_new_user) created exactly one profile row for A, defaulted to
+"en" as specified.
+
+--- Probe 2: unauthenticated read of stories (before any row existed) ---
+GET /rest/v1/stories with only the publishable (anon) key, no user Authorization.
+status=200, body=[]
+PASS — no cross-user or unauthenticated row ever returned in any probe below either.
+
+--- Probe 3: RLS blocks a null-owner insert attempt ---
+A POSTs a story with owner_user_id explicitly set to null.
+status=403, {"code":"42501","message":"new row violates row-level security policy for table \"stories\""}
+PASS — the WITH CHECK clause ((select auth.uid()) = owner_user_id) rejects it before the NOT NULL
+column constraint would even be reached; RLS is the first line of defense, not an afterthought.
+
+--- Probe 4: A creates own story (owner_user_id = A's real auth.uid()) ---
+status=201, row returned, owner_user_id = A, visibility="private", status="draft" (defaults applied).
+PASS (control case).
+
+--- Probe 5: B reads A's story by id ---
+GET /rest/v1/stories?id=eq.<story_a>, as B.
+status=200, body=[]
+PASS — cross-user read returns zero rows, not an error leaking existence, not the data.
+
+--- Probe 6: unauthenticated reads A's story by id ---
+status=200, body=[]
+PASS.
+
+--- Probe 7: B updates A's story title ---
+PATCH /rest/v1/stories?id=eq.<story_a>, as B, {"title":"Hijacked by B"}.
+status=200, body=[] (zero rows affected — Postgres UPDATE requires a matching SELECT-visible row
+under RLS; B's policy predicate excludes A's row entirely, so the WHERE-equivalent scan matches
+nothing)
+PASS — title unmodified (re-verified in Probe 9).
+
+--- Probe 8: B deletes A's story ---
+DELETE /rest/v1/stories?id=eq.<story_a>, as B.
+status=200, body=[] (zero rows affected)
+PASS — row still exists afterward (re-verified in Probe 9).
+
+--- Probe 9: A attempts to reassign own story's owner_user_id to B (ownership tamper) ---
+PATCH /rest/v1/stories?id=eq.<story_a>, as A, {"owner_user_id":"<B>"}.
+status=403, {"code":"42501","message":"new row violates row-level security policy for table \"stories\""}
+PASS — WITH CHECK on UPDATE blocks the client from ever reassigning ownership, not just blocking
+other users' writes.
+
+--- Probe 10: A re-reads own story after all attacks ---
+status=200, title still "A's Private Story", owner_user_id still A.
+PASS — none of probes 5-9 altered or removed the row.
+
+--- Probe 11: B attaches a world to A's story_id (child-record cross-story attach) ---
+POST /rest/v1/worlds, as B, {"story_id":"<story_a>","name":"B's hostile world"}.
+status=403, {"code":"42501","message":"new row violates row-level security policy for table \"worlds\""}
+PASS — ownership-via-parent-story check on worlds correctly rejects attaching to a story B does not
+own.
+
+--- Probe 12: B attaches a character to A's story_id ---
+POST /rest/v1/characters, as B, {"story_id":"<story_a>","name":"B's hostile character"}.
+status=403, same policy violation.
+PASS.
+
+--- Probe 13: A attaches a world to own story (control) ---
+status=201, succeeds.
+PASS.
+
+--- Probe 14: A attaches story_configurations to own story (control) ---
+status=201, succeeds ({"tone":"light","narrative_pov":"second_person","randomness_mode":"off", ...}).
+PASS.
+
+--- Probe 15: B reads A's story_configurations ---
+GET /rest/v1/story_configurations?story_id=eq.<story_a>, as B.
+status=200, body=[]
+PASS.
+
+--- Cleanup ---
+A deletes own test story: status=204 (cascades worlds/characters/story_configurations via ON DELETE
+CASCADE — verified no orphan rows possible by construction, not separately re-queried since the FK
+constraints are ON DELETE CASCADE).
+Test users A and B deleted via Auth Admin API: status=200/200 each.
+
+--- Live-production auth verification (separate from the probes above) ---
+A third ephemeral pre-confirmed account (lw-r2-ui-e2e@lorewish-test.dev) was used to verify the
+actual /account UI end-to-end against http://localhost:8081 (dev server) and again against
+https://lorewish.pages.dev (production): sign in succeeds, the session survives a hard reload of
+/account, sign-out returns to the sign-in form. A fourth account
+(lw-r2-prod-e2e@lorewish-test.dev) repeated the sign-in/sign-out check specifically on the live
+production URL. Both accounts were deleted via the Auth Admin API after verification.
+
+A real sign-up attempt with a syntactically valid but non-existent-domain email
+(lw-r2-ui-signup@lorewish-test.dev) was rejected by Supabase's own email-address validation
+(email_address_invalid) before any email send was attempted — confirms the UI's invalid_email
+error-code mapping is reachable, not just theoretical. A second sign-up attempt with a
+realistic-looking domain reached email confirmation (429 over_email_send_rate_limit — an email send
+was genuinely attempted, proving email confirmation is on, matching the secure default this task
+was told to preserve).
+
+=== SUMMARY ===
+15/15 adversarial RLS probes passed. No cross-user read, no cross-user write, no unauthenticated
+read, no owner-tamper, no cross-story child-record attach succeeded. All control (own-data)
+operations succeeded normally. 0 security findings from `supabase db advisors`. Full email/password
+auth flow (sign up validation, check-email/confirmation send, sign in, session persistence across
+reload, sign out) verified against both the dev server and the live production deployment.

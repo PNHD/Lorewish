@@ -1,0 +1,60 @@
+{
+  "common": {
+    "appName": "Lorewish",
+    "tagline": "Bước vào một thế giới nhớ bạn.",
+    "back": "Quay lại",
+    "languageLabel": "Ngôn ngữ",
+    "languageEnglish": "English",
+    "languageVietnamese": "Tiếng Việt"
+  },
+  "home": {
+    "heading": "Bước vào một thế giới nhớ bạn.",
+    "subheading": "Lorewish là ứng dụng nhập vai tương tác dành cho một người chơi — bạn đưa ra lựa chọn, gặp những nhân vật nhớ rõ về bạn, và chứng kiến câu chuyện đổi thay theo chính những gì bạn đã làm.",
+    "previewCta": "Thử bản xem trước",
+    "previewCaption": "Một đoạn trích ngắn, chạy ngoại tuyến, cho thấy trải nghiệm đọc trong Lorewish. Không cần tài khoản.",
+    "foundationNote": "Bản dựng nền tảng — Android, iOS và Web dùng chung một mã nguồn.",
+    "accountLink": "Tài khoản"
+  },
+  "preview": {
+    "screenTitle": "Xem trước trải nghiệm đọc",
+    "backToHome": "Về trang chủ",
+    "fixtureNotice": "Cảnh mẫu, chưa kết nối với AI.",
+    "youLabel": "Bạn",
+    "whatChanged": "Điều vừa thay đổi",
+    "choicesHeading": "Bạn sẽ làm gì?",
+    "composerPlaceholder": "Hoặc tự viết hành động của riêng bạn…",
+    "composerSend": "Gửi",
+    "continueLabel": "Tiếp tục",
+    "replayFromHereLabel": "Chơi lại từ đây",
+    "replayFromCheckpointLabel": "Chơi lại từ điểm lưu",
+    "startAgainLabel": "Bắt đầu lại",
+    "checkpointBadge": "Đã đến điểm lưu",
+    "endingBadge": "Đã đến đoạn kết"
+  },
+  "account": {
+    "screenTitle": "Tài khoản",
+    "backToHome": "Về trang chủ",
+    "loading": "Đang tải…",
+    "signedInAs": "Đã đăng nhập với %{email}",
+    "signOut": "Đăng xuất",
+    "signOutError": "Không thể đăng xuất. Vui lòng thử lại.",
+    "emailLabel": "Email",
+    "passwordLabel": "Mật khẩu",
+    "signInTab": "Đăng nhập",
+    "signUpTab": "Đăng ký",
+    "signInSubmit": "Đăng nhập",
+    "signUpSubmit": "Tạo tài khoản",
+    "switchToSignUp": "Chưa có tài khoản? Đăng ký ngay",
+    "switchToSignIn": "Đã có tài khoản? Đăng nhập",
+    "checkEmailHeading": "Kiểm tra email của bạn",
+    "checkEmailBody": "Chúng tôi đã gửi một liên kết xác nhận đến %{email}. Mở liên kết đó để kích hoạt tài khoản, sau đó quay lại đây để đăng nhập.",
+    "backToSignIn": "Quay lại đăng nhập",
+    "errorInvalidCredentials": "Email hoặc mật khẩu không đúng.",
+    "errorEmailNotConfirmed": "Vui lòng xác nhận email trước khi đăng nhập — kiểm tra hộp thư của bạn để lấy liên kết.",
+    "errorUserAlreadyExists": "Đã có tài khoản dùng email này. Hãy thử đăng nhập.",
+    "errorWeakPassword": "Vui lòng chọn mật khẩu dài hơn (ít nhất 6 ký tự).",
+    "errorInvalidEmail": "Địa chỉ email đó có vẻ không hợp lệ. Vui lòng kiểm tra lại và thử lại.",
+    "errorUnknown": "Đã có lỗi xảy ra. Vui lòng thử lại.",
+    "guestNotice": "Bạn không cần tài khoản để thử bản xem trước — mục này luôn mở cho tất cả mọi người."
+  }
+}

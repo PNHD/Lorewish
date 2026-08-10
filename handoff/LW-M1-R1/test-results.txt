@@ -1,0 +1,52 @@
+=== npx expo-doctor ===
+Running 20 checks on your project...
+20/20 checks passed. No issues detected!
+
+=== npx tsc --noEmit ===
+(no output = zero errors)
+
+=== npx expo lint ===
+(no output = zero errors/warnings)
+
+=== Secret / credential scan (src/, app.json, package.json) ===
+(no output above = clean)
+
+=== 'To be continued' string search (src/ + exported dist/) ===
+(no output above = none found)
+
+=== npm audit summary (informational, not blocking) ===
+      @expo/prebuild-config  *
+      Depends on vulnerable versions of @expo/config
+      Depends on vulnerable versions of @expo/config-plugins
+      node_modules/@expo/prebuild-config
+      expo-splash-screen  55.0.10-canary-20260424-7bedc9d - 55.0.10-canary-20260429-a5e59cf || >=56.0.0-canary-20260212-4f61309
+      Depends on vulnerable versions of @expo/config-plugins
+      node_modules/expo-splash-screen
+
+22 vulnerabilities (8 moderate, 14 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+=== Interactive browser validation (manual, against production 'expo export -p web' output served via wrangler/serve) ===
+- Home (EN): renders, no console errors. Verified via get_page_text + read_console_messages.
+- Home -> /preview (EN): choice path start -> market checkpoint -> Continue -> TERMINAL_ENDING ->
+  "Replay from a checkpoint" -> lands back at market checkpoint, Continue re-enabled. No dead end.
+- Language switch to VI: instant, diacritics correct, document.documentElement.lang === "vi".
+- /preview (VI) custom-action path: typed long Vietnamese text in composer -> Send -> "custom"
+  checkpoint node with player's own text echoed in PLAYER ACTION channel -> Continue -> ending.
+- Composer long-paste test: 4,980-char Vietnamese paste; textarea.scrollHeight (1568px) >>
+  clientHeight (198px, 7-line clamp); Send button bounding rect stayed fully inside viewport at
+  1280x720. No horizontal scroll at 1280px or 375px (mobile) width.
+- Direct navigation to /preview and full reload at mobile viewport (375x812): fresh start state,
+  VI locale persisted across reload via AsyncStorage/localStorage, no console errors.
+- Network requests: all 200 OK (index, preview, JS bundle); no 404s.
+- String search for "to be continued" / Vietnamese equivalent: none found in src/ or dist/.
+- No console errors observed at any point in this session.
+- Screenshots: NOT captured. The Browser pane in this environment could not composite frames for
+  pixel screenshots ("the Browser pane is not displayed, so the page is not compositing frames").
+  All validation above used real DOM/console/network inspection against the actual running
+  production build, not source-reading alone -- but no image files exist to attach.

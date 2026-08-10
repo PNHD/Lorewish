@@ -18,7 +18,7 @@ node_modules/
 .expo-shared/
 dist/
 web-build/
-expo-env.d.ts
+/expo-env.d.ts
 
 # Native build output
 *.orig.*
@@ -49,6 +49,9 @@ android/
 *.secrets.json
 supabase/.env
 supabase/.temp/
+
+# Cloudflare wrangler local session/cache state
+.wrangler/
 
 # Logs
 npm-debug.*

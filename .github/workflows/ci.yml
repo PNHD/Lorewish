@@ -1,0 +1,333 @@
+name: CI
+
+# Web/JS checks on every push and PR; Android + iOS Simulator native builds are
+# the M1 native-foundation evidence bar (LW-M1-R2). Standard GitHub-hosted
+# runners only (ubuntu-latest, macos-latest) — no larger/paid runner classes.
+# No EAS account or build quota is used anywhere in this workflow.
+
+# Cost control (LW-M1-R3): the Android job alone runs 35-45 minutes per push. The
+# final LW-M1-R2 commit (f97dd28) changed only CURRENT_WORK.md and handoff/ and
+# still launched the full native matrix — ~37 minutes of runner time that could
+# not have told us anything, because no input to a native build had changed.
+#
+# `paths-ignore` skips a run only when EVERY changed file in the push matches, so
+# a commit touching one doc and one source file still builds. The list below is
+# deliberately limited to files that are never inputs to a build: prose and
+# review artifacts. Everything that can affect the app or the pipeline —
+# src/**, package.json, package-lock.json, app.json, eas.json, assets/**,
+# tsconfig.json, eslint.config.js, supabase/**, and .github/** itself — is
+# absent from this list on purpose and always triggers a full run. When in
+# doubt, leave a path out: the failure mode of an unnecessary build is wasted
+# minutes, the failure mode of a wrongly skipped one is unverified code.
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths-ignore:
+      - "docs/**"
+      - "handoff/**"
+      - "*.md"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "handoff/**"
+      - "*.md"
+
+# Keyed on the SOURCE branch, not github.ref. A push to a branch that has an
+# open PR raises two events, and github.ref differs between them
+# (refs/heads/<branch> vs refs/pull/<n>/merge), so the old key put them in
+# separate groups and both ran the full native matrix to completion — two
+# Android builds of one commit, ~80 minutes for ~40 minutes of information.
+# Observed directly on commit e4749e6: runs 31364937721 (push) and 31364972116
+# (pull_request) built the same SHA side by side.
+#
+# github.head_ref is set only for pull_request and holds the source branch;
+# github.ref_name is the branch for a push. Falling back between them puts both
+# events for one branch in one group, so cancel-in-progress leaves exactly one
+# matrix running. The surviving run is whichever event arrived last, and both
+# events describe the same commit, so no coverage is lost.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+# Least-privilege token for a PUBLIC repository. Every job here only reads the
+# checkout and uploads artifacts; none needs write access to the repo, and a
+# public repo means fork PRs can propose arbitrary workflow-adjacent code.
+permissions:
+  contents: read
+
+env:
+  # Placeholder values only — not real Supabase credentials. The Supabase
+  # client (src/lib/supabase.ts) is constructed lazily and throws if these
+  # are absent; native builds don't need a working backend to prove the app
+  # compiles, installs, and launches, so a well-formed placeholder is enough
+  # to satisfy the presence check without touching the real dev project.
+  EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_0000000000000000
+
+# Fork-PR policy for a PUBLIC repository (LW-M1-R3 closeout).
+#
+# The native matrix is expensive (~25m macOS + ~35m ubuntu) and, on a public
+# repo, any stranger can open a PR. So the two native jobs are gated on the PR
+# coming from THIS repository; a fork PR gets the cheap web/JS job only, which
+# is enough to tell an outside contributor whether their change typechecks,
+# lints and exports. A maintainer who wants full native coverage for a fork PR
+# pushes the branch into this repo (or merges it to a feature branch), which
+# satisfies the same condition — so this withholds cost, never correctness.
+#
+# Owner-authored work is unaffected: `github.event_name == 'push'` covers every
+# push to main and feature/**, and same-repo PRs match the second clause. There
+# is no path by which an owner source commit gets less validation than before.
+#
+# This workflow deliberately uses `pull_request`, never `pull_request_target`:
+# `pull_request` runs fork code against a read-only token with no access to
+# repository secrets, which is exactly what we want. Do NOT switch to
+# `pull_request_target` to "make secrets available to PRs" — that runs with the
+# base repo's privileges and is the classic fork-PR compromise. This workflow
+# needs no secrets at all: the Supabase values above are non-functional
+# placeholders, and native builds prove compilation, not backend connectivity.
+jobs:
+  web:
+    name: Web / JS checks
+    # Runs for everyone, including fork PRs — cheap, no secrets, no privilege.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production web export
+        run: npm run export:web
+
+  android:
+    name: Android (preview APK)
+    # Same-repository work only: every push, plus PRs whose head branch lives in
+    # this repo. Fork PRs skip this job (see the fork-PR policy note above).
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # A cold Gradle cache (first-ever run: no prior actions/cache hit) took
+    # longer than 30 minutes to compile the full RN + Expo native stack from
+    # scratch — bumped so a first run has room to finish and populate the
+    # cache for subsequent ones.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        # A first-attempt run of this job failed silently mid-compile (the
+        # step never reported a conclusion, consistent with the runner
+        # process being killed rather than Gradle exiting with an error) —
+        # standard GitHub ubuntu-latest runners ship with large SDKs this
+        # project never uses (a full .NET SDK, Android NDK versions beyond
+        # what Expo needs, GHC, Boost) eating into the ~14GB free by
+        # default, which a cold RN/Expo Android build can exceed. Removing
+        # them is the free fix (vs. a larger/paid runner, which the cost
+        # policy for this task rules out).
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+            "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android/sdk/ndk \
+            2>/dev/null || true
+          df -h /
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - run: npm ci
+
+      - name: Expo prebuild (Android)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build preview APK (release build type, debug-signed)
+        # The "debug" build type intentionally skips embedding the JS
+        # bundle (React Native's Gradle plugin only runs the bundle task
+        # for non-debuggable variants) — installing that APK without a
+        # Metro server attached shows a red "no script URL provided" error,
+        # not the app (confirmed by the first attempt's iOS screenshot,
+        # which hit the same skip-for-debug logic). Expo's generated
+        # android/app/build.gradle signs the "release" build type with the
+        # auto-generated debug keystore by default (no credentials.json in
+        # this project), so `assembleRelease` here produces a normal
+        # installable, self-contained APK — no real signing key involved,
+        # still not Play-Store-signed.
+        working-directory: android
+        run: |
+          mkdir -p ../artifacts ../logs
+          chmod +x ./gradlew
+          set -o pipefail
+          df -h / | tee -a ../logs/android-build.log
+          ./gradlew assembleRelease --no-daemon --stacktrace | tee -a ../logs/android-build.log
+
+      - name: Collect APK
+        run: |
+          find android/app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \;
+          ls -la artifacts/
+
+      - name: Upload APK and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lorewish-android-preview
+          path: |
+            artifacts/
+            logs/
+          if-no-files-found: warn
+
+  ios-simulator:
+    name: iOS Simulator (build, install, launch)
+    # Same-repository work only — see the android job and the fork-PR policy note.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Expo prebuild (iOS)
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: pod install
+
+      - name: Boot an available iPhone simulator
+        run: |
+          mkdir -p artifacts logs
+          DEVICE_ID=$(xcrun simctl list devices available -j \
+            | jq -r '.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone")) | .udid' \
+            | head -n1)
+          if [ -z "$DEVICE_ID" ]; then
+            echo "No available iPhone simulator found on this runner image" >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$DEVICE_ID" -b || xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+      - name: Discover workspace/scheme and build without signing
+        working-directory: ios
+        run: |
+          set -o pipefail
+          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -n1)
+          # Expo prebuild names the main app scheme after the workspace itself
+          # (derived from app.json's "name"). The workspace also lists every
+          # CocoaPods dependency as its own scheme (EXConstants, RCTFabric,
+          # ...) — picking "the first non-Pods scheme" from that list is not
+          # reliable, since library schemes don't contain the literal string
+          # "Pods". Matching the workspace's own basename is exact instead of
+          # heuristic.
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          AVAILABLE_SCHEMES=$(xcodebuild -workspace "$WORKSPACE" -list -json | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(d.workspace.schemes.join(', '));")
+          echo "Available schemes: $AVAILABLE_SCHEMES"
+          echo "WORKSPACE=$WORKSPACE" >> "$GITHUB_ENV"
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "Building $SCHEME from $WORKSPACE"
+          # Release, not Debug: React Native's own build-phase script
+          # (react-native-xcode.sh) unconditionally skips embedding the JS
+          # bundle for a Debug+Simulator build, expecting a live Metro
+          # server instead — a first attempt confirmed this exactly (the
+          # captured screenshot showed RN's own "No script URL provided"
+          # error, not the app, even though the process was genuinely
+          # running). Release always bundles, and needs no code signing on
+          # simulator either way. This also matches Appetize's own
+          # documented expectation of a Release-configuration build for
+          # uploaded simulator .app bundles.
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath ../DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee ../logs/ios-build.log
+
+      - name: Find built .app bundle
+        run: |
+          # maxdepth 2: Products/<Configuration>-iphonesimulator/<App>.app —
+          # depth 1 only reaches the per-configuration directory itself, not
+          # the .app bundle one level inside it.
+          APP_PATH=$(find DerivedData/Build/Products -maxdepth 2 -name "*.app" | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app bundle found under DerivedData/Build/Products" >&2
+            find DerivedData/Build/Products -maxdepth 2 >&2 || true
+            exit 1
+          fi
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+          echo "BUNDLE_ID=$BUNDLE_ID" >> "$GITHUB_ENV"
+          echo "Found $APP_PATH ($BUNDLE_ID)"
+
+      - name: Install, launch, and verify the process is alive
+        run: |
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+          xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID"
+          sleep 5
+          # simctl spawn ps confirms the launched process is actually running
+          # in the simulator, not just that `launch` returned a PID.
+          if ! xcrun simctl spawn "$DEVICE_ID" launchctl list | grep -q "$BUNDLE_ID"; then
+            echo "App process not found running after launch" >&2
+            exit 1
+          fi
+          echo "App is running in the simulator."
+          xcrun simctl io "$DEVICE_ID" screenshot artifacts/lorewish-ios-simulator.png
+
+      - name: Zip the simulator .app bundle (Appetize-compatible)
+        if: always()
+        run: |
+          mkdir -p artifacts
+          if [ -d "$APP_PATH" ]; then
+            APP_NAME=$(basename "$APP_PATH")
+            # Zip the .app itself at the archive root (not its parent dir) —
+            # the shape Appetize's simulator-build upload expects.
+            (cd "$(dirname "$APP_PATH")" && zip -r -q -X "$OLDPWD/artifacts/Lorewish-iOS-Simulator.app.zip" "$APP_NAME")
+          fi
+
+      - name: Upload logs, screenshot, and zipped app bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lorewish-ios-simulator
+          path: |
+            artifacts/
+            logs/
+          if-no-files-found: warn

@@ -100,6 +100,31 @@ blindly.
   PlayerRun it is acting on. RLS is the second line of defence, not the only one. A gateway
   function that trusts a client-supplied `player_run_id` without an ownership check is a data-leak
   and a billing-abuse vector at the same time.
+- **Object privileges and RLS are separate layers, and both must be right** *(added by LW-M1-R3)*.
+  A Postgres `GRANT` decides whether a role can touch a table at all; an RLS policy decides which
+  *rows* it sees once it can. Row policies do not govern `TRUNCATE` — a whole-table operation — and
+  never see `REFERENCES` or `TRIGGER`. So a table can have flawless owner-only policies and still be
+  truncatable by an anonymous client, which is exactly the state LW-M1-R2 shipped and LW-M1-R3
+  corrected. **Every migration that creates an application table must revoke inherited/default
+  client grants and then add exact explicit grants, in the same migration** — the project default
+  cannot be assumed safe, and the check is a live query against
+  `information_schema.table_privileges`, not a reading of the migration file. Full rule, the R2
+  defect it comes from, and the residual gaps: [DEV_ENVIRONMENT.md](DEV_ENVIRONMENT.md) — "Data API
+  object privileges". This applies to every M2+ table (`PlayerRun`, `StoryState`, `CanonFact`,
+  credit ledger, audit logs) without exception; run-scoped and billing tables are the ones where an
+  over-broad default grant would hurt most.
+- **The same rule governs functions and sequences, and for the AI gateway it matters more than it
+  does for tables** *(added by LW-M1-R3)*. Postgres grants `EXECUTE` to the `PUBLIC` pseudo-role on
+  every new function by default, and this project's function default ACL additionally names `anon`
+  and `authenticated` — so a new `public` function is anonymously callable over the Data API's
+  `/rpc/` surface the moment it is created. **Every migration creating a function must
+  `revoke execute ... from public, anon, authenticated` first, and re-grant only when the function
+  is intentionally client-callable, with its intended caller role and authorization contract stated
+  in a comment.** This compounds with the `SECURITY DEFINER` point above: a definer-rights function
+  bypasses RLS completely, so one left at the default ACL is an anonymous, RLS-free entry point into
+  whatever it touches — precisely the shape the gateway, the materialization step and the allowance
+  check will have. Sequences follow the same pattern if `serial`/`identity` columns are ever
+  introduced (M1 uses `gen_random_uuid()`, so none exist).
 - **Realtime** is *not* needed for MVP (single-player, single-device-at-a-time experience per run).
   Justified use is deferred until a concrete need appears (e.g., a future multi-device
   "continue on another device instantly" feature) — do not wire it up speculatively.

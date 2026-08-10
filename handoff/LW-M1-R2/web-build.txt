@@ -1,0 +1,21 @@
+LW-M1-R2 — Web Build / Deploy Record
+
+Build: `npx expo export -p web` (web.output = "static" in app.json, Expo's default).
+Static routes: /, /account, /preview, /_sitemap, /+not-found.
+
+Deploy: `npx wrangler pages deploy dist --project-name=lorewish --branch=main`
+(same project as LW-M1-R1 — `lorewish`, pre-existing wrangler OAuth session, verified via
+`wrangler whoami` before acting).
+
+Result: Success. Per-deployment URL: https://c5198a20.lorewish.pages.dev
+Production URL (unchanged since R1): https://lorewish.pages.dev
+
+Live verification (interactive browser session against the production URL, not source-reading):
+- / — loads, no console errors, Account link now present alongside the language switcher.
+- /account — direct-route load (not client-side navigation) succeeds, no console errors. Sign-in
+  form renders in EN and VI. Sign-in with a pre-confirmed test account reaches the signed-in view;
+  sign-out returns to the form.
+- /preview — remains fully playable with zero authentication. Custom-action player-action banner
+  re-verified in EN and VI on the live production build: no duplicated "You/You:" or "Ban/Ban:"
+  label (R1-F1 fix confirmed live, not just on the dev server).
+- No console-breaking errors observed on any of the three routes, in either language.

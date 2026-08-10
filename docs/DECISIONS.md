@@ -730,3 +730,31 @@ default architecture).
 gateway and prompt-construction design. See
 [NARRATIVE_QUALITY_CONTRACT.md](NARRATIVE_QUALITY_CONTRACT.md) for the full product/engineering
 contract this decision anchors.
+
+---
+
+## D35 — App Icon And Splash Assets Are PLACEHOLDER, Not Final Identity
+
+**Decision**: the app icon, adaptive-icon layers, splash image, and favicon shipped in
+`assets/images/` and `assets/expo.icon/` since LW-M1-R1 are the **Expo scaffold's default
+template assets** (`npx create-expo-app`'s stock icon/splash artwork, not a designed Lorewish
+mark). They are acceptable to keep as temporary M1 placeholders — no design task was spent on a
+final logo in LW-M1-R1 or LW-M1-R2 — but they are explicitly marked here as
+**PLACEHOLDER — MUST REPLACE BEFORE EXTERNAL BETA**, so no later reader of `app.json`,
+a build artifact, or a screenshot mistakes them for an intentional final Lorewish visual identity.
+
+**Rationale**: `app.json`, the EAS build outputs, and the Android/iOS build evidence in
+`handoff/LW-M1-R2/` all reference or display these assets as a side effect of getting the native
+foundation to compile and run — not because a branding decision was made. Leaving that ambiguous in
+documentation risks a future task (or an external tester) treating the stock template icon as the
+shipped brand.
+
+**What this does not do**: it does not schedule, staff, or scope the actual logo/identity design
+work — that remains an explicitly separate future task, not implied to be small or already
+underway.
+
+**Status**: ACCEPTED. No design action taken. Tracked as a standing M1→beta blocker: the assets at
+`./assets/images/icon.png`, `./assets/images/android-icon-*.png`, `./assets/images/favicon.png`,
+`./assets/images/splash-icon.png`, and `./assets/expo.icon/` must be replaced with a designed
+Lorewish identity before any external beta distribution (TestFlight external group, Play Store
+open/closed testing beyond internal, or any public build link).

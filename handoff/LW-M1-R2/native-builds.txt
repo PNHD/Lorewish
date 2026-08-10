@@ -1,0 +1,106 @@
+LW-M1-R2 — Native Build Evidence (GitHub Actions, not EAS)
+
+Per explicit owner decision made mid-task, EAS was not used for native build evidence. GitHub
+Actions on standard GitHub-hosted runners (ubuntu-latest, macos-latest) replaced it, modeled on the
+owner's existing PNHD/focelle-ios iOS CI workflow (principles, not the Swift-specific
+implementation). No `eas login` occurred; no EAS build quota was consumed anywhere in this task.
+
+Repository: https://github.com/PNHD/Lorewish (PRIVATE, created fresh — no GitHub remote existed for
+this project before this task).
+Branch: feature/lw-m1-backend-native-foundation
+Workflow file: .github/workflows/ci.yml
+
+=== FINAL SUCCESSFUL RUN ===
+
+Run: https://github.com/PNHD/Lorewish/actions/runs/31354813415
+Commit: 5fd64d4 ("fix: build release-configured native artifacts, not debug ones")
+Status: SUCCESS — all three jobs passed.
+
+| Job | Runner | Duration | Result |
+|---|---|---|---|
+| Web / JS checks | ubuntu-latest | ~1m45s | success |
+| Android (preview APK) | ubuntu-latest | ~35m19s (Gradle build itself) | success |
+| iOS Simulator (build, install, launch) | macos-latest | ~19-20m | success |
+
+Artifacts (downloaded and inspected locally, not just trusted from the Actions UI):
+
+- `lorewish-android-preview` (https://github.com/PNHD/Lorewish/actions/runs/31354813415/artifacts —
+  see the run page for the current artifact ID/link) — 103,838,742 bytes. Contains
+  `app-release.apk` and `logs/android-build.log` (copied into this handoff as `android-build.log`).
+  `unzip -l` on the APK confirms: `AndroidManifest.xml`, four `classes*.dex` files, `resources.arsc`,
+  and critically `assets/index.android.bundle` (2,894,724 bytes) — the embedded JS bundle. The build
+  log shows `Task :app:validateSigningRelease` and `Task :app:packageRelease` both ran, with
+  `BUILD SUCCESSFUL in 35m 19s` — this is a normally-signed (debug-keystore-signed, per Expo's own
+  generated `android/app/build.gradle` default when no `credentials.json` exists in this project —
+  not a real release signing key), installable, self-contained release-build-type APK.
+- `lorewish-ios-simulator` — 28,826,673 bytes. Contains `Lorewish-iOS-Simulator.app.zip`,
+  `lorewish-ios-simulator.png`, and `logs/ios-build.log` (copied into this handoff as
+  `ios-build.log`; the screenshot is copied into `screenshots/ios-simulator-home-en.png`).
+  `unzip -l` on the app zip confirms a real `Lorewish.app/Lorewish` Mach-O binary and
+  `Lorewish.app/Info.plist`. **The screenshot shows the actual Lorewish home screen** — app name,
+  tagline, subheading, "Try the reading preview" button, the Account link, and the EN/VI language
+  switcher — not a placeholder, not a native template screen, not an error screen (see below for why
+  that distinction mattered).
+
+Both native artifacts are large; per this task's own guidance on large build artifacts, they are
+**not** embedded in the handoff zip — this file records the run/artifact identifiers instead. The
+build logs (large but text) and the screenshot (140KB) are included directly.
+
+=== WHY THIS TOOK FIVE RUNS (full transparency, nothing silently retried) ===
+
+1. Run 31348869607 (commit 6716f64): iOS job's scheme-discovery step picked `EXConstants` (a
+   CocoaPods library subproject scheme) instead of the app's own `Lorewish` scheme — the heuristic
+   ("first scheme not containing the literal string 'Pods'") was wrong, since library schemes don't
+   contain that string either. Android job was still running when this was discovered and diagnosed;
+   not force-completed.
+2. Run 31349358407 (commit 17464e3, fixing #1 — scheme now derived from the workspace's own
+   basename): iOS built successfully but the "Find built .app bundle" step used
+   `find DerivedData/Build/Products -maxdepth 1 -name "*.app"`, one level too shallow — Xcode puts
+   the `.app` at `Products/<Configuration>-iphonesimulator/<App>.app`, not directly in `Products/`.
+   The build log's own directory dump (printed by the step's own error-fallback listing) showed
+   `Lorewish.app` sitting right there, one level down — confirming the build itself had already
+   succeeded. Separately, the Android job hit its 30-minute job timeout mid-compile (first-ever run,
+   cold Gradle cache, nothing to restore from `actions/cache` yet) and was cancelled, not failed on
+   its own merits.
+3. Run 31350869242 (commit 8b0614a, fixing #2's maxdepth and raising Android's timeout to 45m): iOS
+   now succeeded end-to-end — but its own screenshot showed React Native's own
+   "No script URL provided. Make sure the packager is running..." error screen, not the app. This is
+   `react-native-xcode.sh`'s standard, unconditional behavior for a Debug-configuration build on
+   Simulator: it skips embedding the JS bundle entirely, assuming a live Metro server will be
+   attached instead (true for local development, never true on a CI runner). The Android job failed
+   after ~38 minutes with its own "Build debug APK" step never reporting a conclusion in the Jobs
+   API — consistent with the runner process being killed rather than Gradle exiting with a normal
+   error, and its log blob was never fully persisted (repeated `BlobNotFound` fetching it
+   afterward) — diagnosed as disk-space exhaustion on the standard runner image (Android + Expo/RN
+   native compilation from a cold cache is heavy; ubuntu-latest ships with several large SDKs this
+   project never uses eating into the ~14GB free by default).
+4. Run 31352831669 (commit c73b6f0, freeing disk space + adding `df -h`/`--stacktrace`
+   diagnostics): all three jobs passed, including Android within its new 45-minute budget. This
+   confirmed the disk-space diagnosis was correct. At this point the Android debug APK and iOS
+   Simulator "app running, screenshot captured" evidence both existed — but the iOS screenshot from
+   this run still showed the same RN "no script URL" error (same Debug-configuration cause as #3;
+   the maxdepth/timeout fixes didn't address that, since it's a separate, unrelated cause). Verified
+   locally (not guessed) that Android's generated `android/app/build.gradle` signs its release build
+   type with the auto-generated debug keystore by default (Expo's standard behavior with no
+   `credentials.json` present) before committing to the release-build-type fix for Android too.
+5. Run 31354813415 (commit 5fd64d4, iOS switched to `-configuration Release`, Android switched to
+   `assembleRelease`) — the run recorded above as final. Release configuration/build type always
+   embeds the JS bundle regardless of platform (no Debug+Simulator skip branch applies), and Release
+   needs no code signing on the simulator either way. This is also the standard, documented shape
+   Appetize itself expects for uploaded simulator builds — not a workaround adopted only to make CI
+   pass.
+
+=== WHAT THIS DOES NOT PROVE ===
+
+- The Android APK was never installed on a real device or emulator in this task (none was available
+  in this environment) — its structural correctness (signed, JS bundle embedded, valid manifest/dex)
+  is verified by direct inspection of the built artifact, not by an observed boot/launch. Per this
+  task's own guidance, this is recorded honestly as **ANDROID_RUNTIME_NOT_YET_OBSERVED** rather than
+  claimed as a full runtime pass — the APK build/structure evidence is a materially stronger signal
+  than "it compiled" alone (the whole point of switching to the release build type was to rule out
+  the exact class of "compiles but is empty/non-functional" false-positive the first iOS attempt
+  exposed), but it is not the same claim as "verified booting on a device or emulator."
+- The iOS Simulator run is genuine **Simulator** evidence (compiled, installed, launched, verified
+  running via `simctl spawn launchctl list`, and now confirmed by screenshot to be rendering the
+  actual app) — this is not physical-device validation, was never claimed as such, and required no
+  Apple Developer membership, signing certificate, or provisioning profile.
