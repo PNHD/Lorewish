@@ -19,6 +19,21 @@ name: CI
 # absent from this list on purpose and always triggers a full run. When in
 # doubt, leave a path out: the failure mode of an unnecessary build is wasted
 # minutes, the failure mode of a wrongly skipped one is unverified code.
+#
+# LW-M2-R1: a second, narrower filter (the `changes` job, `dorny/paths-filter`)
+# gates ONLY the two native jobs, separately from the workflow-level
+# `paths-ignore` above. M2 added supabase/functions/** (Deno-only Edge
+# Function / story-engine server code) and its vitest suite — real,
+# CI-required code that the `web` job's typecheck/lint/test/export steps
+# fully exercise, but that has zero effect on what `expo prebuild` /
+# `gradlew assembleRelease` / `xcodebuild` produce. The exact native-relevant
+# path list is on the `changes` job below; everything not in that list
+# (supabase/**, docs/**, *.md, handoff/**, and any future server-only
+# directory) runs the fast web job only. This does not weaken native
+# verification for anything that could actually change a native build — it
+# only stops re-running one when nothing native-relevant changed.
+# `workflow_dispatch` bypasses the filter entirely for a manual, on-demand
+# full run.
 on:
   push:
     branches: [main, "feature/**"]
@@ -31,6 +46,10 @@ on:
       - "docs/**"
       - "handoff/**"
       - "*.md"
+  # LW-M2-R1: manual invocation of the full matrix (including native evidence),
+  # independent of which paths changed — e.g. to re-verify native build
+  # equivalence without making a throwaway source commit.
+  workflow_dispatch: {}
 
 # Keyed on the SOURCE branch, not github.ref. A push to a branch that has an
 # open PR raises two events, and github.ref differs between them
@@ -86,6 +105,37 @@ env:
 # needs no secrets at all: the Supabase values above are non-functional
 # placeholders, and native builds prove compilation, not backend connectivity.
 jobs:
+  # LW-M2-R1: distinguishes "does the native app need re-verifying" from "did
+  # anything change at all". M2 added supabase/functions/** (Deno-only server
+  # code) and a vitest suite under the same tree — neither touches anything
+  # the Android/iOS native jobs build, so a commit that only changes them
+  # would previously still have burned the full ~25m/~35m native matrix for
+  # no native-relevant input. `dorny/paths-filter` reads the diff without
+  # needing secrets or repo write access, so it's safe to run unconditionally
+  # on fork PRs too (it just decides what runs next).
+  changes:
+    name: Detect native-affecting changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      native: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            native:
+              - 'src/**'
+              - 'app.json'
+              - 'eas.json'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'assets/**'
+              - 'ios/**'
+              - 'android/**'
+              - '.github/workflows/ci.yml'
+
   web:
     name: Web / JS checks
     # Runs for everyone, including fork PRs — cheap, no secrets, no privilege.
@@ -107,16 +157,30 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Deterministic-fake-provider unit/integration tests only (34+ cases
+      # covering the M2 story engine's domain/quality/context logic) — this
+      # is exactly the "routine CI" class the task brief describes. Paid,
+      # real-provider narrative-model calls are never run here; see
+      # docs/NARRATIVE_MODEL_EVALUATION.md and `npm run bakeoff`, which is
+      # owner-initiated and outside this workflow entirely.
+      - name: Story engine unit tests
+        run: npm test
+
       - name: Production web export
         run: npm run export:web
 
   android:
     name: Android (preview APK)
-    # Same-repository work only: every push, plus PRs whose head branch lives in
-    # this repo. Fork PRs skip this job (see the fork-PR policy note above).
+    needs: changes
+    # Same-repository work only, AND only when something native-relevant
+    # changed (or this run was manually dispatched) — see the `changes` job.
+    # Fork PRs skip this job either way (see the fork-PR policy note above).
     if: >-
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      needs.changes.outputs.native == 'true' && (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
     runs-on: ubuntu-latest
     # A cold Gradle cache (first-ever run: no prior actions/cache hit) took
     # longer than 30 minutes to compile the full RN + Expo native stack from
@@ -205,12 +269,23 @@ jobs:
 
   ios-simulator:
     name: iOS Simulator (build, install, launch)
-    # Same-repository work only — see the android job and the fork-PR policy note.
+    needs: changes
+    # Same-repository work only, AND only when something native-relevant
+    # changed (or manually dispatched) — see the android job and the changes job.
     if: >-
-      github.event_name == 'push' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      needs.changes.outputs.native == 'true' && (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
     runs-on: macos-latest
-    timeout-minutes: 30
+    # Raised from 30 -> 40 (LW-M2-R1): the LW-M1-R3 public-repo green run
+    # finished in 27m54s against a 30-minute cap — ~2 minutes of headroom,
+    # flagged there as an open recommendation rather than fixed. 40 minutes
+    # keeps meaningful headroom without materially changing the cost profile
+    # (a hang still fails in well under an hour; this is slack, not license
+    # to tolerate a hung build).
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
