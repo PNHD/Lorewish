@@ -1,0 +1,33 @@
+{
+  "common": {
+    "appName": "Lorewish",
+    "tagline": "Bước vào một thế giới nhớ bạn.",
+    "back": "Quay lại",
+    "languageLabel": "Ngôn ngữ",
+    "languageEnglish": "English",
+    "languageVietnamese": "Tiếng Việt"
+  },
+  "home": {
+    "heading": "Bước vào một thế giới nhớ bạn.",
+    "subheading": "Lorewish là ứng dụng nhập vai tương tác dành cho một người chơi — bạn đưa ra lựa chọn, gặp những nhân vật nhớ rõ về bạn, và chứng kiến câu chuyện đổi thay theo chính những gì bạn đã làm.",
+    "previewCta": "Thử bản xem trước",
+    "previewCaption": "Một đoạn trích ngắn, chạy ngoại tuyến, cho thấy trải nghiệm đọc trong Lorewish. Không cần tài khoản.",
+    "foundationNote": "Bản dựng nền tảng — Android, iOS và Web dùng chung một mã nguồn."
+  },
+  "preview": {
+    "screenTitle": "Xem trước trải nghiệm đọc",
+    "backToHome": "Về trang chủ",
+    "fixtureNotice": "Cảnh mẫu, chưa kết nối với AI.",
+    "youLabel": "Bạn",
+    "whatChanged": "Điều vừa thay đổi",
+    "choicesHeading": "Bạn sẽ làm gì?",
+    "composerPlaceholder": "Hoặc tự viết hành động của riêng bạn…",
+    "composerSend": "Gửi",
+    "continueLabel": "Tiếp tục",
+    "replayFromHereLabel": "Chơi lại từ đây",
+    "replayFromCheckpointLabel": "Chơi lại từ điểm lưu",
+    "startAgainLabel": "Bắt đầu lại",
+    "checkpointBadge": "Đã đến điểm lưu",
+    "endingBadge": "Đã đến đoạn kết"
+  }
+}

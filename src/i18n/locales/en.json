@@ -1,0 +1,33 @@
+{
+  "common": {
+    "appName": "Lorewish",
+    "tagline": "Enter a world that remembers you.",
+    "back": "Back",
+    "languageLabel": "Language",
+    "languageEnglish": "English",
+    "languageVietnamese": "Tiếng Việt"
+  },
+  "home": {
+    "heading": "Enter a world that remembers you.",
+    "subheading": "Lorewish is a solo interactive roleplay app — make choices, meet characters who remember you, and watch the story change because of what you did.",
+    "previewCta": "Try the reading preview",
+    "previewCaption": "A short, offline sample of how Lorewish plays. No account needed.",
+    "foundationNote": "Foundation build — Android, iOS and Web from one codebase."
+  },
+  "preview": {
+    "screenTitle": "Reading preview",
+    "backToHome": "Back to Home",
+    "fixtureNotice": "Sample scene, not connected to AI generation.",
+    "youLabel": "You",
+    "whatChanged": "What changed",
+    "choicesHeading": "What do you do?",
+    "composerPlaceholder": "Or write your own action…",
+    "composerSend": "Send",
+    "continueLabel": "Continue",
+    "replayFromHereLabel": "Replay from here",
+    "replayFromCheckpointLabel": "Replay from a checkpoint",
+    "startAgainLabel": "Start again",
+    "checkpointBadge": "Checkpoint reached",
+    "endingBadge": "Ending reached"
+  }
+}
