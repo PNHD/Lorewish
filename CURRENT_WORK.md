@@ -192,9 +192,36 @@ accounts created and deleted via the Auth Admin API; cleanup verified by re-quer
   `timeout-minutes` was deliberately **not** bundled into this bounded correction; it is an open
   recommendation for the owner.
 
-### CI verification result — concurrency PROVEN, native matrix BLOCKED on account billing
+### CI verification result — concurrency PROVEN, native matrix GREEN on public runners
 
-Observed on the corrected commit `6820de9`:
+**Authoritative R3 CI evidence: the public-repository run on `IMPLEMENTATION_HEAD`.**
+
+| Run | Event | Result |
+|---|---|---|
+| `31369932367` | `push` | **cancelled** — Web and Android at 08:24:38Z (3s in), iOS at 08:29:36Z |
+| `31369936191` | `pull_request` | **success** — Web 52s, Android **19m20s**, iOS Simulator **27m54s** |
+
+All five required properties hold:
+
+1. **Public standard-runner jobs actually start** despite the private quota being exhausted — the
+   same workflow that could not begin a single step 24 minutes earlier ran the full matrix.
+2. **Duplicate push/PR events do not produce two native matrices.** The `push` run was cancelled by
+   the shared concurrency group; exactly one matrix ran to completion. Per the owner's instruction
+   this cancellation is **expected PASS behaviour**, not a failure.
+3. **Web passes.** 4. **Android build passes.** 5. **iOS Simulator build/install/launch passes.**
+
+Android finishing in **19m20s** here versus **44m40s** under the duplicate-run contention is
+independent confirmation of the contention diagnosis below — the same commit's Android job took
+2.3× longer when two matrices competed.
+
+**Sharpened timeout warning:** iOS took **27m54s** against `timeout-minutes: 30` — only ~2 minutes
+of headroom, tighter than the ~18% estimated before this run. Android has comfortable room (19m20s
+against 45m). Raising the iOS cap was deliberately kept out of the bounded corrections; it is now a
+**recommended** change rather than a merely optional one.
+
+#### The earlier private-quota runs (recorded, superseded, not blocking)
+
+Observed on the corrected commit `6820de9` before the repository went public:
 
 | | old key (`github.ref`), commit `e4749e6` | new key (`head_ref \|\| ref_name`), commit `6820de9` |
 |---|---|---|
@@ -218,10 +245,9 @@ The limit was reached between 07:58Z and 08:00Z — i.e. **the duplicate-run def
 the remaining quota**: the `e4749e6` pair alone burned ~25m + ~31m of macOS (≈560 billed minutes)
 plus ~90m of Linux, on top of five earlier native runs the same day.
 
-Consequently there is **no green end-to-end native matrix for `6820de9`**, and this document does
-not claim one. The last full-matrix evidence remains commit `e4749e6`, where **every job did pass**
-— iOS 25m21s in the push run, Android 44m40s in the PR run, Web in both — split across the two
-runs that timed each other out.
+Consequently `6820de9` never produced a green native matrix on the private repo. That gap is now
+closed by the public run on `IMPLEMENTATION_HEAD` recorded above; the `6820de9` runs are kept here
+as the evidence trail for *why* the repository went public, not as an outstanding blocker.
 
 ### Owner decision — Actions quota exhaustion and temporary PUBLIC visibility
 
@@ -307,29 +333,56 @@ of this task. Returning it to private is an **owner decision**, and before makin
 ## Implementation Head / Handoff Property
 
 `IMPLEMENTATION_HEAD` is the last committed source/schema/docs change required by this task. It
-moved once, deliberately, during the R3 closeout:
+moved three times during the R3 closeout, each move driven by evidence the previous head produced:
 
-- **Superseded implementation head: `e4749e6`** — `fix: narrow M1 table privileges to least
-  privilege`. The privilege migration, the first docs pass and the `paths-ignore` CI filter. Its CI
-  run is what exposed the duplicate-run defect corrected below. Nothing in it was reverted.
-- **Current implementation head:** the single follow-up commit on
-  `feature/lw-m1-foundation-closeout` carrying the two closeout corrections — the
-  function/RPC/sequence privilege rule, and the CI concurrency key. Its exact SHA is recorded in
-  `handoff/LW-M1-R3/HANDOFF.md`, `git-log.txt` and `git-status.txt`.
+| Commit | Content | Why it was superseded |
+|---|---|---|
+| `e4749e6` | privilege migration, first docs pass, `paths-ignore` CI filter | its own CI run exposed the duplicate-run defect |
+| `6820de9` | function/RPC/sequence privilege rule + concurrency key | its run hit the exhausted private Actions quota |
+| `3661d0a` | public-repo CI hardening + visibility decision record | superseded only by this file's final results update |
+| **final** | **this CURRENT_WORK.md update** — public CI run IDs and results | **current `IMPLEMENTATION_HEAD`** |
 
-All handoff evidence was **regenerated in full** from the current head after it existed; nothing in
-the package describes only the superseded one. This file does not guess at either SHA in prose,
-which is precisely the R2 mistake (`handoff/LW-M1-R2/git-log.txt` stopped at an older HEAD than the
-report named). `handoff/LW-M1-R3/` is deliberately **left untracked** and
+Nothing in any superseded commit was reverted; each is a strict addition. The exact final SHA is
+recorded in `handoff/LW-M1-R3/HANDOFF.md`, `git-log.txt` and `git-status.txt`, generated after it
+existed. This file does not guess at it in prose — precisely the R2 mistake, where
+`handoff/LW-M1-R2/git-log.txt` stopped at an older HEAD than the report named.
+
+**The final commit is documentation-only and therefore triggers no workflow run at all**, matching
+`*.md` in `paths-ignore`. That is what makes this terminate rather than regress: a docs commit
+recording CI results cannot invalidate the CI results it records. It is also the first *live*
+demonstration of the part-1 CI fix, which until now had only been verified by replaying historical
+commits through the globs.
+
+All handoff evidence was **regenerated in full** from the final head; nothing in the package
+describes only a superseded one. `handoff/LW-M1-R3/` is deliberately **left untracked** and
 `Lorewish_*_handoff.zip` is gitignored, so packaging cannot move the head its own evidence
-describes. No Supabase mutation was made after the privilege migration.
+describes. **No Supabase mutation was made after the privilege migration.**
 
 ## M1 Verdict
 
-**PASS.** Object privileges are now least-privilege and verified live; RLS is intact and
-independently re-proven; the repository is normalized (remote `main`, default branch `main`, draft
-closeout PR); CI no longer burns native runner time on documentation. Android runtime evidence
-remains explicitly deferred, which does not prevent M1 PASS under the web-first strategy.
+**PASS.**
+
+- Object privileges are least-privilege and **verified live**: `anon` holds zero privileges on all
+  five authoring tables, `authenticated` matches the intended DML exactly (10/10 machine-checked),
+  no client role holds TRUNCATE/TRIGGER/REFERENCES.
+- RLS is intact and independently re-proven: **30/30** adversarial probes, with anonymous access now
+  denied at the **object** layer (`42501`) rather than by an empty result set.
+- Advisors: 0 security, 0 performance findings.
+- The forward rule now covers **tables, functions/RPCs and sequences**, so M2's first RPC cannot
+  inherit an anonymous `EXECUTE`.
+- Repository normalized: remote `main` at the M0 baseline, default branch `main`, draft closeout PR
+  open and unmerged.
+- CI is **green end-to-end on public runners** — Web, Android and iOS Simulator all pass — no longer
+  burns native minutes on documentation, no longer runs a commit twice, and is hardened against
+  fork-PR abuse.
+- Repository visibility is **PUBLIC** by explicit owner decision, gated by a clean full-history
+  secret audit, with `REPOSITORY_VISIBILITY_REVIEW_REQUIRED` recorded for the future decision.
+
+Android **runtime** evidence remains explicitly deferred, which does not prevent M1 PASS under the
+web-first strategy.
+
+**Open recommendation (not blocking):** raise the iOS job's `timeout-minutes` above 30 — the green
+run finished in 27m54s, leaving only ~2 minutes of headroom.
 
 **No M2 work was started.** The public schema still contains exactly the five M1 authoring tables —
 no `PlayerRun`, `StoryState`, scene, branch, `CanonFact`, memory, gateway, credit, ads, payments,
