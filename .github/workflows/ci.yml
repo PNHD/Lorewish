@@ -100,14 +100,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Build debug APK
+      - name: Build preview APK (release build type, debug-signed)
+        # The "debug" build type intentionally skips embedding the JS
+        # bundle (React Native's Gradle plugin only runs the bundle task
+        # for non-debuggable variants) — installing that APK without a
+        # Metro server attached shows a red "no script URL provided" error,
+        # not the app (confirmed by the first attempt's iOS screenshot,
+        # which hit the same skip-for-debug logic). Expo's generated
+        # android/app/build.gradle signs the "release" build type with the
+        # auto-generated debug keystore by default (no credentials.json in
+        # this project), so `assembleRelease` here produces a normal
+        # installable, self-contained APK — no real signing key involved,
+        # still not Play-Store-signed.
         working-directory: android
         run: |
           mkdir -p ../artifacts ../logs
           chmod +x ./gradlew
           set -o pipefail
           df -h / | tee -a ../logs/android-build.log
-          ./gradlew assembleDebug --no-daemon --stacktrace | tee -a ../logs/android-build.log
+          ./gradlew assembleRelease --no-daemon --stacktrace | tee -a ../logs/android-build.log
 
       - name: Collect APK
         run: |
@@ -178,10 +189,20 @@ jobs:
           echo "WORKSPACE=$WORKSPACE" >> "$GITHUB_ENV"
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
           echo "Building $SCHEME from $WORKSPACE"
+          # Release, not Debug: React Native's own build-phase script
+          # (react-native-xcode.sh) unconditionally skips embedding the JS
+          # bundle for a Debug+Simulator build, expecting a live Metro
+          # server instead — a first attempt confirmed this exactly (the
+          # captured screenshot showed RN's own "No script URL provided"
+          # error, not the app, even though the process was genuinely
+          # running). Release always bundles, and needs no code signing on
+          # simulator either way. This also matches Appetize's own
+          # documented expectation of a Release-configuration build for
+          # uploaded simulator .app bundles.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
-            -configuration Debug \
+            -configuration Release \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             -derivedDataPath ../DerivedData \
