@@ -39,6 +39,347 @@ export type Database = {
   }
   public: {
     Tables: {
+      canon_facts: {
+        Row: {
+          created_at: string
+          fact_key: string
+          fact_text: string
+          id: string
+          origin: string
+          player_run_id: string
+          run_branch_id: string | null
+          scope: string
+          source_scene_id: string | null
+          source_turn_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          fact_key: string
+          fact_text: string
+          id?: string
+          origin?: string
+          player_run_id: string
+          run_branch_id?: string | null
+          scope: string
+          source_scene_id?: string | null
+          source_turn_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          fact_key?: string
+          fact_text?: string
+          id?: string
+          origin?: string
+          player_run_id?: string
+          run_branch_id?: string | null
+          scope?: string
+          source_scene_id?: string | null
+          source_turn_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "canon_facts_player_run_id_fkey"
+            columns: ["player_run_id"]
+            isOneToOne: false
+            referencedRelation: "player_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "canon_facts_run_branch_id_fkey"
+            columns: ["run_branch_id"]
+            isOneToOne: false
+            referencedRelation: "run_branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "canon_facts_source_scene_id_fkey"
+            columns: ["source_scene_id"]
+            isOneToOne: false
+            referencedRelation: "scenes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "canon_facts_source_turn_id_fkey"
+            columns: ["source_turn_id"]
+            isOneToOne: false
+            referencedRelation: "turns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_runs: {
+        Row: {
+          active_branch_id: string | null
+          created_at: string
+          id: string
+          owner_user_id: string
+          status: string
+          story_id: string
+          updated_at: string
+        }
+        Insert: {
+          active_branch_id?: string | null
+          created_at?: string
+          id?: string
+          owner_user_id: string
+          status?: string
+          story_id: string
+          updated_at?: string
+        }
+        Update: {
+          active_branch_id?: string | null
+          created_at?: string
+          id?: string
+          owner_user_id?: string
+          status?: string
+          story_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_runs_active_branch_id_fkey"
+            columns: ["active_branch_id"]
+            isOneToOne: false
+            referencedRelation: "run_branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "player_runs_story_id_fkey"
+            columns: ["story_id"]
+            isOneToOne: false
+            referencedRelation: "stories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      run_branches: {
+        Row: {
+          branch_seq: number
+          created_at: string
+          fork_scene_id: string | null
+          id: string
+          parent_branch_id: string | null
+          player_run_id: string
+        }
+        Insert: {
+          branch_seq: number
+          created_at?: string
+          fork_scene_id?: string | null
+          id?: string
+          parent_branch_id?: string | null
+          player_run_id: string
+        }
+        Update: {
+          branch_seq?: number
+          created_at?: string
+          fork_scene_id?: string | null
+          id?: string
+          parent_branch_id?: string | null
+          player_run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "run_branches_parent_branch_id_fkey"
+            columns: ["parent_branch_id"]
+            isOneToOne: false
+            referencedRelation: "run_branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "run_branches_player_run_id_fkey"
+            columns: ["player_run_id"]
+            isOneToOne: false
+            referencedRelation: "player_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scenes: {
+        Row: {
+          boundary_kind: string
+          created_at: string
+          dialogue: Json
+          generation_turn_id: string | null
+          id: string
+          narrative: string
+          next_choices: Json
+          parent_scene_id: string | null
+          run_branch_id: string
+          seq_in_branch: number
+          state_change_summary: Json
+          structured_outcome: Json
+        }
+        Insert: {
+          boundary_kind?: string
+          created_at?: string
+          dialogue?: Json
+          generation_turn_id?: string | null
+          id?: string
+          narrative: string
+          next_choices?: Json
+          parent_scene_id?: string | null
+          run_branch_id: string
+          seq_in_branch: number
+          state_change_summary?: Json
+          structured_outcome?: Json
+        }
+        Update: {
+          boundary_kind?: string
+          created_at?: string
+          dialogue?: Json
+          generation_turn_id?: string | null
+          id?: string
+          narrative?: string
+          next_choices?: Json
+          parent_scene_id?: string | null
+          run_branch_id?: string
+          seq_in_branch?: number
+          state_change_summary?: Json
+          structured_outcome?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scenes_generation_turn_id_fkey"
+            columns: ["generation_turn_id"]
+            isOneToOne: false
+            referencedRelation: "turns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scenes_parent_scene_id_fkey"
+            columns: ["parent_scene_id"]
+            isOneToOne: false
+            referencedRelation: "scenes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scenes_run_branch_id_fkey"
+            columns: ["run_branch_id"]
+            isOneToOne: false
+            referencedRelation: "run_branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      turns: {
+        Row: {
+          action_type: string
+          created_at: string
+          error_class: string | null
+          generation_attempt_count: number
+          id: string
+          input_tokens: number | null
+          latency_ms: number | null
+          model: string | null
+          output_tokens: number | null
+          player_run_id: string
+          provider: string | null
+          provider_cost_micros: number | null
+          raw_player_action: string | null
+          result_scene_id: string | null
+          run_branch_id: string
+          selected_choice_id: string | null
+          source_scene_id: string | null
+          status: string
+          updated_at: string
+          user_allowance_debited: boolean
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          error_class?: string | null
+          generation_attempt_count?: number
+          id: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          player_run_id: string
+          provider?: string | null
+          provider_cost_micros?: number | null
+          raw_player_action?: string | null
+          result_scene_id?: string | null
+          run_branch_id: string
+          selected_choice_id?: string | null
+          source_scene_id?: string | null
+          status?: string
+          updated_at?: string
+          user_allowance_debited?: boolean
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          error_class?: string | null
+          generation_attempt_count?: number
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model?: string | null
+          output_tokens?: number | null
+          player_run_id?: string
+          provider?: string | null
+          provider_cost_micros?: number | null
+          raw_player_action?: string | null
+          result_scene_id?: string | null
+          run_branch_id?: string
+          selected_choice_id?: string | null
+          source_scene_id?: string | null
+          status?: string
+          updated_at?: string
+          user_allowance_debited?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "turns_player_run_id_fkey"
+            columns: ["player_run_id"]
+            isOneToOne: false
+            referencedRelation: "player_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "turns_result_scene_id_fkey"
+            columns: ["result_scene_id"]
+            isOneToOne: false
+            referencedRelation: "scenes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "turns_run_branch_id_fkey"
+            columns: ["run_branch_id"]
+            isOneToOne: false
+            referencedRelation: "run_branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "turns_source_scene_id_fkey"
+            columns: ["source_scene_id"]
+            isOneToOne: false
+            referencedRelation: "scenes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      usage_counters: {
+        Row: {
+          generation_count: number
+          updated_at: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          generation_count?: number
+          updated_at?: string
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          generation_count?: number
+          updated_at?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       characters: {
         Row: {
           aliases: string[]
@@ -233,7 +574,59 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      lw_precheck_and_start_turn: {
+        Args: {
+          p_action_type: string
+          p_player_run_id: string | null
+          p_raw_action?: string | null
+          p_selected_choice_id?: string | null
+          p_story_setup?: Json | null
+          p_turn_id: string
+        }
+        Returns: Json
+      }
+      lw_commit_turn: {
+        Args: {
+          p_boundary_kind: string
+          p_canon_candidates: Json
+          p_dialogue: Json
+          p_generation_attempt_count: number
+          p_input_tokens: number
+          p_latency_ms: number
+          p_model: string
+          p_narrative: string
+          p_next_choices: Json
+          p_output_tokens: number
+          p_provider: string
+          p_provider_cost_micros: number
+          p_state_change_summary: Json
+          p_structured_outcome: Json
+          p_turn_id: string
+        }
+        Returns: Json
+      }
+      lw_fail_turn: {
+        Args: {
+          p_error_class: string
+          p_generation_attempt_count: number
+          p_provider_cost_micros?: number | null
+          p_turn_id: string
+        }
+        Returns: Json
+      }
+      lw_replay_from_scene: {
+        Args: {
+          p_player_run_id: string
+          p_source_scene_id: string
+        }
+        Returns: Json
+      }
+      lw_get_run_state: {
+        Args: {
+          p_player_run_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
