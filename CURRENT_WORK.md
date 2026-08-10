@@ -1,16 +1,26 @@
 # Current Work
 
 **Task**: LW-M2-R2 — Real Narrative Provider Bakeoff + Production Model Selection Evidence
-**Status**: **PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_NOT_RUN. MODEL_SELECTION_REVIEW_REQUIRED.**
+**Status**: **PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_PARTIALLY_COMPLETE. MODEL_SELECTION_REVIEW_REQUIRED.**
+**Updated mid-task**: this section originally recorded `LIVE_BAKEOFF_NOT_RUN` (no provider
+credential existed in this environment at the time — see the "No-credential phase" content below,
+kept intact). The owner then supplied `GEMINI_API_KEY`/`DEEPSEEK_API_KEY` in a local, gitignored
+`.env.local` and asked for the bakeoff to actually run. It did — see "Live bakeoff phase" below,
+inserted just above the verdict, for the real results, three bugs found and fixed mid-campaign, and
+what remains incomplete (`gemini-3.6-flash`'s daily quota).
+
+## No-credential phase (original record, kept intact)
+
 Continues from LW-M2-R1's `REAL_NARRATIVE_PROVIDER_PENDING` verdict. No provider credential
-(`GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`) exists in this
-environment — checked as variable names only, values never printed — so no live bakeoff, no real
-narrative-quality comparison, and no narrative samples were produced for any candidate model,
-exactly as this task's credential-safety rules require. What this task *could* do without a
-credential was done and verified: a real Gemini adapter, two live-verified bug fixes, an allowance
-race fix, 19 new tests, and full model-discovery documentation. See
-[docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md) §0/§7–§10 for the
-provider-evaluation half of this record; this section covers the engine-layer work.
+(`GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`) existed in this
+environment at the time — checked as variable names only, values never printed — so no live
+bakeoff, no real narrative-quality comparison, and no narrative samples were produced for any
+candidate model, exactly as this task's credential-safety rules require. What this task *could* do
+without a credential was done and verified: a real Gemini adapter, two live-verified bug fixes, an
+allowance race fix, 19 new tests, and full model-discovery documentation. See
+[docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md) §0a/§7–§10 for the
+provider-evaluation half of this record; the rest of this section covers the engine-layer work from
+that phase.
 
 ## Baseline (verified, not trusted from the task brief)
 
@@ -185,24 +195,95 @@ explicit instruction not to resolve this automatically.
 - The crash-window allowance-leak tradeoff above (one unit, until next UTC day, only on a process
   kill between reservation and commit/fail) is accepted, not eliminated.
 
+## Live bakeoff phase (owner-supplied credentials, mid-task)
+
+The owner created `.env.local` (local, gitignored, containing `GEMINI_API_KEY` and
+`DEEPSEEK_API_KEY`) and asked for the bakeoff to actually run, the DeepSeek adapter to be built for
+real, and a real comparison package produced. Loaded explicitly via `node --env-file=.env.local`
+for `npm run bakeoff` — never inherited by this process's ambient environment, never committed,
+never logged, never exposed via `EXPO_PUBLIC_*` (both key names lack that prefix, so Expo's
+bundler never inlines them into any client bundle — confirmed, not assumed), never set as a
+Supabase Edge Function secret (the deployed `submit-turn` function is untouched by this work and
+still has no real provider configured — no anonymous or authenticated production traffic was ever
+routed to a real provider).
+
+**Real `DeepSeekNarrativeProvider` implemented** (`supabase/functions/_shared/engine/providers.ts`,
+commit `f6a6266`): OpenAI-compatible `/chat/completions`, `Authorization: Bearer`, the target JSON
+shape spelled out in the prompt since `response_format:json_object` doesn't enforce one, cache-aware
+cost accounting. 13 new unit tests.
+
+**Real bakeoff run**: 6 Golden Set cases × 2 passes, against `gemini-3.6-flash`,
+`gemini-3.5-flash-lite`, `deepseek-v4-pro`, `deepseek-v4-flash`. Full results:
+[docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md) §11 and
+`handoff/LW-M2-R2/narrative-samples/COMPARISON.md`. Headline numbers: `gemini-3.5-flash-lite`
+12/12 (100%, 0 repairs), `deepseek-v4-pro` 12/12 post-fix, `deepseek-v4-flash` 11/12 post-fix;
+`gemini-3.6-flash` **partial** — its free-tier daily quota (20 requests/day/project/model,
+confirmed from the API's own error body) was exhausted mid-campaign, EN results reliable, VI
+results and cost figures from that run are not. No quota circumvention was attempted (no retry
+past the limit, no key/account rotation) — `SECOND_RUN_PENDING_RATE_LIMIT`.
+
+**Three real bugs found and fixed because they were corrupting this task's own evidence** (full
+detail: `handoff/LW-M2-R2/narrative-samples/notable-findings/`, each with direct API-response
+evidence, not inference):
+
+1. **`quality-gate.ts`'s `language_mixing` check false-positived on Vietnamese diacritics**
+   (commit `9ab8f25`) — JS's ASCII-only `\b` treated a diacritic letter as a word boundary,
+   fragmenting a correct word like "mắt" into a piece ("m") that could chain into a false 4-word
+   "English run," flagging entirely correct Vietnamese prose. This is why `gemini-3.6-flash`'s VI
+   verdicts from its first two passes are not used as evidence. 3 regression tests added.
+2. **`GeminiNarrativeProvider` undercounted output tokens** (commit `82c90e9`) —
+   `usageMetadata.thoughtsTokenCount` (Gemini's billed "thinking" tokens) was not summed into cost.
+   A trivial prompt showed 9 visible tokens vs. 104 thinking tokens. Fixed; 1 regression test.
+3. **`DeepSeekNarrativeProvider` left thinking mode at its default** (commit `9e76978`) — DeepSeek
+   V4's reasoning tokens draw from the same `max_tokens` budget as the visible answer; for some
+   prompts (Vietnamese narrative generation especially) reasoning alone consumed the entire
+   2048-token budget, producing empty, unparseable output — the dominant cause of DeepSeek's
+   initial 10/12 and 11/12 pre-fix pass rates. Fixed with `thinking:{type:"disabled"}`, which also
+   cut cost ~55% and latency ~37% on the same prompts. 1 regression test.
+
+A fourth, related **production** robustness gap was found and fixed alongside these (commit
+`56e6006`): `attemptGeneration()` in `turn-pipeline.ts` only caught `ProviderTransportError` from a
+provider's `generateTurn()` call; any other throw (as DeepSeek produced before fix #3) propagated
+uncaught, which would have crashed a real `submitTurn` call instead of resolving
+`GENERATION_FAILED` — not a bakeoff-only issue. Now treated as the existing `unusable_output`
+class, same as a schema-validation failure. `bakeoff.ts`'s `runCase` got the equivalent fix so one
+flaky case no longer aborts the whole harness run. 1 regression test.
+
+**Continuity (3-turn EN + VI)**, run through the real `submitTurn`/`InMemoryTurnRepository`
+pipeline (not the bakeoff harness's isolated context): only possible for DeepSeek's quality tier
+this task (Gemini blocked by quota). EN passed cleanly. VI passed with one nuance flagged for
+human/native-speaker review (a brief "em"→"tôi" self-reference shift during an emotional beat —
+may be natural register variation, may be drift). A separate architecture finding surfaced here,
+affecting every provider identically: the real `StorySetup` payload has no field for pre-authored
+character identity, so every model invents its own NPC names/genders rather than matching the
+Golden Set's designed characters — not a provider defect, recorded in
+`notable-findings/character-identity-architecture-gap.md`.
+
+**73/73 tests pass** (was 54 at the end of the no-credential phase; +19 from the DeepSeek adapter
+and the four bug-fix regression tests).
+
 ## M2-R2 Verdict
 
-**PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_NOT_RUN. MODEL_SELECTION_REVIEW_REQUIRED.**
+**PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_PARTIALLY_COMPLETE. MODEL_SELECTION_REVIEW_REQUIRED.**
 
-What is claimed: a real, doc-verified Gemini adapter exists and is unit-tested against its own
-contract; two known M2-R1 defects are fixed and verified with real live HTTP calls, not just code
-reading; the concurrent-allowance race is closed with a documented, bounded tradeoff; 54/54 tests
-pass; a real product/legal policy conflict was discovered and recorded rather than glossed over.
+What is claimed: real, live-tested Gemini and DeepSeek adapters (Gemini's quality tier partially —
+see above); two known M2-R1 defects fixed and verified live; the concurrent-allowance race closed;
+a real bakeoff ran against 4 of the 5 model/tier combinations with genuine EN/VI samples and a real
+comparison package; three evidence-corrupting bugs found and fixed mid-campaign rather than
+reported around; 73/73 tests pass; a real product/legal policy conflict recorded, not glossed over.
 
-What is **not** claimed: any real narrative-quality evidence, for any language, for any provider;
-any cost/latency/repair-rate data from a real model (§0 of NARRATIVE_MODEL_EVALUATION.md); a
-resolved model-selection decision; GitHub Actions CI results for this task's commits (not yet
-confirmed pushed-and-green at the time this section was written).
+What is **not** claimed: a complete, clean `gemini-3.6-flash` dataset (quota-blocked, partial);
+any narrative-quality *verdict* — the samples exist for human/native-speaker review, but this task
+does not itself judge naturalness; a resolved model-selection decision; GitHub Actions CI results
+for every commit in this phase (the code-fix commits' own CI runs were not individually awaited
+given the volume of commits this live phase produced — see the handoff's `ci-results.txt` for what
+was and wasn't verified).
 
-**Recommended next task**: obtain `GEMINI_API_KEY` and, separately, resolve the §9 policy question —
-in either order, but both before running `npm run bakeoff` for real. If DeepSeek remains a candidate
-after §9 review, its adapter still needs to be built (§8's schema-shape gap should be designed for
-up front, not discovered mid-implementation).
+**Recommended next task**: re-run `gemini-3.6-flash`'s bakeoff once its daily quota resets, for a
+directly comparable quality-tier dataset against `deepseek-v4-pro`. Have a human — ideally a native
+Vietnamese speaker — review `handoff/LW-M2-R2/narrative-samples/`, particularly the forms-of-address
+nuance in the VI continuity transcript. Resolve the §9 `PRODUCTION_POLICY_CONSTRAINT` question
+independently. Only then make a model-selection decision.
 
 ---
 

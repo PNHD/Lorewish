@@ -10,6 +10,40 @@ supersession instead of silently editing history.
 
 ## 0. LW-M2-R2 summary (read this first)
 
+**This section was updated mid-task.** The first half of LW-M2-R2 ran with no provider credential
+in this environment (the original text below this note is preserved as §0a for the record). The
+owner then supplied `GEMINI_API_KEY` and `DEEPSEEK_API_KEY` in a local, gitignored `.env.local` for
+an owner-initiated local bakeoff, which **did run for real** — see §11 for the complete results.
+This section now summarizes the final state; §0a is kept for how the task started.
+
+- **A real, live bakeoff ran** against `gemini-3.5-flash-lite` (fully clean, 12/12), `deepseek-v4-pro`
+  (fully clean post-fix, 12/12), and `deepseek-v4-flash` (fully clean post-fix, 11/12).
+  `gemini-3.6-flash` is **partial** — its free-tier daily quota (20 requests/day/project/model,
+  confirmed from the API's own error body) was exhausted mid-campaign; EN results are reliable, VI
+  results and cost figures from that run are not (see §11). `SECOND_RUN_PENDING_RATE_LIMIT` for
+  `gemini-3.6-flash`.
+- **`DeepSeekNarrativeProvider` was implemented for real** during this task (it had been a stub —
+  see §0a) and live-tested against both tiers.
+- **Real EN/VI narrative samples exist** for every model actually run — see
+  `handoff/LW-M2-R2/narrative-samples/`. No samples were fabricated for `gemini-3.6-flash`'s
+  incomplete portion.
+- **Three real bugs were found and fixed mid-bakeoff** because they were corrupting the evidence
+  this task exists to produce: a Vietnamese-language false positive in Lorewish's own quality gate,
+  a Gemini cost-accounting gap (thinking tokens excluded), and a DeepSeek adapter misconfiguration
+  (thinking mode left enabled, which could silently zero out narrative output). Full detail in §11
+  and `handoff/LW-M2-R2/narrative-samples/notable-findings/`.
+- **The `PRODUCTION_POLICY_CONSTRAINT` finding stands** (§9): both Gemini's and DeepSeek's current
+  API terms restrict the calling service to an 18+ audience; Lorewish is 13+. Not acted on
+  automatically.
+- Two known M2-R1 polish issues (cross-user turn submission, invalid `selected_choice_id` both
+  returning generic HTTP 500) were fixed and **verified live** against `lorewish-dev` earlier in
+  this task — see CURRENT_WORK.md's LW-M2-R2 section, not this document.
+- **Verdict remains `MODEL_SELECTION_REVIEW_REQUIRED`.** No production model is selected by this
+  task even with real data in hand — human/native-speaker review of the samples in
+  `narrative-samples/` is still required first, per the task brief. See §10 and §11.
+
+## 0a. Original LW-M2-R2 summary (no-credential phase — superseded by §0/§11, kept for the record)
+
 This task's brief called for a real Gemini/DeepSeek provider bakeoff. **No live bakeoff was run
 against any real provider in this task** — `GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, `DEEPSEEK_API_KEY`,
 and `ANTHROPIC_API_KEY` are all absent from this environment (checked as variable names only, never
@@ -279,4 +313,81 @@ What exists today, for a future task to act on directly:
 
 **Verdict: `MODEL_SELECTION_REVIEW_REQUIRED`.** No production narrative model is selected by this
 task. `LOREWISH_NARRATIVE_PROVIDER` remains configurable and defaults to the fake provider in this
-environment, unchanged from LW-M2-R1.
+environment, unchanged from LW-M2-R1. §11 below updates this with real data — the verdict itself
+does not change.
+
+---
+
+## 11. LW-M2-R2 real live bakeoff results (owner-supplied credentials, mid-task)
+
+The owner created a local, gitignored `.env.local` containing `GEMINI_API_KEY` and
+`DEEPSEEK_API_KEY` partway through this task and asked for the bakeoff to actually run. Both keys
+were loaded explicitly via `node --env-file=.env.local` for the `npm run bakeoff` CLI — never
+inherited from this process's ambient environment, never committed, never logged, never set as a
+Supabase Edge Function secret. Full results, samples, and raw data:
+`handoff/LW-M2-R2/narrative-samples/COMPARISON.md` and `handoff/LW-M2-R2/bakeoff-raw/*.json` — this
+section is the condensed version.
+
+### 11.1 Results table
+
+| Model | Tier | Pass rate (12 gens, 2 passes) | Repairs | Total cost | Median latency |
+|---|---|---|---|---|---|
+| `gemini-3.6-flash` | Quality | **Partial** — EN 6/6 reliable; VI unreliable (bug-contaminated) | n/a | undercounted (bug) | 9.5s (pre-fix) |
+| `gemini-3.5-flash-lite` | Cheap | **12/12 (100%)** | 0 | $0.011981 | 2.24s |
+| `deepseek-v4-pro` | Quality | **12/12 (100%)**, post-fix | 0 | $0.010052 | 12.42s |
+| `deepseek-v4-flash` | Cheap | **11/12 (91.7%)**, post-fix | 4 | $0.002426 | 6.81s |
+
+### 11.2 Three bugs found and fixed because they were corrupting this evidence
+
+1. **`language_mixing` false positive on Vietnamese diacritics** (`quality-gate.ts`) — JS's
+   ASCII-only `\b`/`\w` treated a diacritic letter as a word boundary, silently fragmenting a
+   correct Vietnamese word (e.g. "mắt" → "m") into pieces that could chain into a false 4-word
+   "English run." Flagged entirely correct Vietnamese prose. Fixed to operate on whole
+   whitespace-delimited words instead of sub-word regex matches. This is why `gemini-3.6-flash`'s
+   VI verdicts from its first two bakeoff passes are not trusted as evidence.
+2. **Gemini adapter undercounted output tokens** (`providers.ts`) — `usageMetadata.thoughtsTokenCount`
+   (Gemini's "thinking" tokens, billed the same as visible output per the pricing page) was not
+   being read. A trivial prompt showed 9 visible tokens vs. 104 thinking tokens. Fixed to sum both.
+3. **DeepSeek thinking mode left at its default** (`providers.ts`) — DeepSeek V4's reasoning tokens
+   are drawn from the same `max_tokens` budget as the visible answer. For some prompts (Vietnamese
+   narrative generation especially), reasoning alone consumed the entire 2048-token budget,
+   producing empty, unparseable content — the dominant cause of DeepSeek's initial structural
+   failures (10/12, 11/12 before the fix). Fixed by setting `thinking:{type:"disabled"}`, which
+   also improved cost (~55% cheaper) and latency (~37% faster) on the same prompts.
+
+A fourth, related **engine** robustness gap was found and fixed: `attemptGeneration()` in
+`turn-pipeline.ts` only caught `ProviderTransportError`; any other adapter throw (as DeepSeek
+produced before fix #3) propagated uncaught and would have crashed a real `submitTurn` call instead
+of resolving `GENERATION_FAILED`. Now treated as the existing `unusable_output` class. This is a
+genuine production fix, not a bakeoff-only one — see CURRENT_WORK.md.
+
+### 11.3 `gemini-3.6-flash` — the incomplete result
+
+Confirmed directly from the Gemini API's own 429 error body: the free tier allows **20 requests per
+day, per project, per model**. This task's debugging calls plus two bakeoff passes exhausted it
+before a clean, both-fixes-applied second pass could run. Per the task brief's explicit instruction,
+no retry-past-limit, key rotation, or account rotation was attempted.
+**`SECOND_RUN_PENDING_RATE_LIMIT`** — recommended: re-run once the quota resets (next UTC/Pacific
+day boundary, per Google's standard free-tier reset).
+
+### 11.4 Continuity (3-turn EN + VI)
+
+Run through the real `submitTurn`/`InMemoryTurnRepository` pipeline (not the bakeoff harness's
+isolated one-shot context), so scene history and canon facts genuinely carried forward exactly as
+in production. Only possible for DeepSeek's quality tier this task (Gemini blocked by quota):
+
+- **EN (`en-fantasy-01`, `deepseek-v4-pro`): PASS.** The curse mechanic established in turns 1–2
+  was referenced accurately in turn 3 without being restated.
+- **VI (`vi-romance-01`, `deepseek-v4-pro`): PASS, with one nuance flagged for human review**, not
+  resolved automatically — a brief self-reference shift ("em"→"tôi") during an emotional beat that
+  may be natural register variation or may be drift; native-speaker judgment needed.
+- A separate, real architecture finding surfaced here: the production `StorySetup` payload has no
+  field for pre-authored character identity, so every model (not just DeepSeek) invents its own
+  character names/genders rather than matching the Golden Set's designed NPCs. Not a provider
+  defect — see `handoff/LW-M2-R2/narrative-samples/notable-findings/character-identity-architecture-gap.md`.
+
+### 11.5 What this does not do
+
+Does not select a production model. `gemini-3.6-flash` needs a clean re-run before Gemini's two
+tiers can be compared on equal footing. The `PRODUCTION_POLICY_CONSTRAINT` (§9) is unresolved and
+may independently exclude a candidate. **Verdict remains `MODEL_SELECTION_REVIEW_REQUIRED`.**
