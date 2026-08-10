@@ -192,9 +192,44 @@ cap below.
   [CONTINUOUS_PLAY_CONTRACT.md](CONTINUOUS_PLAY_CONTRACT.md) §8's existing cost-abuse guard for
   consecutive moderation-blocked turns — this is the same shape of guard applied to a different
   failure class.
-- A repair generation counts toward allowance/cost exactly like the original attempt (it is a
-  billable provider call if it returns a result), per the existing allowance table in
-  [CONTINUOUS_PLAY_CONTRACT.md](CONTINUOUS_PLAY_CONTRACT.md) §8.
+
+### Billing rule: one user intent, at most one user allowance debit
+
+The repair loop is an **internal reliability mechanism**, not a second user-facing generation. It
+must never be billed as if the player asked for two turns. Three distinct concepts are tracked
+separately and must not be conflated in code, logs, or product copy:
+
+| Concept | What it counts | Who/what sees it |
+|---|---|---|
+| `provider_cost` | Real spend incurred on the AI provider's bill, once per provider call that returns a result (initial attempt and, if triggered, the repair attempt) | Internal cost accounting / `GenerationAuditLog` only — never shown to the player as a per-attempt charge |
+| `internal_generation_attempt_count` | How many generation attempts (initial + at most one repair) ran for this turn | Internal observability / audit log only |
+| `user_allowance_debit` | Whether **this turn** consumed one unit of the player's free daily allowance | Player-facing; this is the only one of the three the player's allowance counter reflects |
+
+**Required rule:** for one successful user intent (the player submits one action or choice), the
+turn resolves in **at most one `user_allowance_debit`**, regardless of whether the quality gate
+passed on the first attempt or required the one automatic repair. Concretely:
+
+- Player submits one action → initial generation produces prose that fails the quality gate →
+  automatic repair runs once → the repaired scene passes the gate and commits → the player is
+  charged **one** turn (`user_allowance_debit = 1`), not two, even though
+  `internal_generation_attempt_count = 2` and `provider_cost` was incurred twice.
+- If the initial generation *passes* the gate outright (no repair needed), the same
+  `user_allowance_debit = 1` applies — the billing outcome for the player is identical whether or
+  not a repair happened. The repair mechanism is invisible to the player's allowance.
+- If the initial generation **and** the repair attempt both fail the gate, so the turn resolves as
+  `GENERATION_FAILED` and **no canonical Scene is committed**: `user_allowance_debit = 0`. The
+  platform absorbs the `provider_cost` of the failed attempt(s); the player is never charged for a
+  turn that produced nothing they can read. This extends the same logic
+  [CONTINUOUS_PLAY_CONTRACT.md](CONTINUOUS_PLAY_CONTRACT.md) §8's allowance table already applies to
+  a provider call that fails before returning a result — a quality-gate failure with no commit is
+  the narrative-quality-side reason a turn can end with zero provider cost credited against the
+  player, alongside the existing transport-failure and precheck-rejection reasons.
+- This billing rule composes with, and does not replace,
+  [CONTINUOUS_PLAY_CONTRACT.md](CONTINUOUS_PLAY_CONTRACT.md) §7's idempotency guarantee (the same
+  `turn_id` cannot double-charge across client retries) and §8's allowance table (which governs the
+  transport-retry case). The quality-gate repair loop is a second, narrower case governed by this
+  section: it is bounded to at most one repair attempt per turn (above), and that one repair never
+  produces a second debit.
 
 ---
 

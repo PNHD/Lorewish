@@ -64,7 +64,7 @@ export function PreviewScreen() {
     if (!target) return;
     const trimmed = text.trim();
     if (!trimmed) return;
-    setPlayerActionOverride(`${t("preview.youLabel")}: ${trimmed}`);
+    setPlayerActionOverride(trimmed);
     setCurrentNodeId(target);
     setComposerText("");
   };

@@ -1,5 +1,29 @@
 # Current Work
 
+## HEAD Correction (recorded by LW-M1-R2, verified against actual `git` state)
+
+This document's "Final HEAD" (below, `7a7cf7c`) and `handoff/LW-M1-R1/HANDOFF.md`'s commit table
+(`952e8ec`, labelled "final HEAD") both undercounted the branch by one commit. Neither was rewritten
+— per LW-M1-R2's instructions, history is not edited to make old reports match — this note documents
+the discrepancy instead.
+
+- **Reported as final HEAD** (inconsistently, across two LW-M1-R1 artifacts): `7a7cf7c` (this file's
+  prose, below) and separately `952e8ec` (the handoff commit table).
+- **Actual repository HEAD at the start of LW-M1-R2** (verified via `git rev-parse HEAD` and
+  `git log --oneline --decorate --graph --all`, not assumed from either report): **`03c2fc3`** —
+  `docs: add LW-M1-R1 handoff artifacts`, one commit past `952e8ec`.
+- **Why the discrepancy exists**: `952e8ec` (`docs: record LW-M1-R1 completion in CURRENT_WORK.md`)
+  updated this file with `7a7cf7c` as "Final HEAD" *before* `952e8ec` itself was committed — a
+  same-task self-reference gap common to a "write the summary, then commit it" sequence. The
+  `handoff/LW-M1-R1/HANDOFF.md` commit table was then written and committed as `03c2fc3`, correctly
+  listing `952e8ec` as of that point, but `03c2fc3` itself is not listed anywhere as the branch's
+  actual tip — the same gap one commit later, since the handoff-artifacts commit was never followed
+  by a further doc update recording itself.
+- **Resolution**: `03c2fc3` is treated as the real, reviewed end state of LW-M1-R1 for all LW-M1-R2
+  purposes (starting point, diffs, and the new branch point below).
+
+---
+
 **Task**: LW-M1-R1 — Web-First Bilingual Foundation + Preview Deploy
 **Status**: **COMPLETE**. Web-first bilingual (EN/VI) Expo foundation built, validated, committed,
 and deployed to a live Cloudflare Pages preview URL. M1 is **not** fully complete — this is R1 of
