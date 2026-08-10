@@ -347,11 +347,23 @@ recorded in `handoff/LW-M1-R3/HANDOFF.md`, `git-log.txt` and `git-status.txt`, g
 existed. This file does not guess at it in prose — precisely the R2 mistake, where
 `handoff/LW-M1-R2/git-log.txt` stopped at an older HEAD than the report named.
 
-**The final commit is documentation-only and therefore triggers no workflow run at all**, matching
-`*.md` in `paths-ignore`. That is what makes this terminate rather than regress: a docs commit
-recording CI results cannot invalidate the CI results it records. It is also the first *live*
-demonstration of the part-1 CI fix, which until now had only been verified by replaying historical
-commits through the globs.
+**The final commits are documentation-only, and the `push` trigger skips them** — the first *live*
+demonstration of the part-1 CI fix, which until then had only been verified by replaying historical
+commits through the globs. Verified on `e689178`: **no `push` run was created**.
+
+**The `pull_request` trigger still fires, and that is expected GitHub behaviour, not a
+misconfiguration.** GitHub evaluates `paths-ignore` for `pull_request` against the **entire PR
+diff** (base…head), not against the newest commit. This PR's cumulative diff contains
+`.github/workflows/ci.yml` and the migration, so no docs commit can make the PR as a whole look
+docs-only. An earlier revision of this section claimed such a commit "triggers no workflow run at
+all"; that was wrong and is corrected here rather than quietly dropped.
+
+The practical effect is unchanged where it matters: **a docs-only push to a branch with no open PR —
+which is the case Step 10 was about, and the case `f97dd28` fell into — is skipped entirely.** The
+per-PR cost is bounded by the concurrency fix, which keeps it to one matrix.
+
+This is what makes the head chain terminate rather than regress: the statement above does not depend
+on any run's outcome, so recording it cannot invalidate it.
 
 All handoff evidence was **regenerated in full** from the final head; nothing in the package
 describes only a superseded one. `handoff/LW-M1-R3/` is deliberately **left untracked** and
