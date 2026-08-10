@@ -58,6 +58,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        # A first-attempt run of this job failed silently mid-compile (the
+        # step never reported a conclusion, consistent with the runner
+        # process being killed rather than Gradle exiting with an error) —
+        # standard GitHub ubuntu-latest runners ship with large SDKs this
+        # project never uses (a full .NET SDK, Android NDK versions beyond
+        # what Expo needs, GHC, Boost) eating into the ~14GB free by
+        # default, which a cold RN/Expo Android build can exceed. Removing
+        # them is the free fix (vs. a larger/paid runner, which the cost
+        # policy for this task rules out).
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+            "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android/sdk/ndk \
+            2>/dev/null || true
+          df -h /
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -89,7 +106,8 @@ jobs:
           mkdir -p ../artifacts ../logs
           chmod +x ./gradlew
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon | tee ../logs/android-build.log
+          df -h / | tee -a ../logs/android-build.log
+          ./gradlew assembleDebug --no-daemon --stacktrace | tee -a ../logs/android-build.log
 
       - name: Collect APK
         run: |
