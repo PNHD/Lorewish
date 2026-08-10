@@ -48,6 +48,122 @@ email send was actually attempted, which would not happen if confirmations were 
 task needs confirmations off for a specific, scoped dev-testing reason, that decision must be made
 and recorded explicitly here, not defaulted into silently by pushing a scaffold config file.
 
+## Data API object privileges — the non-negotiable migration rule *(added by LW-M1-R3)*
+
+**Every Lorewish migration that creates an application table MUST revoke inherited/default client
+grants and then add the exact explicit grants it needs, in the same migration.**
+
+This is not a style preference. It is the direct consequence of a real defect found in review.
+
+### What went wrong in LW-M1-R2
+
+`20260810013158_m1_foundation_schema.sql` ends with an explicit, minimal `grant` block and a comment
+asserting that Supabase's current default does not auto-expose new public-schema tables, so `anon`
+would receive nothing. The comment was wrong for this project. Live inspection of the database after
+R2 (`handoff/LW-M1-R3/grants-before.txt`) found every one of the five authoring tables carrying:
+
+```
+relacl = {postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,
+          authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}
+```
+
+`anon` and `authenticated` each held **all seven** table privileges — SELECT, INSERT, UPDATE, DELETE
+**plus TRUNCATE, TRIGGER and REFERENCES**. The cause was `pg_default_acl`: this project predates /
+did not have the "tables are not exposed to the Data API automatically" behaviour enabled, so every
+`create table` was auto-granted `ALL` to the Data API roles *before* the migration's own `grant`
+statements ran. The explicit grants were never ignored — they were simply a subset of what had
+already been handed out, so they changed nothing.
+
+### Grants and RLS are separate layers
+
+R2's adversarial RLS probes genuinely passed, and that result still stands: no cross-user or
+anonymous **row** access ever succeeded. But RLS policies only constrain row-level
+SELECT/INSERT/UPDATE/DELETE. **`TRUNCATE` is a whole-table operation that no row policy governs**,
+and `REFERENCES`/`TRIGGER` are schema-level surface RLS never sees. Correct RLS does not make an
+unnecessary object privilege harmless. Never reason about one layer as if it covered the other.
+
+### What LW-M1-R3 changed
+
+`20260810065727_m1_least_privilege_hardening.sql` revoked everything from both client roles on the
+five tables and re-granted only the exact DML (verified live in
+`handoff/LW-M1-R3/grants-after.txt`):
+
+| Table | `anon` | `authenticated` |
+|---|---|---|
+| `profiles` | *(none)* | SELECT, INSERT, UPDATE |
+| `stories` | *(none)* | SELECT, INSERT, UPDATE, DELETE |
+| `story_configurations` | *(none)* | SELECT, INSERT, UPDATE, DELETE |
+| `worlds` | *(none)* | SELECT, INSERT, UPDATE, DELETE |
+| `characters` | *(none)* | SELECT, INSERT, UPDATE, DELETE |
+
+`profiles` has no DELETE by design — profile rows are removed only by the `auth.users`
+`ON DELETE CASCADE`, never by a client call. `service_role` was deliberately left untouched.
+
+### Future exposure is now opt-in — but only partly, and that is why the rule stands
+
+The same migration also applied Supabase's own documented remedy for an existing project
+([changelog 45329](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically)),
+scoped to the `postgres` role's default ACL in `public`:
+
+```sql
+alter default privileges for role postgres in schema public
+  revoke all on tables from anon, authenticated;
+alter default privileges for role postgres in schema public
+  revoke all on sequences from anon, authenticated;
+```
+
+`REVOKE ALL`, not the four DML verbs the changelog names, because the live default handed out
+`arwdDxtm` — revoking only DML would have left TRUNCATE/TRIGGER/REFERENCES defaulting onto every new
+table. Verified afterwards: the `postgres`/`public`/tables default is now
+`{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}` — `anon` and `authenticated` are gone.
+
+This was **not** done via `supabase config push` (`[api] auto_expose_new_tables`). That command
+pushes the *entire* local `config.toml`, which is CLI-scaffold content — pushing it would among other
+things set `enable_confirmations = false` and rewrite `site_url` to `127.0.0.1:3000` on the live
+project. Same reasoning as the Auth section above.
+
+**Three gaps remain, and none of them are closed by the statement above:**
+
+1. A separate `supabase_admin`-owned default ACL for `public` still grants `arwdDxtm` on tables to
+   `anon`/`authenticated`. This role's defaults cannot be altered from a `postgres` connection. It
+   does not govern migration-created objects (`supabase db push` connects as `postgres`), but it
+   does mean "automatic exposure is disabled" is **not** true of this database in general.
+2. The **function** default ACL still grants `EXECUTE` to `anon`/`authenticated` on new
+   `public` functions. Any future RPC helper is callable by an anonymous client the moment it is
+   created unless the migration revokes it.
+3. A table created by any path other than a `postgres`-role migration — the dashboard SQL editor
+   running as another role, a restore, a platform-side change — is not covered.
+
+So: **the migration rule is the control, and the default-privilege change is defence in depth.**
+Do not invert that. Do not write a migration that relies on the default being safe.
+
+### The rule, concretely
+
+Every migration creating a table in `public` must contain, for that table:
+
+```sql
+revoke all on table public.<name> from anon, authenticated;
+grant <only the verbs the app actually calls> on public.<name> to authenticated;
+-- and, if and only if the data is genuinely public-readable:
+-- grant select on public.<name> to anon;
+```
+
+Plus: enable RLS and write the policies. Plus: `revoke execute` on any new `public` function the
+client is not meant to call. Never grant TRUNCATE, TRIGGER or REFERENCES to a client role.
+
+**Verify against the live database, never against the migration text.** The whole R2 defect was a
+migration that read correctly and a database that was not. The check is:
+
+```sql
+select grantee, table_name, string_agg(privilege_type, ', ' order by privilege_type)
+from information_schema.table_privileges
+where table_schema = 'public' and grantee in ('anon','authenticated')
+group by grantee, table_name order by grantee, table_name;
+```
+
+Run it with `supabase db query --linked "<sql>"` (Management API; needs no database password and no
+local Docker). `anon` must not appear at all for private tables.
+
 ## Auth — providers
 
 Email/password only. Do not enable Google/Apple/Facebook/Discord/other OAuth providers, and do not

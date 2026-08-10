@@ -5,10 +5,32 @@ name: CI
 # runners only (ubuntu-latest, macos-latest) — no larger/paid runner classes.
 # No EAS account or build quota is used anywhere in this workflow.
 
+# Cost control (LW-M1-R3): the Android job alone runs 35-45 minutes per push. The
+# final LW-M1-R2 commit (f97dd28) changed only CURRENT_WORK.md and handoff/ and
+# still launched the full native matrix — ~37 minutes of runner time that could
+# not have told us anything, because no input to a native build had changed.
+#
+# `paths-ignore` skips a run only when EVERY changed file in the push matches, so
+# a commit touching one doc and one source file still builds. The list below is
+# deliberately limited to files that are never inputs to a build: prose and
+# review artifacts. Everything that can affect the app or the pipeline —
+# src/**, package.json, package-lock.json, app.json, eas.json, assets/**,
+# tsconfig.json, eslint.config.js, supabase/**, and .github/** itself — is
+# absent from this list on purpose and always triggers a full run. When in
+# doubt, leave a path out: the failure mode of an unnecessary build is wasted
+# minutes, the failure mode of a wrongly skipped one is unverified code.
 on:
   push:
     branches: [main, "feature/**"]
+    paths-ignore:
+      - "docs/**"
+      - "handoff/**"
+      - "*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "handoff/**"
+      - "*.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

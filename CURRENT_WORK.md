@@ -1,5 +1,176 @@
 # Current Work
 
+**Task**: LW-M1-R3 — Live Privilege Hardening + Repository/CI Closeout
+**Status**: **M1 PASS**, with Android runtime evidence explicitly deferred (see below).
+
+## Baseline (verified, not taken from the prior report)
+
+- Baseline commit: **`f97dd28`** (`docs: LW-M1-R2 CURRENT_WORK.md and handoff package`) — confirmed
+  by `git rev-parse HEAD`, matching what the R2 handoff claimed.
+- Baseline branch: `feature/lw-m1-backend-native-foundation`; working tree clean at start.
+- Local `main`: `b2a817e` (M0 baseline only) — confirmed.
+- GitHub `PNHD/Lorewish`: private; **only** the feature branch existed remotely, and it was the
+  repository's default branch. Both confirmed before being changed.
+- Linked Supabase project: `lorewish-dev` / `sfarcofvqfeobtcizxyv` / `ap-southeast-1`, verified twice
+  — once at the start and again immediately before applying the migration.
+  `doodle-world-studio` (`etmqrpoefkcahyvaimiw`) was never touched.
+
+## The R2 Grant Defect — Claim vs. Live Reality
+
+This is recorded as audit history and deliberately not erased. The R2 migration comment that states
+the wrong thing is also left in place, unedited.
+
+- **R2 claim**: "`anon` receives no grant on any of these tables"; new public-schema tables are not
+  auto-exposed; only explicit `authenticated` DML exists.
+- **Live R2 reality** (`handoff/LW-M1-R3/grants-before.txt`): every one of the five authoring tables
+  carried `relacl = {postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,`
+  `authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}` — `anon` and `authenticated`
+  each held **all seven** table privileges, including **TRUNCATE, TRIGGER and REFERENCES**. The
+  cause was `pg_default_acl`: the project's public-schema default granted `ALL` to the Data API
+  roles at `create table` time, before the migration's own `grant` statements ran. The explicit
+  grants were a subset of what had already been given, so they changed nothing.
+- **R2 data-isolation result still stands**: RLS blocked every cross-user and anonymous **row**
+  access that was tested, then and now. No data was exposed by this in any observed probe.
+- **This is not a confirmed data breach.** It is an object-privilege posture that was weaker than
+  reported, on a dev-only project, corrected before M2 adds more tables.
+- **Why it mattered anyway**: grants and RLS are separate layers. `TRUNCATE` is a whole-table
+  operation that no row policy governs. Correct RLS does not make an unnecessary object privilege
+  harmless.
+
+## R3 Fix — Corrective Migration
+
+`supabase/migrations/20260810065727_m1_least_privilege_hardening.sql`, applied to `lorewish-dev`
+(`supabase db push --linked`; remote history now lists both migrations). The already-applied
+`20260810013158_m1_foundation_schema.sql` was **not** rewritten.
+
+Verified live afterwards (`handoff/LW-M1-R3/grants-after.txt`, machine-checked expected-vs-actual:
+**10/10 PASS, 0 FAIL**):
+
+| Table | `anon` | `authenticated` |
+|---|---|---|
+| `profiles` | *(zero privileges)* | SELECT, INSERT, UPDATE |
+| `stories` | *(zero privileges)* | SELECT, INSERT, UPDATE, DELETE |
+| `story_configurations` | *(zero privileges)* | SELECT, INSERT, UPDATE, DELETE |
+| `worlds` | *(zero privileges)* | SELECT, INSERT, UPDATE, DELETE |
+| `characters` | *(zero privileges)* | SELECT, INSERT, UPDATE, DELETE |
+
+No client role holds TRUNCATE, TRIGGER or REFERENCES on any of them. `service_role` was left
+untouched by design (redesigning it was out of scope; it is never used from application code).
+All 19 RLS policies and all five `relrowsecurity` flags are unchanged.
+
+## Future Default-Privilege Policy — Option A *and* Option B
+
+**Option A was applied** and verified, using Supabase's own documented remedy for an existing
+project (changelog 45329), scoped to the `postgres` role's default ACL:
+
+```sql
+alter default privileges for role postgres in schema public revoke all on tables    from anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on sequences from anon, authenticated;
+```
+
+`REVOKE ALL` rather than the four DML verbs the changelog names, because the live default handed out
+`arwdDxtm`. The `postgres`/`public`/tables default is now
+`{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}` — both client roles removed.
+
+This was **not** done with `supabase config push` (`[api] auto_expose_new_tables`): that command
+pushes the entire local `config.toml`, which is CLI-scaffold content and would have set
+`enable_confirmations = false` and rewritten `site_url` to `127.0.0.1:3000` on the live project.
+
+**Automatic exposure is NOT fully disabled, and this document does not claim it is.** Three gaps
+remain: a `supabase_admin`-owned default ACL for `public` that a `postgres` connection cannot alter;
+the **function** default ACL, which still auto-grants `EXECUTE` to `anon`/`authenticated` on new
+`public` functions; and any table created outside a `postgres`-role migration.
+
+**Therefore Option B is also adopted, as the primary control:** *every Lorewish migration creating
+an application table MUST revoke inherited/default client grants and then add exact explicit grants
+in the same migration.* Recorded as a non-negotiable rule in
+[docs/DEV_ENVIRONMENT.md](docs/DEV_ENVIRONMENT.md),
+[docs/TECHNICAL_ARCHITECTURE.md](docs/TECHNICAL_ARCHITECTURE.md) §4 and
+[docs/AGENT_TOOLING.md](docs/AGENT_TOOLING.md) standing rule 6. The default-privilege change is
+defence in depth, not the control.
+
+## Security Regression — 30/30 PASS
+
+`handoff/LW-M1-R3/rls-test-results.txt`. Real HTTPS calls to the live Data API; two ephemeral
+accounts created and deleted via the Auth Admin API; cleanup verified by re-query (0 remaining
+`@lorewish-test.dev` accounts).
+
+- **A. Anonymous denial is now object-level, not row-level.** R2 accepted `200 []` as proof; this
+  run does not. All five tables plus an anonymous INSERT and a bulk DELETE returned **HTTP 401 with
+  SQLSTATE 42501, "permission denied for table ..."** — including PostgREST's own hint naming the
+  grant that would be required, which is direct confirmation none exists.
+- **B/G. Owner CRUD unbroken** by the revoke/re-grant: create, read, update, child insert
+  (worlds/characters/story_configurations), child update, child delete all succeed.
+- **C.** User B cannot read, update or delete User A's Story, StoryConfiguration or World.
+- **D.** Ownership tampering fails both directions (A cannot reassign to B; B cannot forge a Story
+  owned by A).
+- **E.** B cannot attach a World, Character or StoryConfiguration to A's Story.
+- **F.** `profiles` remains usable for exactly its allowed operations — and `DELETE` on `profiles`
+  is now correctly refused at the object level, which is the one place the privilege layer rather
+  than RLS is the control.
+- **`set_updated_at` trigger verified still firing** after `EXECUTE` was revoked from the client
+  roles (Postgres checks that privilege at `CREATE TRIGGER` time, not per firing): an authenticated
+  UPDATE still bumps `updated_at`.
+- **Advisors**: `supabase db advisors --linked` — **0 security findings, 0 performance findings**.
+
+## Repository / CI
+
+- `main` (`b2a817e`, M0 baseline) pushed to the private remote unchanged — **not** moved to the
+  feature tip.
+- GitHub default branch changed from `feature/lw-m1-backend-native-foundation` to **`main`**.
+  Repository remains **private**.
+- Neither `feature/lw-m1-web-foundation` nor `feature/lw-m1-backend-native-foundation` was deleted.
+- New branch `feature/lw-m1-foundation-closeout`, created from the actual reviewed R2 tip `f97dd28`
+  (not from a reported SHA), carries the R3 migration, docs and workflow change. A **draft** PR to
+  `main` is open and deliberately **not merged** — the product owner / reviewer sees the R3 handoff
+  first.
+- **CI cost fix**: `.github/workflows/ci.yml` gains `paths-ignore` (`docs/**`, `handoff/**`,
+  `*.md`) on both `push` and `pull_request`. Verified against real history: every one of the 16
+  files in `f97dd28` — the docs-only R2 commit that burned ~37 minutes of native runner time —
+  matches that list, so it would now be skipped entirely. `src/**`, `package.json`,
+  `package-lock.json`, `app.json`, `eas.json`, `assets/**`, `supabase/**` and `.github/**` are
+  deliberately absent and always trigger a full run. The workflow change itself is a `.github/**`
+  change and therefore does trigger one final full run, which is the intended and accepted cost.
+
+## Native Evidence Status
+
+- **iOS: ACCEPTED.** R2's GitHub Actions Simulator evidence (compile → install → launch → process
+  confirmed alive → screenshot of the actual Lorewish UI) is genuine runtime evidence and is
+  accepted for the M1 foundation. EAS was **not** re-run; Simulator runtime evidence is stronger
+  than compile-only cloud evidence for this goal. No claim of physical-iPhone validation is made.
+- **Android: `ANDROID_RUNTIME_EVIDENCE_DEFERRED`.** R2 produced a release-build-type APK that is
+  signed with the JS bundle embedded, but the Android runtime was never observed. No local SDK was
+  installed for this task by instruction. **This does not block M1** — the owner's current
+  validation strategy is web-first. **Required closeout point: Android runtime evidence must be
+  obtained before any external native beta or Play Store release testing.** Not claimed as PASS.
+
+## Implementation Head / Handoff Property
+
+Per this task's evidence rule, `IMPLEMENTATION_HEAD` is defined as the last committed
+source/schema/docs change required by the task — the single commit this task makes on
+`feature/lw-m1-foundation-closeout`. All handoff evidence is generated **from that commit, after it
+exists**, and `handoff/LW-M1-R3/` is deliberately **left untracked** so that packaging cannot move
+the head the evidence describes. Its exact SHA is recorded in `handoff/LW-M1-R3/HANDOFF.md`,
+`git-log.txt` and `git-status.txt` — this file does not guess at it, which is precisely the R2
+mistake (`handoff/LW-M1-R2/git-log.txt` stopped at an older HEAD than the report named).
+
+## M1 Verdict
+
+**PASS.** Object privileges are now least-privilege and verified live; RLS is intact and
+independently re-proven; the repository is normalized (remote `main`, default branch `main`, draft
+closeout PR); CI no longer burns native runner time on documentation. Android runtime evidence
+remains explicitly deferred, which does not prevent M1 PASS under the web-first strategy.
+
+**No M2 work was started.** The public schema still contains exactly the five M1 authoring tables —
+no `PlayerRun`, `StoryState`, scene, branch, `CanonFact`, memory, gateway, credit, ads, payments,
+publishing or social schema or code exists.
+
+## Recommended Next Task
+
+**LW-M2-R1 — Real Interactive Story Engine Vertical Slice.** Not started here.
+
+---
+
 ## HEAD Correction (recorded by LW-M1-R2, verified against actual `git` state)
 
 This document's "Final HEAD" (below, `7a7cf7c`) and `handoff/LW-M1-R1/HANDOFF.md`'s commit table

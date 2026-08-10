@@ -100,6 +100,19 @@ blindly.
   PlayerRun it is acting on. RLS is the second line of defence, not the only one. A gateway
   function that trusts a client-supplied `player_run_id` without an ownership check is a data-leak
   and a billing-abuse vector at the same time.
+- **Object privileges and RLS are separate layers, and both must be right** *(added by LW-M1-R3)*.
+  A Postgres `GRANT` decides whether a role can touch a table at all; an RLS policy decides which
+  *rows* it sees once it can. Row policies do not govern `TRUNCATE` — a whole-table operation — and
+  never see `REFERENCES` or `TRIGGER`. So a table can have flawless owner-only policies and still be
+  truncatable by an anonymous client, which is exactly the state LW-M1-R2 shipped and LW-M1-R3
+  corrected. **Every migration that creates an application table must revoke inherited/default
+  client grants and then add exact explicit grants, in the same migration** — the project default
+  cannot be assumed safe, and the check is a live query against
+  `information_schema.table_privileges`, not a reading of the migration file. Full rule, the R2
+  defect it comes from, and the residual gaps: [DEV_ENVIRONMENT.md](DEV_ENVIRONMENT.md) — "Data API
+  object privileges". This applies to every M2+ table (`PlayerRun`, `StoryState`, `CanonFact`,
+  credit ledger, audit logs) without exception; run-scoped and billing tables are the ones where an
+  over-broad default grant would hurt most.
 - **Realtime** is *not* needed for MVP (single-player, single-device-at-a-time experience per run).
   Justified use is deferred until a concrete need appears (e.g., a future multi-device
   "continue on another device instantly" feature) — do not wire it up speculatively.
