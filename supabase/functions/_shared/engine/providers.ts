@@ -5,9 +5,10 @@
  * which is the whole point of the NarrativeProvider interface.
  *
  * IMPORTANT — none of these real adapters has been exercised against a live
- * API in this task: no OpenAI/Anthropic/Gemini credential is configured in
- * this environment (checked via `env`, not printed — see
- * docs/NARRATIVE_MODEL_EVALUATION.md, NARRATIVE_PROVIDER_CREDENTIAL_REQUIRED).
+ * API in this task: no OpenAI/Anthropic/Gemini/DeepSeek credential is
+ * configured in this environment (checked via `env`, not printed — see
+ * docs/NARRATIVE_MODEL_EVALUATION.md, NARRATIVE_PROVIDER_CREDENTIAL_REQUIRED,
+ * GEMINI_API_KEY_REQUIRED, DEEPSEEK_API_KEY_REQUIRED).
  * The Anthropic adapter's request shape was verified against
  * https://platform.claude.com/docs/en/api/messages on 2026-08-10 (endpoint,
  * headers, tool-forced structured output via tool_choice, and the
@@ -15,6 +16,27 @@
  * a 400 error — so this adapter deliberately never sets them). It is
  * believed correct against current public docs, not proven against a real
  * response.
+ *
+ * The Gemini adapter's request shape was verified against
+ * https://ai.google.dev/api/generate-content and
+ * https://ai.google.dev/gemini-api/docs/structured-output on 2026-08-10
+ * (endpoint, `x-goog-api-key` header — the current documented alternative to
+ * the legacy `?key=` query parameter, which would otherwise put the secret in
+ * server access logs — and `generationConfig.responseSchema` for
+ * schema-validated structured output). LOREWISH_NARRATIVE_MODEL selects
+ * between the two model ids recorded in docs/NARRATIVE_MODEL_EVALUATION.md
+ * (`gemini-3.6-flash` quality tier, `gemini-3.5-flash-lite` cheap tier);
+ * an unrecognized model id fails fast at construction rather than silently
+ * mis-costing generations against the wrong price table. Like the Anthropic
+ * adapter, this is believed correct against current public docs, never
+ * exercised against a real response — no GEMINI_API_KEY exists in this
+ * environment.
+ *
+ * DeepSeek is NOT implemented in this task: no DEEPSEEK_API_KEY exists
+ * either, and the task brief's credential-safety rule for a missing DeepSeek
+ * key is "continue Gemini work, report DEEPSEEK_API_KEY_REQUIRED" — not
+ * "build the adapter blind". Current model ids are recorded in
+ * docs/NARRATIVE_MODEL_EVALUATION.md for when a credential exists.
  */
 
 import type { NarrativeContext, NarrativeProvider, ProviderCallResult } from "./types.ts";
@@ -196,13 +218,156 @@ export class OpenAiNarrativeProvider implements NarrativeProvider {
   }
 }
 
-/** Not implemented in this task — same reasoning as OpenAiNarrativeProvider. */
-export class GeminiNarrativeProvider implements NarrativeProvider {
-  readonly id = "gemini";
+/**
+ * Not implemented in this task — no DEEPSEEK_API_KEY was available (checked
+ * as a variable name only, never printed). Present so the registry
+ * demonstrates provider-agnosticism and so a future task with a credential
+ * has a typed slot to fill in. Current DeepSeek model ids
+ * (`deepseek-v4-pro` / `deepseek-v4-flash`) are recorded in
+ * docs/NARRATIVE_MODEL_EVALUATION.md §3 for that future task, per the task
+ * brief's MODEL DISCOVERY instruction to verify current docs before hardcoding
+ * any model id even when an adapter isn't being built yet.
+ */
+export class DeepSeekNarrativeProvider implements NarrativeProvider {
+  readonly id = "deepseek";
   generateTurn(_context: NarrativeContext): Promise<ProviderCallResult> {
     throw new Error(
-      "GeminiNarrativeProvider is not implemented — no GEMINI_API_KEY was available to build or verify this adapter. See docs/NARRATIVE_MODEL_EVALUATION.md."
+      "DeepSeekNarrativeProvider is not implemented — no DEEPSEEK_API_KEY was available to build or verify this adapter. See docs/NARRATIVE_MODEL_EVALUATION.md."
     );
+  }
+}
+
+/**
+ * Pricing per 1M tokens, in whole US dollars (converted to per-token
+ * micro-dollars below) — re-verified against https://ai.google.dev/gemini-api/docs/pricing
+ * on 2026-08-10. Configuration, not a standing architectural fact (same
+ * status as the Anthropic pricing comment below), and deliberately keyed by
+ * exact API model id so an unrecognized id fails fast instead of silently
+ * billing against the wrong tier.
+ */
+const GEMINI_PRICING_USD_PER_1M: Record<string, { input: number; output: number }> = {
+  "gemini-3.6-flash": { input: 1.5, output: 7.5 },
+  "gemini-3.5-flash-lite": { input: 0.3, output: 2.5 },
+};
+
+const GEMINI_RESULT_SCHEMA = RESULT_TOOL_SCHEMA;
+
+/**
+ * Real server-side adapter against the Gemini API's generateContent endpoint
+ * (https://ai.google.dev/api/generate-content, verified 2026-08-10).
+ * Structured output is enforced by the provider itself via
+ * generationConfig.responseSchema/responseMimeType — the same
+ * StructuredGenerationResultSchema the fake and Anthropic providers produce
+ * is still re-validated by turn-pipeline.ts after this returns, so a
+ * schema-conformant-but-wrong-shaped Gemini response is caught the same way
+ * a malformed Anthropic or fake response would be (never a provider-specific
+ * bypass of the quality gate).
+ *
+ * NEVER exercised against a live network call in this task — no
+ * GEMINI_API_KEY exists in this environment. See
+ * docs/NARRATIVE_MODEL_EVALUATION.md, GEMINI_API_KEY_REQUIRED.
+ */
+export class GeminiNarrativeProvider implements NarrativeProvider {
+  readonly id = "gemini";
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly pricing: { input: number; output: number };
+  /** Bounded generation timeout — no request is allowed to hang indefinitely. */
+  private readonly timeoutMs = 30_000;
+
+  constructor(apiKey: string, model = "gemini-3.6-flash") {
+    const pricing = GEMINI_PRICING_USD_PER_1M[model];
+    if (!pricing) {
+      throw new Error(
+        `GeminiNarrativeProvider: unrecognized model "${model}" — no pricing entry exists, so cost accounting would be silently wrong. ` +
+          `Known models: ${Object.keys(GEMINI_PRICING_USD_PER_1M).join(", ")}. See docs/NARRATIVE_MODEL_EVALUATION.md.`
+      );
+    }
+    this.apiKey = apiKey;
+    this.model = model;
+    this.pricing = pricing;
+  }
+
+  async generateTurn(context: NarrativeContext): Promise<ProviderCallResult> {
+    const { system, user } = buildPrompt(context);
+    const started = performance.now();
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            // Header form, not `?key=` — the documented alternative that
+            // keeps the secret out of URLs, server access logs, and any
+            // intermediary tooling that logs request URLs but not headers.
+            "x-goog-api-key": this.apiKey,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: "user", parts: [{ text: user }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: GEMINI_RESULT_SCHEMA,
+              maxOutputTokens: 2048,
+            },
+          }),
+        }
+      );
+    } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        throw new ProviderTransportError(`gemini request timed out after ${this.timeoutMs}ms`);
+      }
+      throw new ProviderTransportError(`gemini fetch failed: ${(err as Error).message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (response.status >= 500 || response.status === 429) {
+      throw new ProviderTransportError(`gemini transport error: HTTP ${response.status}`);
+    }
+    if (!response.ok) {
+      // Provider error body only — never the key, which is never included in
+      // any request/response body to begin with.
+      throw new Error(`gemini API error: HTTP ${response.status} ${await response.text()}`);
+    }
+
+    const body = await response.json();
+    const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (typeof text !== "string") {
+      throw new Error("gemini response contained no usable candidate text");
+    }
+
+    let parsedResult: unknown;
+    try {
+      parsedResult = JSON.parse(text);
+    } catch {
+      throw new Error("gemini response candidate text was not valid JSON");
+    }
+
+    const latencyMs = Math.round(performance.now() - started);
+    const usage = body?.usageMetadata ?? {};
+    const inputTokens = usage.promptTokenCount ?? 0;
+    const outputTokens = usage.candidatesTokenCount ?? 0;
+    const costMicros = Math.round(inputTokens * this.pricing.input + outputTokens * this.pricing.output);
+
+    return {
+      result: parsedResult,
+      metadata: {
+        provider: this.id,
+        model: this.model,
+        inputTokens,
+        outputTokens,
+        costMicros,
+        latencyMs,
+      },
+    };
   }
 }
 
@@ -220,7 +385,12 @@ export function selectProvider(env: { get(key: string): string | undefined }): N
     return new AnthropicNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "claude-sonnet-5");
   }
   if (configured === "openai") return new OpenAiNarrativeProvider();
-  if (configured === "gemini") return new GeminiNarrativeProvider();
+  if (configured === "gemini") {
+    const key = env.get("GEMINI_API_KEY") ?? env.get("GOOGLE_AI_API_KEY");
+    if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=gemini but neither GEMINI_API_KEY nor GOOGLE_AI_API_KEY is set");
+    return new GeminiNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "gemini-3.6-flash");
+  }
+  if (configured === "deepseek") return new DeepSeekNarrativeProvider();
 
   console.warn(
     "[lorewish] LOREWISH_NARRATIVE_PROVIDER is not set to a real provider — using FakeNarrativeProvider. " +

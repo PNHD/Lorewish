@@ -67,6 +67,53 @@ export interface ContextInputs {
   allCanonFacts: ContextCanonFact[];
 }
 
+/**
+ * Raised by a TurnRepository implementation for a client-triggerable
+ * authorization failure (e.g. submitting a turn against a run the caller
+ * does not own) — distinct from an unexpected server fault, so the Edge
+ * Function boundary (see mapRepositoryErrorToHttpStatus below) can answer
+ * with a clean 403 instead of a generic 500. LW-M2-R2 fix for a known M2-R1
+ * polish issue; see the migration comment in
+ * supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql.
+ */
+export class RepositoryForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RepositoryForbiddenError";
+  }
+}
+
+/**
+ * Raised by a TurnRepository implementation for a client-triggerable
+ * input-validation failure (e.g. an invalid/stale selected_choice_id) —
+ * mapped to a clean 400 rather than a generic 500. Same fix as
+ * RepositoryForbiddenError above.
+ */
+export class RepositoryValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RepositoryValidationError";
+  }
+}
+
+/**
+ * Pure, runtime-agnostic mapping from a TurnRepository error to the HTTP
+ * response an Edge Function should send. Factored out of submit-turn/index.ts
+ * (a Deno-only entrypoint that can't be exercised by vitest under Node) so
+ * this specific behavior — the actual fix for the two known M2-R1 issues —
+ * is unit-testable. Never leaks the underlying error's message/stack to the
+ * client; callers should still log the original error server-side.
+ */
+export function mapRepositoryErrorToHttpStatus(err: unknown): { status: number; body: { error: string } } {
+  if (err instanceof RepositoryForbiddenError) {
+    return { status: 403, body: { error: "forbidden" } };
+  }
+  if (err instanceof RepositoryValidationError) {
+    return { status: 400, body: { error: "invalid_request" } };
+  }
+  return { status: 500, body: { error: "internal_error" } };
+}
+
 export interface TurnRepository {
   precheckAndStartTurn(args: {
     turnId: string;

@@ -18,6 +18,7 @@
 import { submitTurn } from "../_shared/engine/turn-pipeline.ts";
 import { SupabaseTurnRepository } from "../_shared/engine/supabase-repository.ts";
 import { selectProvider } from "../_shared/engine/providers.ts";
+import { mapRepositoryErrorToHttpStatus } from "../_shared/engine/repository.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -93,10 +94,16 @@ Deno.serve(async (req) => {
     // Full error detail is deliberately never returned to the caller here —
     // internal retry/provider/stack detail must not reach a normal user
     // (task brief, GENERATION UX section). Server-side console.error is the
-    // only diagnostic surface.
-    console.error("[submit-turn] unhandled error", err);
-    return new Response(JSON.stringify({ error: "internal_error" }), {
-      status: 500,
+    // only diagnostic surface. The two known, client-triggerable failures
+    // (cross-user submission, invalid selected_choice_id) are typed errors
+    // from the repository layer and map to a clean 403/400 here instead of
+    // falling through to the generic 500 below — see
+    // supabase/functions/_shared/engine/repository.ts,
+    // mapRepositoryErrorToHttpStatus.
+    console.error("[submit-turn] error", err);
+    const { status, body } = mapRepositoryErrorToHttpStatus(err);
+    return new Response(JSON.stringify(body), {
+      status,
       headers: { ...CORS_HEADERS, "content-type": "application/json" },
     });
   }

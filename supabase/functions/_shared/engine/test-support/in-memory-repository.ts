@@ -21,6 +21,7 @@ import type {
   StorySetup,
   TurnRepository,
 } from "../repository.ts";
+import { RepositoryForbiddenError, RepositoryValidationError } from "../repository.ts";
 
 interface Run {
   id: string;
@@ -154,7 +155,13 @@ export class InMemoryTurnRepository implements TurnRepository {
       this.runs.set(runId, { id: runId, activeBranchId: branchId, status: "active", storySetup: args.storySetup });
     } else {
       const run = this.runs.get(runId);
-      if (!run) throw new Error("run not found");
+      // Mirrors lw_precheck_and_start_turn's "run not found or not owned by
+      // caller" branch (supabase-repository.ts / the LW-M2-R2 migration) —
+      // this fake has no separate caller-identity concept, so "run does not
+      // exist in this repository" is the reachable analog of "not this
+      // caller's run". Real cross-user ownership is exercised live (see
+      // handoff/LW-M2-R1/rls-test-results.txt), not by this in-memory double.
+      if (!run) throw new RepositoryForbiddenError("run not found or not owned by caller");
       branchId = run.activeBranchId;
       const inFlight = [...this.turns.values()].some(
         (t) => t.branchId === branchId && t.status === "generating"
@@ -168,7 +175,9 @@ export class InMemoryTurnRepository implements TurnRepository {
     if (args.actionType === "choice" && sourceSceneId) {
       const scene = this.scenes.get(sourceSceneId)!;
       const valid = scene.nextChoices.some((c) => c.id === args.selectedChoiceId);
-      if (!valid) throw new Error(`selected_choice_id ${args.selectedChoiceId} is not a current choice`);
+      if (!valid) {
+        throw new RepositoryValidationError(`selected_choice_id ${args.selectedChoiceId} is not a current choice`);
+      }
     }
 
     if (this.forceAllowanceExhausted || this.generationCount >= this.dailyCap) {

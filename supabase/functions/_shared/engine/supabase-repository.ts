@@ -22,6 +22,28 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { ActionType, BoundaryKind, ContextCanonFact, ContextCharacter, ContextScene, StructuredGenerationResult } from "./types.ts";
 import type { CommitOutcome, ContextInputs, FailOutcome, PrecheckOutcome, SceneRow, StorySetup, TurnRepository } from "./repository.ts";
+import { RepositoryForbiddenError, RepositoryValidationError } from "./repository.ts";
+
+/**
+ * SQLSTATEs the LW-M2-R2 corrective migration
+ * (20260810220000_m2_error_mapping_and_allowance_fix.sql) raises for the two
+ * known client-triggerable failures. supabase-js's PostgrestError exposes
+ * the raised SQLSTATE as `.code` — translating it here, once, keeps every
+ * other RPC error path (a genuine unexpected server fault) falling through
+ * to the generic Error branch unchanged.
+ */
+const SQLSTATE_INSUFFICIENT_PRIVILEGE = "42501";
+const SQLSTATE_INVALID_PARAMETER_VALUE = "22023";
+
+function throwTypedRpcError(rpcName: string, error: { code?: string; message: string }): never {
+  if (error.code === SQLSTATE_INSUFFICIENT_PRIVILEGE) {
+    throw new RepositoryForbiddenError(`${rpcName}: not authorized`);
+  }
+  if (error.code === SQLSTATE_INVALID_PARAMETER_VALUE) {
+    throw new RepositoryValidationError(`${rpcName}: invalid request`);
+  }
+  throw new Error(`${rpcName} failed: ${error.message}`);
+}
 
 function toSceneRow(row: Record<string, unknown>): SceneRow {
   return {
@@ -82,7 +104,7 @@ export class SupabaseTurnRepository implements TurnRepository {
           }
         : null,
     });
-    if (error) throw new Error(`lw_precheck_and_start_turn failed: ${error.message}`);
+    if (error) throwTypedRpcError("lw_precheck_and_start_turn", error);
 
     const status = data.status as string;
     if (status === "proceed") {
@@ -250,7 +272,7 @@ export class SupabaseTurnRepository implements TurnRepository {
       p_provider_cost_micros: args.costMicros,
       p_latency_ms: args.latencyMs,
     });
-    if (error) throw new Error(`lw_commit_turn failed: ${error.message}`);
+    if (error) throwTypedRpcError("lw_commit_turn", error);
     return { status: data.status, scene: toSceneRow(data.scene), turnId: data.turn_id };
   }
 
@@ -266,7 +288,7 @@ export class SupabaseTurnRepository implements TurnRepository {
       p_generation_attempt_count: args.generationAttemptCount,
       p_provider_cost_micros: args.costMicros,
     });
-    if (error) throw new Error(`lw_fail_turn failed: ${error.message}`);
+    if (error) throwTypedRpcError("lw_fail_turn", error);
     return { status: "GENERATION_FAILED", turnId: data.turn_id, errorClass: data.error_class };
   }
 }

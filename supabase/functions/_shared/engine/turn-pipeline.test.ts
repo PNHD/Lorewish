@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { submitTurn } from "./turn-pipeline.ts";
 import { FakeNarrativeProvider } from "./fake-provider.ts";
 import { InMemoryTurnRepository } from "./test-support/in-memory-repository.ts";
+import { RepositoryForbiddenError, RepositoryValidationError } from "./repository.ts";
+import type { NarrativeContext, NarrativeProvider, ProviderCallResult } from "./types.ts";
 
 function startArgs(overrides: Partial<Parameters<typeof submitTurn>[2]> = {}) {
   return {
@@ -50,6 +52,31 @@ describe("turn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)",
     ).rejects.toThrow(/not a current choice/);
     // No new scene or turn was created by the rejected attempt.
     expect(repo.scenes.size).toBe(1);
+  });
+
+  it("LW-M2-R2: an invalid selected_choice_id is a RepositoryValidationError (maps to HTTP 400, not 500 — see repository.test.ts)", async () => {
+    const repo = new InMemoryTurnRepository();
+    const { run } = await startRun(repo);
+    await expect(
+      submitTurn(repo, new FakeNarrativeProvider(), {
+        turnId: randomUUID(),
+        playerRunId: run.id,
+        actionType: "choice",
+        selectedChoiceId: "not_a_real_choice_id",
+      })
+    ).rejects.toBeInstanceOf(RepositoryValidationError);
+  });
+
+  it("LW-M2-R2: submitting a turn against a run that is not found/owned is a RepositoryForbiddenError (maps to HTTP 403, not 500 — see repository.test.ts)", async () => {
+    const repo = new InMemoryTurnRepository();
+    await expect(
+      submitTurn(repo, new FakeNarrativeProvider(), {
+        turnId: randomUUID(),
+        playerRunId: randomUUID(), // no such run exists in this repository
+        actionType: "custom_action",
+        rawAction: "try to act on someone else's run",
+      })
+    ).rejects.toBeInstanceOf(RepositoryForbiddenError);
   });
 
   it("resubmitting the same turn_id is idempotent: exactly one Scene, same result returned", async () => {
@@ -263,6 +290,47 @@ describe("turn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)",
     });
     expect(result.status).toBe("GENERATION_FAILED");
     expect(repo.scenes.size).toBe(sceneCountBefore);
+  });
+
+  it("LW-M2-R2: schema-valid output from a real-shaped provider that fails the quality gate on both attempts is never committed as canon", async () => {
+    // Stands in for "a real model" (Gemini, Anthropic, or any future
+    // provider) — implements NarrativeProvider directly, not via
+    // FakeNarrativeProvider's test hooks, and always returns schema-valid
+    // JSON containing a forbidden meta-AI phrase (quality-gate.ts's
+    // meta_ai_language check). This proves the quality gate runs against
+    // provider-shaped output generically, not only against the fake
+    // provider's own test-trigger machinery — no provider gets a bypass.
+    class AlwaysMetaAiProvider implements NarrativeProvider {
+      readonly id = "always-meta-ai";
+      async generateTurn(_context: NarrativeContext): Promise<ProviderCallResult> {
+        return {
+          result: {
+            narrative: "As an AI, I cannot continue this story further.",
+            dialogue: [],
+            state_changes: [],
+            canon_candidates: [],
+            next_choices: [{ id: "a", label: "Try something else" }],
+            boundary_kind: "none",
+            structured_outcome: {},
+          },
+          metadata: { provider: this.id, model: "test", inputTokens: 10, outputTokens: 10, costMicros: 0, latencyMs: 1 },
+        };
+      }
+    }
+
+    const repo = new InMemoryTurnRepository();
+    const { run } = await startRun(repo);
+    const sceneCountBefore = repo.scenes.size;
+
+    const result = await submitTurn(repo, new AlwaysMetaAiProvider(), {
+      turnId: randomUUID(),
+      playerRunId: run.id,
+      actionType: "custom_action",
+      rawAction: "push the door",
+    });
+
+    expect(result.status).toBe("GENERATION_FAILED");
+    expect(repo.scenes.size).toBe(sceneCountBefore); // no scene committed — the gate was never bypassed
   });
 
   it("a forked branch inherits the parent's history up to (and including) the fork point", async () => {
