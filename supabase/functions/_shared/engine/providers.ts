@@ -224,7 +224,7 @@ export class OpenAiNarrativeProvider implements NarrativeProvider {
  * demonstrates provider-agnosticism and so a future task with a credential
  * has a typed slot to fill in. Current DeepSeek model ids
  * (`deepseek-v4-pro` / `deepseek-v4-flash`) are recorded in
- * docs/NARRATIVE_MODEL_EVALUATION.md §3 for that future task, per the task
+ * docs/NARRATIVE_MODEL_EVALUATION.md §8 for that future task, per the task
  * brief's MODEL DISCOVERY instruction to verify current docs before hardcoding
  * any model id even when an adapter isn't being built yet.
  */
