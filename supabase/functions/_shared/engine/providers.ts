@@ -487,7 +487,15 @@ export class GeminiNarrativeProvider implements NarrativeProvider {
     const latencyMs = Math.round(performance.now() - started);
     const usage = body?.usageMetadata ?? {};
     const inputTokens = usage.promptTokenCount ?? 0;
-    const outputTokens = usage.candidatesTokenCount ?? 0;
+    // Gemini's current model family bills "thinking" tokens
+    // (usageMetadata.thoughtsTokenCount) at the same output rate as visible
+    // candidate text (docs/NARRATIVE_MODEL_EVALUATION.md §7's pricing is
+    // explicitly "per 1M output tokens, including thinking tokens") — found
+    // live: a trivial prompt returned candidatesTokenCount=9 but
+    // thoughtsTokenCount=104, over 10x the visible output, which
+    // candidatesTokenCount alone would have silently left out of cost
+    // accounting entirely.
+    const outputTokens = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
     const costMicros = Math.round(inputTokens * this.pricing.input + outputTokens * this.pricing.output);
 
     return {

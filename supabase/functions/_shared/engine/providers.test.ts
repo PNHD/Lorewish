@@ -98,6 +98,22 @@ describe("GeminiNarrativeProvider — successful parse + accounting", () => {
     expect(metadata.costMicros).toBe(Math.round(1000 * 0.3 + 200 * 2.5));
   });
 
+  it("LW-M2-R2: bills thoughtsTokenCount (thinking tokens) as output — found live, a trivial prompt returned 9 visible tokens but 104 thinking tokens", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          candidates: [{ content: { parts: [{ text: JSON.stringify(VALID_RESULT) }] } }],
+          usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 9, thoughtsTokenCount: 104, totalTokenCount: 116 },
+        })
+      )
+    );
+    const provider = new GeminiNarrativeProvider("fake-key", "gemini-3.6-flash");
+    const { metadata } = await provider.generateTurn(baseContext());
+    expect(metadata.outputTokens).toBe(9 + 104);
+    expect(metadata.costMicros).toBe(Math.round(3 * 1.5 + (9 + 104) * 7.5));
+  });
+
   it("sends the API key via the x-goog-api-key header, never in the URL query string", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       jsonResponse(200, {
