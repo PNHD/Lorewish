@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { AuthProvider } from "@/auth/auth-context";
 import { LocaleProvider } from "@/i18n";
 import { useAppTheme } from "@/theme/use-app-theme";
 
@@ -24,7 +25,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <LocaleProvider>
-        <RootStack />
+        <AuthProvider>
+          <RootStack />
+        </AuthProvider>
       </LocaleProvider>
     </SafeAreaProvider>
   );

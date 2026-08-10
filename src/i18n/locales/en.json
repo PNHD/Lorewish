@@ -12,7 +12,8 @@
     "subheading": "Lorewish is a solo interactive roleplay app — make choices, meet characters who remember you, and watch the story change because of what you did.",
     "previewCta": "Try the reading preview",
     "previewCaption": "A short, offline sample of how Lorewish plays. No account needed.",
-    "foundationNote": "Foundation build — Android, iOS and Web from one codebase."
+    "foundationNote": "Foundation build — Android, iOS and Web from one codebase.",
+    "accountLink": "Account"
   },
   "preview": {
     "screenTitle": "Reading preview",
@@ -29,5 +30,31 @@
     "startAgainLabel": "Start again",
     "checkpointBadge": "Checkpoint reached",
     "endingBadge": "Ending reached"
+  },
+  "account": {
+    "screenTitle": "Account",
+    "backToHome": "Back to Home",
+    "loading": "Loading…",
+    "signedInAs": "Signed in as %{email}",
+    "signOut": "Sign out",
+    "signOutError": "Couldn't sign out. Please try again.",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "signInTab": "Sign in",
+    "signUpTab": "Sign up",
+    "signInSubmit": "Sign in",
+    "signUpSubmit": "Create account",
+    "switchToSignUp": "New here? Create an account",
+    "switchToSignIn": "Already have an account? Sign in",
+    "checkEmailHeading": "Check your email",
+    "checkEmailBody": "We sent a confirmation link to %{email}. Open it to activate your account, then sign in here.",
+    "backToSignIn": "Back to sign in",
+    "errorInvalidCredentials": "That email or password isn't right.",
+    "errorEmailNotConfirmed": "Please confirm your email before signing in — check your inbox for the link.",
+    "errorUserAlreadyExists": "An account with that email already exists. Try signing in instead.",
+    "errorWeakPassword": "Please choose a longer password (at least 6 characters).",
+    "errorInvalidEmail": "That email address doesn't look right. Please check it and try again.",
+    "errorUnknown": "Something went wrong. Please try again.",
+    "guestNotice": "You don't need an account to try the reading preview — it stays open to everyone."
   }
 }

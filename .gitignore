@@ -50,6 +50,9 @@ android/
 supabase/.env
 supabase/.temp/
 
+# Cloudflare wrangler local session/cache state
+.wrangler/
+
 # Logs
 npm-debug.*
 yarn-debug.*

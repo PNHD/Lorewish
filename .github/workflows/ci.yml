@@ -1,0 +1,207 @@
+name: CI
+
+# Web/JS checks on every push and PR; Android + iOS Simulator native builds are
+# the M1 native-foundation evidence bar (LW-M1-R2). Standard GitHub-hosted
+# runners only (ubuntu-latest, macos-latest) — no larger/paid runner classes.
+# No EAS account or build quota is used anywhere in this workflow.
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Placeholder values only — not real Supabase credentials. The Supabase
+  # client (src/lib/supabase.ts) is constructed lazily and throws if these
+  # are absent; native builds don't need a working backend to prove the app
+  # compiles, installs, and launches, so a well-formed placeholder is enough
+  # to satisfy the presence check without touching the real dev project.
+  EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_0000000000000000
+
+jobs:
+  web:
+    name: Web / JS checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production web export
+        run: npm run export:web
+
+  android:
+    name: Android (preview APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - run: npm ci
+
+      - name: Expo prebuild (Android)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          mkdir -p ../artifacts ../logs
+          chmod +x ./gradlew
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon | tee ../logs/android-build.log
+
+      - name: Collect APK
+        run: |
+          find android/app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \;
+          ls -la artifacts/
+
+      - name: Upload APK and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lorewish-android-preview
+          path: |
+            artifacts/
+            logs/
+          if-no-files-found: warn
+
+  ios-simulator:
+    name: iOS Simulator (build, install, launch)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Expo prebuild (iOS)
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods dependencies
+        working-directory: ios
+        run: pod install
+
+      - name: Boot an available iPhone simulator
+        run: |
+          mkdir -p artifacts logs
+          DEVICE_ID=$(xcrun simctl list devices available -j \
+            | jq -r '.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone")) | .udid' \
+            | head -n1)
+          if [ -z "$DEVICE_ID" ]; then
+            echo "No available iPhone simulator found on this runner image" >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$DEVICE_ID" -b || xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+      - name: Discover workspace/scheme and build without signing
+        working-directory: ios
+        run: |
+          set -o pipefail
+          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" | head -n1)
+          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json \
+            | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(d.workspace.schemes.find(s=>!s.includes('Pods'))||d.workspace.schemes[0]);")
+          echo "WORKSPACE=$WORKSPACE" >> "$GITHUB_ENV"
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "Building $SCHEME from $WORKSPACE"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -derivedDataPath ../DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee ../logs/ios-build.log
+
+      - name: Find built .app bundle
+        run: |
+          APP_PATH=$(find DerivedData/Build/Products -maxdepth 1 -name "*.app" | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app bundle found under DerivedData/Build/Products" >&2
+            find DerivedData/Build/Products -maxdepth 2 >&2 || true
+            exit 1
+          fi
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+          echo "BUNDLE_ID=$BUNDLE_ID" >> "$GITHUB_ENV"
+          echo "Found $APP_PATH ($BUNDLE_ID)"
+
+      - name: Install, launch, and verify the process is alive
+        run: |
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+          xcrun simctl launch "$DEVICE_ID" "$BUNDLE_ID"
+          sleep 5
+          # simctl spawn ps confirms the launched process is actually running
+          # in the simulator, not just that `launch` returned a PID.
+          if ! xcrun simctl spawn "$DEVICE_ID" launchctl list | grep -q "$BUNDLE_ID"; then
+            echo "App process not found running after launch" >&2
+            exit 1
+          fi
+          echo "App is running in the simulator."
+          xcrun simctl io "$DEVICE_ID" screenshot artifacts/lorewish-ios-simulator.png
+
+      - name: Zip the simulator .app bundle (Appetize-compatible)
+        if: always()
+        run: |
+          mkdir -p artifacts
+          if [ -d "$APP_PATH" ]; then
+            APP_NAME=$(basename "$APP_PATH")
+            # Zip the .app itself at the archive root (not its parent dir) —
+            # the shape Appetize's simulator-build upload expects.
+            (cd "$(dirname "$APP_PATH")" && zip -r -q -X "$OLDPWD/artifacts/Lorewish-iOS-Simulator.app.zip" "$APP_NAME")
+          fi
+
+      - name: Upload logs, screenshot, and zipped app bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lorewish-ios-simulator
+          path: |
+            artifacts/
+            logs/
+          if-no-files-found: warn

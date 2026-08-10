@@ -23,7 +23,21 @@ export function HomeScreen() {
           gap: spacing.xl,
         }}
       >
-        <View style={{ position: "absolute", top: spacing.lg, right: spacing.lg }}>
+        <View
+          style={{
+            position: "absolute",
+            top: spacing.lg,
+            right: spacing.lg,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.lg,
+          }}
+        >
+          <Link href="/account" accessibilityRole="link">
+            <ThemedText variant="label" color="secondary">
+              {t("home.accountLink")}
+            </ThemedText>
+          </Link>
           <LanguageSwitcher />
         </View>
 
