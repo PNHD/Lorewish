@@ -24,6 +24,212 @@ the discrepancy instead.
 
 ---
 
+**Task**: LW-M1-R2 — Dev Supabase + Auth + Native Foundation
+**Status**: **IMPLEMENTATION_PASS, M1_NATIVE_RUNTIME_EVIDENCE_PARTIAL**. iOS Simulator evidence is
+complete (compiled, installed, launched, verified running, and — after fixing a real bug that made
+the first attempt's screenshot show a React Native error screen instead of the app — a screenshot
+confirming the actual Lorewish UI renders). Android evidence is build/structure evidence only
+(APK compiles, is properly signed, and has the JS bundle embedded — verified by direct artifact
+inspection) — it was never installed or launched on a device or emulator, since none was available
+in this environment. Recorded honestly as `ANDROID_RUNTIME_NOT_YET_OBSERVED`, per this task's own
+explicit instruction for exactly this situation, rather than overclaimed.
+
+## Branch / HEAD
+
+- Starting branch: `feature/lw-m1-web-foundation`, checked out from `main` (verified, not assumed).
+- Starting HEAD (as reported by prior task artifacts, inconsistently): `7a7cf7c` / `952e8ec`.
+- **Actual reviewed R1 HEAD** (verified via `git rev-parse HEAD`): **`03c2fc3`** — see the HEAD
+  Correction note above.
+- R1 repair commit (on `feature/lw-m1-web-foundation`): `3bb0fcf` — `fix: close LW-M1-R1 review
+  findings` (R1-F1, R1-F2, R1-F3, and the HEAD-correction documentation itself).
+- New branch: `feature/lw-m1-backend-native-foundation`, created from `3bb0fcf`.
+- Commits on the new branch: `28b8541` (`feat: add Lorewish dev Supabase foundation`), `6716f64`
+  (`feat: add auth and native build foundation`).
+- `main` still points at `b2a817e` only. Not merged into. No commit history rewritten.
+
+## R1 Review Findings — Repaired
+
+- **R1-F1 (custom-action duplicate label)**: `src/screens/preview/index.tsx`'s `handleSend` no
+  longer bakes `t("preview.youLabel")` into the stored player-action string — it stores only the
+  raw trimmed text. `PlayerActionBanner` already renders `youLabel` and `action` as separate lines;
+  the fix was a one-line data-model change, not a string hack. Verified interactively in English and
+  Vietnamese, on both the dev server and the live `lorewish.pages.dev` production build.
+- **R1-F2 (narrative-repair billing)**: `docs/NARRATIVE_QUALITY_CONTRACT.md` §D now states the rule
+  explicitly — one successful user intent resolves to at most one `user_allowance_debit`, regardless
+  of whether the one automatic repair attempt ran. `provider_cost`,
+  `internal_generation_attempt_count`, and `user_allowance_debit` are named as three separate tracked
+  concepts; a turn where both the initial and repair attempts fail (no Scene committed) is pinned to
+  `user_allowance_debit = 0`. `docs/CONTINUOUS_PLAY_CONTRACT.md` §8's allowance table gets two new
+  rows so the two documents don't drift apart on this point.
+- **R1-F3 (placeholder branding)**: `docs/DECISIONS.md` D35 marks the Expo scaffold's default
+  icon/splash/favicon assets as **PLACEHOLDER — MUST REPLACE BEFORE EXTERNAL BETA**, explicitly
+  listing every affected asset path. No design work was done — that remains explicitly out of scope.
+
+## Supabase — `lorewish-dev`
+
+- Project ref `sfarcofvqfeobtcizxyv`, region `ap-southeast-1`, org `dbodjqmarksspvyknnlv` — verified
+  by name/ref/region match against the task brief before linking. Never linked to
+  `doodle-world-studio` (a different project, `etmqrpoefkcahyvaimiw`, in the same org) or to any
+  other project.
+- The Supabase CLI on this machine was initially authenticated to a *different* account with no
+  access to `lorewish-dev` (`supabase link` failed with a privileges error) — the project owner ran
+  `supabase login` under the correct account before any Supabase work proceeded.
+- `supabase/` initialized and linked. One migration:
+  `supabase/migrations/20260810013158_m1_foundation_schema.sql` — `profiles`, `stories`,
+  `story_configurations`, `worlds`, `characters`. UUID primary keys, `created_at`/`updated_at`
+  throughout, no Postgres enum types (check constraints validate shape/allowed-set instead — see the
+  migration's own comments for the reasoning per field). Applied via `supabase db push` (no local
+  Docker stack — none was running in this environment; the CLI's own `--linked` fallback was used for
+  everything, including `db advisors`).
+- RLS enabled on every table. `stories` owned via `owner_user_id = auth.uid()`;
+  `story_configurations`/`worlds`/`characters` owned via their parent `Story` (no duplicated owner
+  column). Every `USING` has a matching `WITH CHECK`. Explicit `GRANT`s to `authenticated` only —
+  `anon` receives none, since Supabase's current default no longer auto-exposes new tables.
+- A minimal `auth.users` trigger (`handle_new_user`, `SECURITY DEFINER`, empty `search_path`, fully
+  schema-qualified, `EXECUTE` revoked from public roles) creates a `profiles` row on signup.
+- `supabase gen types typescript --project-id sfarcofvqfeobtcizxyv` → `src/types/database.types.ts`,
+  committed, not hand-maintained.
+- `supabase db advisors --linked --type all`: **0 findings** (see `handoff/LW-M1-R2/supabase-advisors.txt`).
+- 15/15 adversarial RLS probes passed — two ephemeral test accounts against the live REST API,
+  covering cross-user read/update/delete, an `owner_user_id` tamper attempt, cross-story child-record
+  attachment, and unauthenticated access. Full transcript: `handoff/LW-M1-R2/rls-test-results.txt`.
+  All test users/data created for probing were deleted afterward; nothing persists in the dev
+  database from this task.
+- `docs/DEV_ENVIRONMENT.md` records the Auth Site URL / redirect-URL values as a **manual dashboard
+  step** rather than `supabase config push` — pushing the full scaffolded `config.toml` risked
+  silently changing unrelated live settings, including turning email confirmation off (the CLI's
+  local-dev scaffold default), which would have violated this task's instruction to preserve the
+  secure default. Email confirmation was not touched and was independently confirmed still on: a
+  real sign-up attempt returned `429 over_email_send_rate_limit`, meaning a confirmation email send
+  was genuinely attempted.
+
+## Auth
+
+- Email/password only (Supabase Auth). No OAuth providers, no anonymous sign-ins — neither is called
+  or enabled anywhere in this task.
+- `src/lib/supabase.ts` — lazily-constructed client (`getSupabaseClient()`), not built at module-eval
+  time. Found and fixed a real bug this task introduced: an eager `createClient()` call at module
+  scope crashed Expo Router's static-export SSR prerender pass (which doesn't inline
+  `EXPO_PUBLIC_*` the way the real browser/native bundle does) for every route, not just `/account`,
+  since `AuthProvider` is mounted in the root `_layout`. Deferring construction to first real use
+  fixed it — verified by a subsequent clean `expo export -p web`.
+- `src/auth/auth-context.tsx` — `AuthProvider`/`useAuth()`, mounted once in `src/app/_layout.tsx`.
+  Maps raw Supabase Auth errors to a closed set of product-facing codes (`invalid_credentials`,
+  `email_not_confirmed`, `user_already_exists`, `weak_password`, `invalid_email`, `unknown`) — no
+  raw Supabase error text is ever shown to a user.
+- `src/screens/account` + `src/app/account.tsx` — sign up / sign in / sign out, current session
+  state, EN/VI throughout. States implemented: loading, signed-out (sign-in/sign-up form), invalid
+  credentials, check-your-email (post-signup), signed-in, sign-out.
+- **Deliberately deferred**: OAuth/social providers, anonymous/guest Supabase sessions (the `/preview`
+  fixture stays local-only and unauthenticated — no `signInAnonymously()` call exists anywhere in
+  this codebase, on page load or otherwise; real anonymous-guest persistence is explicitly M2 scope,
+  per this task's brief), profile avatars, preferences dashboard, subscription settings.
+- Verified interactively end-to-end, on both the dev server and the live production deployment: sign
+  up validation-error path, a real (rate-limited) confirmation-email send, sign-in with a
+  pre-confirmed test account, session persistence across a hard reload of `/account`, and sign-out.
+  All ephemeral test accounts created for this were deleted afterward via the Auth Admin API (used
+  only from local test tooling, never in application code, never committed).
+
+## Live Web
+
+- Redeployed to the same Cloudflare Pages project as R1 (`lorewish`) via
+  `wrangler pages deploy dist --branch=main`. Live at **https://lorewish.pages.dev**
+  (this deployment: `https://c5198a20.lorewish.pages.dev`).
+- `/preview` remains fully playable without any authentication, before and after the Supabase/auth
+  work. `/account` loads on a direct route hit (not just client-side navigation), in both languages,
+  with zero console errors.
+- The Supabase project ref and other technical/debug details are not surfaced anywhere in the normal
+  UI.
+
+## Native Foundation
+
+- App identifiers were already correct from R1: `com.lorewish.app` (both iOS `bundleIdentifier` and
+  Android `package`), scheme `lorewish`, display name `Lorewish`. No change needed.
+- `eas.json` created (`development`, `preview`, `ios-simulator`, `production` profiles) but **EAS is
+  not used for this task's native build evidence** — no `eas login`, no build quota consumed. This
+  was an explicit owner decision made mid-task: GitHub Actions on standard GitHub-hosted runners
+  replaces EAS as the primary remote native-build path for M1, modeled on the owner's existing
+  `PNHD/focelle-ios` iOS CI workflow (principles adapted, not the Swift-specific implementation).
+- `.github/workflows/ci.yml` — three jobs, standard runners only (`ubuntu-latest`, `macos-latest`),
+  `concurrency`/`cancel-in-progress` set:
+  - **web**: `npm ci`, typecheck, lint, `expo export -p web`.
+  - **android**: `expo prebuild --platform android --no-install`, `gradlew assembleRelease`
+    (release build type, debug-keystore-signed per Expo's own default with no `credentials.json`
+    present — not a Play Store key), uploads the APK as a workflow artifact.
+  - **ios-simulator**: `expo prebuild --platform ios --no-install`, `pod install`, unsigned
+    `xcodebuild -configuration Release` for `iphonesimulator` (`CODE_SIGNING_ALLOWED=NO`), boots a
+    runner-provided iPhone simulator, installs and launches the app, confirms the process is
+    actually running via `simctl spawn launchctl list` (not just that `launch` returned), captures a
+    screenshot, and zips the `.app` as `Lorewish-iOS-Simulator.app.zip` (Appetize-upload-shaped) —
+    all uploaded as artifacts. Requires no Apple Developer membership, signing certificate, or
+    provisioning profile.
+- **A GitHub repository did not exist for this project before this task.** Per explicit owner
+  instruction: created **private** under `PNHD/Lorewish`, after a full secret scan of everything
+  about to be committed (clean — see `handoff/LW-M1-R2/test-results.txt`) and a `.gitignore` review
+  (added `.wrangler/` to the ignore list; nothing sensitive was ever staged). Pushed
+  `feature/lw-m1-backend-native-foundation`.
+- **GitHub Actions run (final, successful)**:
+  https://github.com/PNHD/Lorewish/actions/runs/31354813415 — all three jobs passed. It took five
+  runs total to get here, across four real bugs found and fixed (not silently retried — see
+  `handoff/LW-M1-R2/native-builds.txt` for the full, transparent account of each): a wrong
+  Xcode-scheme heuristic, a one-level-too-shallow `find` for the built `.app`, an Android job hitting
+  its timeout on a cold Gradle cache, disk-space exhaustion on the Android runner, and — most
+  importantly — the first "successful" iOS run's own screenshot revealing that a Debug-configuration
+  build shows React Native's "No script URL provided" error instead of the app (Debug+Simulator
+  unconditionally skips embedding the JS bundle, expecting a Metro server no CI runner has).
+  Switching both native jobs to their Release build type/configuration fixed this for real — verified
+  by a screenshot of the actual Lorewish home screen, not asserted from the build succeeding alone.
+- **Android**: `app-release.apk` (103.8MB) — inspected directly (not just "the job passed"):
+  contains `assets/index.android.bundle` (the embedded JS, 2.9MB), a valid `AndroidManifest.xml`,
+  and the build log shows `validateSigningRelease` and `packageRelease` both ran
+  (`BUILD SUCCESSFUL in 35m 19s`). **Never installed on a device or emulator — none was available in
+  this environment.** Recorded as `ANDROID_RUNTIME_NOT_YET_OBSERVED`, per this task's own explicit
+  instruction for this exact situation.
+- **iOS**: `Lorewish-iOS-Simulator.app.zip` (28.8MB) — a real Mach-O binary + `Info.plist`, installed
+  and launched on a runner-provided iPhone simulator, confirmed running via `simctl spawn launchctl
+  list`, and `handoff/LW-M1-R2/screenshots/ios-simulator-home-en.png` shows the actual app (name,
+  tagline, subheading, preview CTA, Account link, language switcher) — genuine Simulator runtime
+  evidence, not a compile-only claim, and not physical-device evidence (never claimed as such).
+
+## Validation
+
+See `handoff/LW-M1-R2/test-results.txt`, `supabase-migrations.txt`, `supabase-advisors.txt`,
+`rls-test-results.txt`, `web-build.txt`, and `native-builds.txt` for full detail. Summary: `npm ci`
+clean (22 pre-existing transitive advisories, unchanged from R1, non-blocking); `expo-doctor` 20/20;
+`tsc --noEmit` clean; `expo lint` clean; `expo export -p web` succeeded (5 static routes including
+`/account`); secret scan clean (verified twice — before and immediately before the GitHub push);
+`git diff --check` clean except pre-existing, non-source artifacts already present before this task.
+
+## Known Issues / Remaining M1 Blockers
+
+- **Android runtime is unobserved** (`ANDROID_RUNTIME_NOT_YET_OBSERVED`): the release APK builds,
+  is signed, and has the JS bundle embedded (verified by direct artifact inspection), but was never
+  installed or launched on a device or emulator — none was available in this environment. Per this
+  task's own instruction, M1 may remain open on this specific point for owner-assisted device
+  validation rather than being blocked entirely on it.
+- App icon/splash/favicon assets remain the unmodified Expo scaffold defaults (D35) — must be
+  replaced before any external beta.
+- No CI job runs the Supabase RLS probe suite automatically yet (this task's probes were run
+  manually from local tooling) — worth automating in a later milestone if the schema starts changing
+  more frequently.
+- `handoff/LW-M1-R1/git-diff.patch` (a committed historical artifact, not source) still contains the
+  pre-existing trailing-whitespace and space-in-filename items `git diff --check` flags — cosmetic,
+  not a defect in this task's actual changes.
+- The GitHub Actions native build jobs currently build unconditionally on every push to `main` or
+  any `feature/**` branch — worth narrowing (e.g., path filters, or only on PRs into `main`) once
+  the repository sees more day-to-day churn, to avoid burning private-repo Actions minutes on pushes
+  that don't touch native-relevant code.
+
+## Recommended Next Task
+
+**LW-M1-R3** — owner-assisted Android device/emulator validation to close
+`ANDROID_RUNTIME_NOT_YET_OBSERVED` (the one remaining M1 native-evidence gap), or **M2** directly if
+the owner judges the release-APK build/structure evidence sufficient on its own. Do not begin M2
+scope (AI gateway, LLM calls, PlayerRun, credit system, etc.) in this task; none of it was
+implemented here, per explicit instruction.
+
+---
+
 **Task**: LW-M1-R1 — Web-First Bilingual Foundation + Preview Deploy
 **Status**: **COMPLETE**. Web-first bilingual (EN/VI) Expo foundation built, validated, committed,
 and deployed to a live Cloudflare Pages preview URL. M1 is **not** fully complete — this is R1 of

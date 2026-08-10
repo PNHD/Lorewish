@@ -1,0 +1,68 @@
+LW-M1-R2 — Application Validation
+
+npm ci: clean install, 837 packages added, 22 npm-audit advisories (8 moderate, 14 high) — all in
+transitive Expo/RN build tooling (same class of finding recorded in LW-M1-R1: metro, xcode,
+@expo/config-plugins internals), not application runtime code. Non-blocking, unchanged from R1.
+
+npx expo-doctor: 20/20 checks passed.
+
+npx tsc --noEmit: clean, zero errors (verified after every source change in this task, not just
+once at the end).
+
+npx expo lint: clean, zero errors/warnings.
+
+npx expo export -p web: succeeded. Static routes exported: /, /account, /preview, /_sitemap,
+/+not-found. (First attempt crashed exporting /account — see "SSR env-var bug" below; fixed before
+this clean run.)
+
+git diff --check main..feature/lw-m1-backend-native-foundation: only pre-existing trailing-whitespace
+lines inside handoff/LW-M1-R1/git-diff.patch (a committed historical diff file, where trailing
+whitespace is literal diff content, not a real source-formatting issue) and one filename containing
+a space inside a vendored Expo icon asset (assets/expo.icon/Assets/expo-symbol 2.svg, also
+pre-existing from LW-M1-R1). Nothing introduced by this task's own changes.
+
+Secret scan: `git ls-files -z | xargs -0 grep -lEI` for sb_secret_ / service_role / JWT-shaped
+strings / AWS-key-shaped strings / PEM private-key headers across every tracked file — zero matches.
+.env.local (real Supabase URL + publishable key) is not staged or tracked; only .env.example
+(placeholders) is. Verified again immediately before pushing to the new GitHub repository.
+
+--- Localization / auth UI validation (interactive, in-browser) ---
+
+English and Vietnamese account screens render correctly (screenshots not available in this Browser
+pane environment — see LW-M1-R1's own note on this; validated via get_page_text/read_page/
+read_console_messages against the real running app instead, same method as R1).
+- Sign-in tab / Sign-up tab toggle, EN and VI labels.
+- Invalid credentials -> mapped, natural-language error ("That email or password isn't right." /
+  Vietnamese equivalent), not raw Supabase error text.
+- Sign-up with a validation-rejected email domain -> mapped invalid_email error (added specifically
+  because a real API probe surfaced this path).
+- Sign-up with a valid-shaped email -> real confirmation-email send attempted (429 rate-limited by
+  Supabase's own default project email limits, which is itself evidence confirmations are on).
+- Sign in with a pre-confirmed test account -> signed-in view ("Signed in as <email>" / Vietnamese
+  equivalent), verified on both the dev server and the live production deployment.
+- Session persists across a hard reload / direct navigation to /account.
+- Sign out returns cleanly to the sign-in form.
+- /preview remains fully playable with zero authentication, before and after all of the above.
+- Custom-action player-action label re-verified in both languages on the live production build
+  (not just the dev server) — no "You/You:" or "Ban/Ban:" duplication (R1-F1).
+
+--- SSR env-var bug found and fixed during this task ---
+
+`src/lib/supabase.ts` originally called `createClient(...)` at module scope, reading
+`process.env.EXPO_PUBLIC_SUPABASE_URL` / `..._PUBLISHABLE_KEY` and throwing if absent. Expo Router's
+static web export prerenders every route (including /account, and by extension every route since
+AuthProvider is mounted in the root _layout) in a Node SSR pass that does not inline EXPO_PUBLIC_*
+env vars the way the real browser/native bundle does — so the throw fired during prerendering and
+broke `expo export -p web` for the whole app, not just /account. Fixed by deferring client
+construction to first actual use (`getSupabaseClient()`, called only from effects/handlers that only
+run in a real browser/native runtime). This also incidentally makes the client safe to import inside
+the GitHub Actions native builds, which supply placeholder (non-secret) env values rather than the
+real dev-project credentials.
+
+--- Metro/web resolver false alarm (self-resolved) ---
+
+An initial dev-server run showed `UnableToResolveError` for
+`@supabase/realtime-js`'s `./lib/websocket-factory` on web, despite the file existing on disk. This
+did not reproduce after clearing `.expo/cache` and restarting the dev server — attributed to a stale
+Metro resolver cache from installing new dependencies while the server was already running, not an
+actual package or config problem. No metro.config.js changes were needed.

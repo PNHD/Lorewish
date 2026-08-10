@@ -1,0 +1,7 @@
+* 6716f64 (HEAD -> feature/lw-m1-backend-native-foundation, origin/feature/lw-m1-backend-native-foundation) feat: add auth and native build foundation
+* 28b8541 feat: add Lorewish dev Supabase foundation
+* 3bb0fcf (feature/lw-m1-web-foundation) fix: close LW-M1-R1 review findings
+* 03c2fc3 docs: add LW-M1-R1 handoff artifacts
+* 952e8ec docs: record LW-M1-R1 completion in CURRENT_WORK.md
+* 7a7cf7c feat: LW-M1-R1 web-first bilingual foundation + local preview
+* b2a817e (main) docs: establish Lorewish product baseline
