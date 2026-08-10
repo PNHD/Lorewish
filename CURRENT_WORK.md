@@ -192,6 +192,106 @@ accounts created and deleted via the Auth Admin API; cleanup verified by re-quer
   `timeout-minutes` was deliberately **not** bundled into this bounded correction; it is an open
   recommendation for the owner.
 
+### CI verification result — concurrency PROVEN, native matrix BLOCKED on account billing
+
+Observed on the corrected commit `6820de9`:
+
+| | old key (`github.ref`), commit `e4749e6` | new key (`head_ref \|\| ref_name`), commit `6820de9` |
+|---|---|---|
+| `push` run | `31364937721` created 07:12:42Z, ran **45m13s** | `31368186633` created 08:00:26Z, **`cancelled` 08:00:31Z** |
+| `pull_request` run | `31364972116` created 07:13:12Z, ran **44m40s** | `31368191079` created 08:00:30Z, survived |
+| outcome | **two** full native matrices ran concurrently | **one** run survived; the duplicate died in 5s |
+
+The push run terminated **one second after** the `pull_request` run for the same SHA was created —
+they now share a concurrency group and `cancel-in-progress` fired. Billing does not explain that
+result: a billing block produces `failure` (which is exactly what the surviving run's jobs show),
+not `cancelled`. **The duplicate-run defect is fixed and demonstrated on real GitHub Actions data.**
+
+**What could NOT be verified, and why.** The surviving run's three jobs all failed within ten
+seconds, before any step executed, with the annotation:
+
+> The job was not started because recent account payments have failed or your spending limit needs
+> to be increased. Please check the 'Billing & plans' section in your settings
+
+The repository is private, so Actions minutes are metered and macOS is billed at a 10× multiplier.
+The limit was reached between 07:58Z and 08:00Z — i.e. **the duplicate-run defect itself consumed
+the remaining quota**: the `e4749e6` pair alone burned ~25m + ~31m of macOS (≈560 billed minutes)
+plus ~90m of Linux, on top of five earlier native runs the same day.
+
+Consequently there is **no green end-to-end native matrix for `6820de9`**, and this document does
+not claim one. The last full-matrix evidence remains commit `e4749e6`, where **every job did pass**
+— iOS 25m21s in the push run, Android 44m40s in the PR run, Web in both — split across the two
+runs that timed each other out.
+
+### Owner decision — Actions quota exhaustion and temporary PUBLIC visibility
+
+The private-repository Actions quota for the PNHD account is **exhausted: 2,000 / 2,000 minutes**.
+Private repos meter Actions minutes and macOS bills at a 10× multiplier, so the day's native runs —
+five R2 build-fix runs plus the `e4749e6` duplicate pair — consumed the month's allowance. No
+further private-repo job can start until the limit is raised or the quota resets.
+
+**The owner explicitly authorized making `PNHD/Lorewish` PUBLIC, temporarily, so development is not
+blocked.** GitHub's standard hosted runners are free for public repositories. The owner's decision
+is recorded here with its consequences understood:
+
+- source and full commit history become publicly readable;
+- Actions run history and logs become public;
+- anyone may clone or fork the repository;
+- **making it private again later does not recall clones or existing public forks.**
+
+**Pre-public secret gate — PASSED.** A full-history audit was run before the visibility change (not
+a working-tree scan): **223 blobs across 14 commits and 7 refs**, against 19 credential pattern
+classes. Full output: `handoff/LW-M1-R3/secret-audit-full-history.txt`. Result: **0 real secrets**.
+
+- One pattern hit, adjudicated benign: `password: "account.errorWeakPassword"` in
+  `src/screens/account/index.tsx` — an entry in the Supabase-error-code → i18n-key map. The regex
+  fired because the *key* `weak_password` ends in "password"; the *value* is a translation key.
+- No `.env` was ever committed; `.env.example` is tracked by design with **empty** values.
+- No build output (`dist/`, `.expo/`, `android/`, `ios/`, bundles, source maps) was ever committed,
+  so no `EXPO_PUBLIC_` value was ever inlined into a committed artifact.
+- The real publishable key in the untracked `.env.local` appears in **no** blob in history. The only
+  `sb_publishable_` string ever committed is the non-functional CI literal
+  `sb_publishable_ci_placeholder_0000000000000000`.
+- No service-role/secret key, Supabase access token, GitHub token, Cloudflare token, Expo token,
+  database password, connection string or private key anywhere in history.
+- The `@lorewish-test.dev` addresses in handoff evidence are deleted ephemeral accounts on a
+  non-existent domain; no password for any of them was ever written to a tracked file.
+
+The Supabase project ref and its `https://<ref>.supabase.co` URL remain visible by design — they are
+public identifiers, not secrets. With `anon` holding **zero** table privileges after the R3
+hardening and RLS enforcing owner-only rows, they disclose nothing exploitable. That is precisely
+the property this task established, and it is what makes public visibility safe.
+
+**A first execution of the audit was discarded**, not trusted: it reported "CLEAN" while scanning
+**0** blobs, because the shell had changed directory out of the repository and every `git` command
+failed silently. A clean verdict from an empty scan is the exact false negative that must never gate
+a visibility change.
+
+### Public-repository CI hardening *(added with the visibility change)*
+
+Going public means any stranger can open a PR, so the workflow was hardened in the same commit:
+
+- Workflow-level `permissions: contents: read` — least-privilege `GITHUB_TOKEN`.
+- The two expensive native jobs are gated on
+  `github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository`.
+  A **fork PR** therefore gets the cheap web/JS job only; **owner-authored work is unaffected**,
+  since every push to `main`/`feature/**` and every same-repo PR satisfies the condition. This
+  withholds cost, never correctness — a maintainer wanting full native coverage for a fork PR pushes
+  the branch into this repo, which satisfies the same condition.
+- The workflow deliberately uses `pull_request`, **never `pull_request_target`**: fork code runs
+  with a read-only token and no access to repository secrets. This is recorded in the workflow
+  itself so a future change does not "fix" it the wrong way. The workflow needs no secrets at all —
+  the Supabase values are placeholders and native builds prove compilation, not connectivity.
+
+### `REPOSITORY_VISIBILITY_REVIEW_REQUIRED`
+
+The repository stays **public** for active development. It is **not** reverted to private at the end
+of this task. Returning it to private is an **owner decision**, and before making it, evaluate:
+
+- whether any public forks exist (forks are not recalled by going private);
+- whether ongoing GitHub Actions still depend on public-runner economics;
+- whether another CI path (self-hosted runners, a paid plan, or EAS) has replaced the need.
+
 ## Native Evidence Status
 
 - **iOS: ACCEPTED.** R2's GitHub Actions Simulator evidence (compile → install → launch → process

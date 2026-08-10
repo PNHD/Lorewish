@@ -49,6 +49,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
+# Least-privilege token for a PUBLIC repository. Every job here only reads the
+# checkout and uploads artifacts; none needs write access to the repo, and a
+# public repo means fork PRs can propose arbitrary workflow-adjacent code.
+permissions:
+  contents: read
+
 env:
   # Placeholder values only — not real Supabase credentials. The Supabase
   # client (src/lib/supabase.ts) is constructed lazily and throws if these
@@ -58,9 +64,31 @@ env:
   EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_0000000000000000
 
+# Fork-PR policy for a PUBLIC repository (LW-M1-R3 closeout).
+#
+# The native matrix is expensive (~25m macOS + ~35m ubuntu) and, on a public
+# repo, any stranger can open a PR. So the two native jobs are gated on the PR
+# coming from THIS repository; a fork PR gets the cheap web/JS job only, which
+# is enough to tell an outside contributor whether their change typechecks,
+# lints and exports. A maintainer who wants full native coverage for a fork PR
+# pushes the branch into this repo (or merges it to a feature branch), which
+# satisfies the same condition — so this withholds cost, never correctness.
+#
+# Owner-authored work is unaffected: `github.event_name == 'push'` covers every
+# push to main and feature/**, and same-repo PRs match the second clause. There
+# is no path by which an owner source commit gets less validation than before.
+#
+# This workflow deliberately uses `pull_request`, never `pull_request_target`:
+# `pull_request` runs fork code against a read-only token with no access to
+# repository secrets, which is exactly what we want. Do NOT switch to
+# `pull_request_target` to "make secrets available to PRs" — that runs with the
+# base repo's privileges and is the classic fork-PR compromise. This workflow
+# needs no secrets at all: the Supabase values above are non-functional
+# placeholders, and native builds prove compilation, not backend connectivity.
 jobs:
   web:
     name: Web / JS checks
+    # Runs for everyone, including fork PRs — cheap, no secrets, no privilege.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -84,6 +112,11 @@ jobs:
 
   android:
     name: Android (preview APK)
+    # Same-repository work only: every push, plus PRs whose head branch lives in
+    # this repo. Fork PRs skip this job (see the fork-PR policy note above).
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # A cold Gradle cache (first-ever run: no prior actions/cache hit) took
     # longer than 30 minutes to compile the full RN + Expo native stack from
@@ -172,6 +205,10 @@ jobs:
 
   ios-simulator:
     name: iOS Simulator (build, install, launch)
+    # Same-repository work only — see the android job and the fork-PR policy note.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
