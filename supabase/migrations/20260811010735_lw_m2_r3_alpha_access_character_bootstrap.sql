@@ -29,13 +29,18 @@ alter table public.characters
   add constraint characters_address_terms_shape check (
     address_terms is null or (
       jsonb_typeof(address_terms) = 'object'
-      and jsonb_object_length(address_terms) = 4
       and address_terms ?& array[
         'speaker_self_reference',
         'speaker_addresses_target_as',
         'target_self_reference',
         'target_addresses_speaker_as'
       ]
+      and address_terms - array[
+        'speaker_self_reference',
+        'speaker_addresses_target_as',
+        'target_self_reference',
+        'target_addresses_speaker_as'
+      ] = '{}'::jsonb
       and jsonb_typeof(address_terms -> 'speaker_self_reference') = 'string'
       and jsonb_typeof(address_terms -> 'speaker_addresses_target_as') = 'string'
       and jsonb_typeof(address_terms -> 'target_self_reference') = 'string'
