@@ -1,0 +1,4 @@
+Local CI-equivalent gates passed: typecheck, 90 Vitest tests, Expo lint, Expo web export, migration lint/dry-run, staged diff check, and secret scans.
+Remote GitHub Actions result: pending branch push and draft PR.
+No live provider call is part of routine CI; live campaigns are owner-initiated scripts only.
+No native build was launched for this provider/server/web-only change.

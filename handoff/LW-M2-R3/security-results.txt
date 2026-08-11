@@ -1,0 +1,9 @@
+DEV project verified: sfarcofvqfeobtcizxyv. Production ref etmqrpoefkcahyvaimiw was not touched.
+alpha_generation_access: RLS enabled; anon SELECT false; authenticated SELECT/INSERT/UPDATE false; service_role control true.
+Allowlist rows at pre-E2E check: 0.
+submit-turn: ACTIVE v7; verify_jwt=true; import map active.
+Unauthenticated submit-turn request: HTTP 401.
+Edge secrets configured: DEEPSEEK_API_KEY, LOREWISH_NARRATIVE_PROVIDER, LOREWISH_NARRATIVE_MODEL, LOREWISH_DEEPSEEK_STRUCTURED_OUTPUT. Values were not printed.
+Web dist exact-secret scan: NO MATCH.
+No repository visibility change. No provider key in browser configuration, database row, Git, handoff, or ZIP source set.
+

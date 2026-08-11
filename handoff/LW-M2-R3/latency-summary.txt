@@ -1,0 +1,5 @@
+Final 48-generation soak: min 3527 ms; median 5759 ms; p95 8739 ms; max 9348 ms.
+Final 8-sequence continuity provider calls: min 3585 ms; median 6730 ms; p95 9754 ms; max 10105 ms.
+Flash -> Pro strict-tool comparison: min 5225 ms; median 12189 ms; p95 21839 ms; max 22449 ms.
+No provider HTTP errors or timeouts occurred in the final soak or final continuity campaign.
+

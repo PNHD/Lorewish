@@ -1,0 +1,9 @@
+Official current Flash pricing used: cache hit $0.0028/M input tokens; cache miss $0.14/M input tokens; output $0.28/M tokens.
+Official current Pro pricing used: cache hit $0.003625/M input tokens; cache miss $0.435/M input tokens; output $0.87/M tokens.
+Final policy soak: $0.009461.
+Final policy continuity: $0.009039.
+Final approval evidence total: $0.018500.
+All recorded diagnostic/comparison campaigns: $0.117083.
+One early interrupted campaign lacked a final report; conservative maximum estimate: $0.015300.
+Conservative task total upper estimate: $0.132383, below the $1.00 hard cap.
+

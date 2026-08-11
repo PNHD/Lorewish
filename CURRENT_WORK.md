@@ -1444,3 +1444,27 @@ feature-branch commit (application source, config, and assets); 6 files touched 
 ## Recommended Next Task
 
 **LW-M1-R2 — Dev Supabase + Auth + Android/iOS Foundation.** Do not begin it in this task/session.
+
+---
+
+# LW-M2-R3 — DeepSeek Flash Alpha Soak + Reliability Hardening + Authenticated Live E2E
+
+- Baseline main: `4eb535037cc72f3cddeca3f931f2ac0a74626e33`
+- Branch: `feature/lw-m2-deepseek-alpha`
+- Exact API model alias: `deepseek-v4-flash` (thinking disabled; dated display alias not hard-coded)
+- Structured output: official JSON object mode plus authoritative Lorewish Zod/moderation/quality gate
+- Soak: 48 initial; 47 initial pass (97.9167%); 1 repair (2.0833%); 48 final pass; 0 final failure
+- Final soak cost/latency: $0.009461; median 5759 ms; p95 8739 ms
+- Continuity: 8/8 sequences; 4 EN + 4 VI; 24/24 continuation turns; $0.009039
+- Flash vs Pro: Pro repair did not improve the strict-tool failure count and increased cost/latency; not selected
+- Alpha policy: `DEEPSEEK_FLASH_ALPHA_APPROVED` for DEV alpha only
+- Alpha allowlist: live `alpha_generation_access`; RLS; service/admin-controlled; `adult_confirmed_at` required
+- Real provider deployment: DEV `sfarcofvqfeobtcizxyv`; `submit-turn` ACTIVE v7; JWT verification enabled
+- Live web: `https://lorewish.pages.dev`; deployment `https://15605d08.lorewish.pages.dev`
+- EN E2E: pending owner adult-account login/allowlist
+- VI E2E: pending owner adult-account login/allowlist
+- Provider policy: `AI_ALPHA_18_PLUS_ONLY`; `PRODUCTION_POLICY_CONSTRAINT_OPEN`; not a permanent 18+ product decision
+- Research: `GEMINI_3_6_BAKEOFF_DEFERRED`
+- Implementation HEAD at draft time: `80b0819` (handoff/PR commit pending)
+- M2 verdict: OPEN until authenticated EN/VI E2E and VI review surface complete
+- Next milestone after M2 close only: M3 — Character Memory + Advanced Setup + Roleplay UX; not started

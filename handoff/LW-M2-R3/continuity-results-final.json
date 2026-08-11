@@ -1,0 +1,954 @@
+{
+  "campaign": "LW-M2-R3_DEEPSEEK_FLASH_CONTINUITY",
+  "generatedAt": "2026-08-11T02:11:10.655Z",
+  "model": "deepseek-v4-flash",
+  "repairModel": "deepseek-v4-flash",
+  "structuredOutputMode": "json_object",
+  "thinkingMode": "disabled",
+  "syntheticOnly": true,
+  "sequences": 8,
+  "enSequences": 4,
+  "viSequences": 4,
+  "continuationTurns": 24,
+  "sequencePass": 8,
+  "sequenceFailure": 0,
+  "providerCalls": 33,
+  "repairCalls": 1,
+  "inputTokens": 35242,
+  "outputTokens": 22943,
+  "cacheHitTokens": 16896,
+  "cacheMissTokens": 18346,
+  "actualCostMicros": 9039,
+  "actualCostUsd": 0.009039,
+  "providerHttpErrors": 0,
+  "timeouts": 0,
+  "results": [
+    {
+      "sequence": 1,
+      "caseId": "en-fantasy-01",
+      "language": "en",
+      "genre": "fantasy",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": true,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The road to Thornhollow narrows as it threads between old oaks whose roots have cracked the cobblestones. Frost clings to the grass even now, in the pale hour before noon, and the air smells of woodsmoke and something older—something that h",
+        "You lower your pack slowly, keeping your movements unhurried, and draw out a worn leather folder. Inside, a seal from the Healer's Guild of Westmarch glints dully, alongside a sheaf of letters—one from a merchant captain you patched up in t"
+      ]
+    },
+    {
+      "sequence": 2,
+      "caseId": "en-romance-01",
+      "language": "en",
+      "genre": "romance",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": false,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The salt wind carries the smell of old paint and frying oil as you push open the back door of The Gannet’s Rest. Morning light cuts through dusty windows, illuminating a kitchen that’s been gutted and rearranged—stainless steel tables shove",
+        "You step forward, boots scuffing against the scuffed linoleum. The new kitchen layout is a slap in the face before you've even had coffee. You cross your arms and fix him with a glare.\n\n“Who gave you permission to rearrange my kitchen?” You"
+      ]
+    },
+    {
+      "sequence": 3,
+      "caseId": "en-adventure-01",
+      "language": "en",
+      "genre": "adventure",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": false,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The Coral Queen cut through the late-morning swell, her hull thrumming with the steady pulse of an engine that had never once given Captain Reyes cause for doubt—until now. The reef lay ahead, a dark smudge beneath the turquoise water, prom",
+        "You step forward, the deck boards creaking under your boots, and hold up a hand to still the nervous murmurs of the crew. Reyes watches you, their jaw tight, as you speak. \"Drop anchor,\" you say, your voice steady despite the knot in your s"
+      ]
+    },
+    {
+      "sequence": 4,
+      "caseId": "en-fantasy-01",
+      "language": "en",
+      "genre": "fantasy",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": false,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The dirt road narrows as it winds through a dense stand of weeping willows, their branches trailing like the unkempt hair of mourners. Beyond them, the village of Thornhollow crouches behind a palisade of grey, weathered timber. The gate is",
+        "You meet her steady gaze and let your shoulders settle, making no sudden moves. 'I'm a healer,' you say, your voice calm and unhurried. 'I came because I heard there's sickness here. I want to help, nothing more.'"
+      ]
+    },
+    {
+      "sequence": 5,
+      "caseId": "vi-fantasy-01",
+      "language": "vi",
+      "genre": "fantasy",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": true,
+        "configuredAddressTermsSurface": true
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "Đêm phủ kín con đường quan lộ chạy dài theo chân dãy Hắc Viễn. Bầu trời không trăng, chỉ vừng sao leo lét như thể linh hồn của những kẻ đã khuất đang dõi bước bạn. Phía sau, ngọn lửa trại của tốp lính biên phòng đã khuất bóng từ lâu; phía t",
+        "Một luồng gió lạnh như có phép thuật luồn qua phần hở của chiếc áo choàng, khiến bạn ghĩ đến những câu chuyện kể về đám lính ma mãi dõi theo người mang viên ngọc. Tướng Lâm Vũ đứng chặn trước cửa doanh trại, đôi mắt ông sắc như lưỡi dao tro"
+      ]
+    },
+    {
+      "sequence": 6,
+      "caseId": "vi-romance-01",
+      "language": "vi",
+      "genre": "romance",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": true,
+        "configuredAddressTermsSurface": true
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "Ánh đèn huỳnh quang trong phòng họp nhỏ kêu vù vù, phản chiếu trên mặt bàn kính dày. Thảo Chi ngồi đối diện, tay gõ nhẹ lên tập bản phác thảo em vừa đặt xuống. Chị không vòng vo, chỉ thẳng: 'Em vẽ lại toàn bộ đi. Chỗ này, chỗ này, rồi cả bố",
+        "Em hít một hơi, cố giữ cho giọng mình không run. Nhìn thẳng vào mắt chị, em nói, giọng đều đều: 'Chị nói rõ hơn được không ạ? Em muốn hiểu chính xác chỗ nào cần sửa để lần sau không phải làm lại từ đầu.' Chị Thảo Chi hơi nhướng một bên lông"
+      ]
+    },
+    {
+      "sequence": 7,
+      "caseId": "vi-adventure-01",
+      "language": "vi",
+      "genre": "adventure",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 2
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": true,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "Chiếc thuyền gỗ nhỏ lắc lư trên mặt biển xanh thẳm, động cơ bỗng khụng khục rồi tắt hẳn. Trong khoảnh khắc, tiếng gió rít bên tai và tiếng sóng vỗ mạn thuyền trở nên rõ mồn một. Thuyền trưởng Bình, một người đàn ông trạc bốn mươi, da rám nắ",
+        "Bình gật đầu, đôi mắt vẫn dán vào rạn san hô đang tiến gần. Anh quay sang nhóm thám hiểm, giọng trầm nhưng dứt khoát: 'Được rồi, chúng ta neo thuyền lại đã, không thể để con nước đẩy chúng ta vào đá ngầm.' Anh nhanh chóng chỉ huy mọi người "
+      ]
+    },
+    {
+      "sequence": 8,
+      "caseId": "vi-romance-01",
+      "language": "vi",
+      "genre": "romance",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": false,
+        "configuredAddressTermsSurface": true
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "Phòng họp nhỏ ở tầng ba của nhà xuất bản Hoa Mặt Trời có mùi giấy mới và cà phê đã nguội. Anh đặt tập bản phác thảo lên bàn — ba tuần ròng rã vẽ vời, đêm nào cũng chỉ có đèn bàn và tiếng cọ lướt giấy. Thảo Chi, biên tập viên phụ trách, mở t",
+        "Anh cúi xuống nhìn tập bản thảo, cố nén cơn sốc. Những nét vẽ mà anh đã tỉ mẩn từng đêm, từng đường cong, từng mảng màu — tất cả như vỡ vụn trước câu nói của chị. Nhưng thay vì gân cổ lên cãi, anh hít một hơi thật sâu, ngẩng lên nhìn thẳng "
+      ]
+    }
+  ],
+  "calls": [
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 550,
+      "outputTokens": 522,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 38,
+      "costMicros": 153,
+      "latencyMs": 6554,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 819,
+      "outputTokens": 710,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 435,
+      "costMicros": 261,
+      "latencyMs": 7448,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Show her your healer's credentials and letters of reference.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1137,
+      "outputTokens": 818,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 753,
+      "costMicros": 336,
+      "latencyMs": 8810,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Captain Ysolde Marrow to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1518,
+      "outputTokens": 460,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 878,
+      "costMicros": 254,
+      "latencyMs": 5274,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Offer to heal a specific ailment in the village to prove your good intent.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 538,
+      "outputTokens": 488,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 26,
+      "costMicros": 142,
+      "latencyMs": 4722,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 750,
+      "outputTokens": 485,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 366,
+      "costMicros": 188,
+      "latencyMs": 4748,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Confront Idris about overstepping",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 941,
+      "outputTokens": 451,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 557,
+      "costMicros": 205,
+      "latencyMs": 4456,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Idris Callahan to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1026,
+      "outputTokens": 523,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 514,
+      "costMicros": 220,
+      "latencyMs": 5318,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Accept the new layout for now, but demand a say in future decisions.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 552,
+      "outputTokens": 598,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 40,
+      "costMicros": 174,
+      "latencyMs": 6471,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 846,
+      "outputTokens": 539,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 462,
+      "costMicros": 217,
+      "latencyMs": 5827,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Ask Reyes to drop anchor and inspect the engine before deciding.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1076,
+      "outputTokens": 633,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 692,
+      "costMicros": 275,
+      "latencyMs": 7102,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Captain Reyes to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1327,
+      "outputTokens": 529,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 687,
+      "costMicros": 246,
+      "latencyMs": 6135,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Get Reyes to open the engine hatch and start diagnosing the problem immediately.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 550,
+      "outputTokens": 603,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 38,
+      "costMicros": 176,
+      "latencyMs": 6596,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 861,
+      "outputTokens": 329,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 477,
+      "costMicros": 160,
+      "latencyMs": 3585,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "State plainly that you are a healer and have come to tend to the sick.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 946,
+      "outputTokens": 444,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 562,
+      "costMicros": 204,
+      "latencyMs": 4508,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Captain Ysolde Marrow to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1081,
+      "outputTokens": 358,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 441,
+      "costMicros": 164,
+      "latencyMs": 3811,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Show your empty hands and offer to leave your pack outside the gate as a sign of good faith.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 659,
+      "outputTokens": 920,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 19,
+      "costMicros": 262,
+      "latencyMs": 10105,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 952,
+      "outputTokens": 585,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 568,
+      "costMicros": 244,
+      "latencyMs": 6730,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Chấp nhận kiểm tra doanh trại, bước theo tướng quân",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1187,
+      "outputTokens": 969,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 675,
+      "costMicros": 367,
+      "latencyMs": 9494,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Hỏi Tướng Lâm Vũ nhắc lại nhiệm vụ hiện tại và hậu quả của quyết định vừa rồi trước khi hành động."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1614,
+      "outputTokens": 759,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 974,
+      "costMicros": 351,
+      "latencyMs": 8444,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Giải thích về việc biên giới sắp sụp đổ và viên ngọc trấn giữ sự cân bằng.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 643,
+      "outputTokens": 716,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 3,
+      "costMicros": 203,
+      "latencyMs": 6175,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 978,
+      "outputTokens": 758,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 594,
+      "costMicros": 296,
+      "latencyMs": 6745,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Cố gắng giữ bình tĩnh, hỏi lại chị cụ thể cần sửa ở đâu, thể hiện thiện chí hợp tác.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1324,
+      "outputTokens": 1070,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 940,
+      "costMicros": 432,
+      "latencyMs": 9050,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Hỏi Biên tập viên Thảo Chi nhắc lại nhiệm vụ hiện tại và hậu quả của quyết định vừa rồi trước khi hành động."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1763,
+      "outputTokens": 915,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 1123,
+      "costMicros": 415,
+      "latencyMs": 7492,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Chấp nhận yêu cầu và bắt tay vào vẽ lại bản phác thảo mới, tập trung vào chuyển động và cảm xúc.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 644,
+      "outputTokens": 971,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 4,
+      "costMicros": 274,
+      "latencyMs": 9754,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1103,
+      "outputTokens": 786,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 591,
+      "costMicros": 304,
+      "latencyMs": 7726,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Chờ đợi và sửa máy, cố gắng khởi động lại trong khi neo thuyền an toàn.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1532,
+      "outputTokens": 880,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 1020,
+      "costMicros": 391,
+      "latencyMs": 7337,
+      "failureClass": "valid_json_wrong_shape",
+      "schemaIssues": [
+        {
+          "path": "canon_candidates.0.fact_key",
+          "code": "invalid_string"
+        }
+      ],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Hỏi Thuyền trưởng Bình nhắc lại nhiệm vụ hiện tại và hậu quả của quyết định vừa rồi trước khi hành động."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1586,
+      "outputTokens": 990,
+      "cacheHitTokens": 512,
+      "cacheMissTokens": 1074,
+      "costMicros": 429,
+      "latencyMs": 8122,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Hỏi Thuyền trưởng Bình nhắc lại nhiệm vụ hiện tại và hậu quả của quyết định vừa rồi trước khi hành động."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 2030,
+      "outputTokens": 938,
+      "cacheHitTokens": 768,
+      "cacheMissTokens": 1262,
+      "costMicros": 441,
+      "latencyMs": 9511,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Đề nghị cùng Bình xem xét kỹ hệ thống nhiên liệu và bugi để sớm khởi động lại máy.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 643,
+      "outputTokens": 964,
+      "cacheHitTokens": 640,
+      "cacheMissTokens": 3,
+      "costMicros": 272,
+      "latencyMs": 8904,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1149,
+      "outputTokens": 539,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 765,
+      "costMicros": 259,
+      "latencyMs": 5342,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Hỏi rõ lỗi sai ở từng trang để hiểu ý chị",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1339,
+      "outputTokens": 633,
+      "cacheHitTokens": 384,
+      "cacheMissTokens": 955,
+      "costMicros": 312,
+      "latencyMs": 5421,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Hỏi Biên tập viên Thảo Chi nhắc lại nhiệm vụ hiện tại và hậu quả của quyết định vừa rồi trước khi hành động."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1578,
+      "outputTokens": 1060,
+      "cacheHitTokens": 768,
+      "cacheMissTokens": 810,
+      "costMicros": 412,
+      "latencyMs": 8849,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Lắng nghe chị Thảo Chi giải thích chi tiết, rồi hỏi thêm về cách chị đánh giá cảm xúc nhân vật.",
+      "playerAction": null
+    }
+  ]
+}
