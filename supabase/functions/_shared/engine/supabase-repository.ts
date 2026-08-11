@@ -223,16 +223,21 @@ export class SupabaseTurnRepository implements TurnRepository {
       .eq("player_run_id", playerRunId)
       .eq("scope", "run");
 
-    const branchScopeFacts = sceneIds.length
-      ? (
-          await this.serviceClient
-            .from("canon_facts")
-            .select("*")
-            .eq("player_run_id", playerRunId)
-            .eq("scope", "branch")
-            .in("source_scene_id", sceneIds)
-        ).data ?? []
-      : [];
+    const branchIds = new Set([
+      runBranchId,
+      ...sceneRows.map((scene) => scene.run_branch_id as string),
+    ]);
+    const allBranchFacts = (
+      await this.serviceClient
+        .from("canon_facts")
+        .select("*")
+        .eq("player_run_id", playerRunId)
+        .eq("scope", "branch")
+    ).data ?? [];
+    const branchScopeFacts = allBranchFacts.filter((fact) =>
+      Boolean(fact.source_scene_id && sceneIds.includes(fact.source_scene_id as string)) &&
+      (fact.origin !== "character_chat" || branchIds.has(fact.run_branch_id as string))
+    );
 
     const visibleFacts = [...(runScopeFacts ?? []), ...branchScopeFacts];
     const allCanonFacts: ContextCanonFact[] = visibleFacts
@@ -274,7 +279,11 @@ export class SupabaseTurnRepository implements TurnRepository {
       playerAction: null,
     }));
 
-    const contextCharacters: ContextCharacter[] = (characters ?? []).map((c) => {
+    const visibleCharacters = (characters ?? []).filter((character) =>
+      (character.origin ?? "authored") === "authored" ||
+      Boolean(character.source_scene_id && sceneIds.includes(character.source_scene_id as string))
+    );
+    const contextCharacters: ContextCharacter[] = visibleCharacters.map((c) => {
       const terms = c.address_terms as Record<string, string> | null;
       return {
         id: c.id,
@@ -283,6 +292,7 @@ export class SupabaseTurnRepository implements TurnRepository {
         role: c.role ?? null,
         description: c.description,
         storyRelationship: c.story_relationship,
+        origin: (c.origin as "authored" | "runtime" | null) ?? "authored",
         addressTerms: terms
           ? {
               speakerSelfReference: terms.speaker_self_reference,
@@ -323,7 +333,7 @@ export class SupabaseTurnRepository implements TurnRepository {
     costMicros: number;
     latencyMs: number;
   }): Promise<CommitOutcome> {
-    const { data, error } = await this.userClient.rpc("lw_commit_turn", {
+    const { data, error } = await this.serviceClient.rpc("lw_commit_turn", {
       p_turn_id: args.turnId,
       p_narrative: args.result.narrative,
       p_dialogue: args.result.dialogue,
@@ -333,6 +343,7 @@ export class SupabaseTurnRepository implements TurnRepository {
       p_boundary_kind: args.result.boundary_kind,
       p_canon_candidates: args.result.canon_candidates,
       p_character_memory_candidates: args.result.character_memory_candidates,
+      p_new_character_candidates: args.result.new_character_candidates,
       p_generation_attempt_count: args.generationAttemptCount,
       p_provider: args.provider,
       p_model: args.model,

@@ -74,6 +74,23 @@ export const CharacterMemoryCandidateSchema = z.object({
 });
 export type CharacterMemoryCandidate = z.infer<typeof CharacterMemoryCandidateSchema>;
 
+/**
+ * A notable NPC proposed by the same Story generation call that creates the
+ * Scene where they first appear. The provider supplies identity only; the
+ * canonical UUID and provenance are owned by the database commit.
+ */
+export const RuntimeCharacterCandidateSchema = z
+  .object({
+    temporary_key: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    name: z.string().min(1).max(200),
+    role: z.string().min(1).max(500),
+    description: z.string().min(1).max(2000),
+    relationship: z.string().min(1).max(500),
+    aliases: z.array(z.string().min(1).max(200)).max(10).default([]),
+  })
+  .strict();
+export type RuntimeCharacterCandidate = z.infer<typeof RuntimeCharacterCandidateSchema>;
+
 /** Light Roll outcome (ADVENTURE mode only) — server decides the roll, never the model. */
 export const StructuredOutcomeSchema = z
   .object({
@@ -95,6 +112,7 @@ export const StructuredGenerationResultSchema = z
     state_changes: z.array(StateChangeItemSchema).max(10).default([]),
     canon_candidates: z.array(CanonCandidateSchema).max(10).default([]),
     character_memory_candidates: z.array(CharacterMemoryCandidateSchema).max(10).default([]),
+    new_character_candidates: z.array(RuntimeCharacterCandidateSchema).max(3).default([]),
     next_choices: z.array(ChoiceOptionSchema).min(0).max(4).default([]),
     boundary_kind: BoundaryKindSchema.default("none"),
     structured_outcome: StructuredOutcomeSchema.default({}),
@@ -111,6 +129,19 @@ export const StructuredGenerationResultSchema = z
         });
       }
       keys.add(key);
+    });
+    const temporaryKeys = new Set<string>();
+    const normalizedNames = new Set<string>();
+    result.new_character_candidates.forEach((candidate, index) => {
+      const normalizedName = candidate.name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+      if (temporaryKeys.has(candidate.temporary_key)) {
+        ctx.addIssue({ code: "custom", path: ["new_character_candidates", index, "temporary_key"], message: "duplicate temporary character key" });
+      }
+      if (normalizedNames.has(normalizedName)) {
+        ctx.addIssue({ code: "custom", path: ["new_character_candidates", index, "name"], message: "duplicate normalized character name" });
+      }
+      temporaryKeys.add(candidate.temporary_key);
+      normalizedNames.add(normalizedName);
     });
   });
 export type StructuredGenerationResult = z.infer<
@@ -198,6 +229,7 @@ export interface ContextCharacter {
   role: string | null;
   description: string | null;
   storyRelationship: string | null;
+  origin?: "authored" | "runtime";
   /** Present only when contentLanguage calls for it (NARRATIVE_QUALITY_CONTRACT.md §C). */
   addressTerms?: AddressTerms;
 }
@@ -286,4 +318,45 @@ export class ProviderOutputError extends Error {
 export interface NarrativeProvider {
   readonly id: string;
   generateTurn(context: NarrativeContext): Promise<ProviderCallResult>;
+}
+
+export const ChatMemoryCandidateSchema = z.object({
+  memory_type: CharacterMemoryTypeSchema,
+  fact_key: z.string().regex(/^[a-z][a-z0-9_]{1,79}$/),
+  fact_text: z.string().min(1).max(500),
+  salience: z.number().int().min(1).max(5),
+}).strict();
+export type ChatMemoryCandidate = z.infer<typeof ChatMemoryCandidateSchema>;
+
+export const CharacterChatResultSchema = z.object({
+  reply: z.string().min(1).max(4000),
+  chat_memory_candidates: z.array(ChatMemoryCandidateSchema).max(5).default([]),
+}).strict();
+export type CharacterChatResult = z.infer<typeof CharacterChatResultSchema>;
+
+export interface ChatMessageContext {
+  role: "player" | "character";
+  content: string;
+}
+
+/** Explicitly separated context sections for a branch-bound side conversation. */
+export interface CharacterChatContext {
+  contentLanguage: ContentLanguage;
+  genre: string;
+  storyMode: "narrative" | "adventure";
+  premise: string;
+  worldSetting: string | null;
+  playerRole: string | null;
+  playerName: string | null;
+  playerDescription: string | null;
+  character: ContextCharacter;
+  recentScenes: ContextScene[];
+  characterMemories: ContextCharacterMemory[];
+  recentChat: ChatMessageContext[];
+  playerMessage: string;
+}
+
+export interface CharacterChatProvider {
+  readonly id: string;
+  generateChat(context: CharacterChatContext): Promise<ProviderCallResult>;
 }

@@ -45,13 +45,14 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "export:web": "expo export -p web",
+    "export:web": "expo export -p web && node scripts/write-web-routes.mjs",
     "serve:web-export": "node scripts/serve-web-export.mjs",
     "test:e2e": "playwright test",
     "test": "vitest run",
     "test:watch": "vitest",
     "bakeoff": "tsx supabase/functions/_shared/engine/golden-set/bakeoff.ts",
     "soak:deepseek": "tsx supabase/functions/_shared/engine/golden-set/soak.ts",
-    "soak:continuity": "tsx supabase/functions/_shared/engine/golden-set/continuity-soak.ts"
+    "soak:continuity": "tsx supabase/functions/_shared/engine/golden-set/continuity-soak.ts",
+    "spot-check:chat": "tsx supabase/functions/_shared/engine/golden-set/chat-spot-check.ts"
   }
 }

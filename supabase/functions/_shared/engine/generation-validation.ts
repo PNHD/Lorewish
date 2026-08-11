@@ -7,7 +7,7 @@ import {
   type StructuredGenerationResult,
 } from "./types.ts";
 
-export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing" | "character_memory_unknown";
+export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing" | "character_memory_unknown" | "runtime_character_duplicate";
 
 export type SanitizedGenerationFailureClass =
   | "invalid_json"
@@ -104,6 +104,27 @@ export function evaluateGeneratedResult(
       qualityFailures: ["character_memory_unknown"],
       schemaIssues: [],
       repairInstruction: "character memory referenced an unknown character_id; copy the UUID exactly from CHARACTER IDENTITY",
+    };
+  }
+
+  const existingIdentityKeys = new Set(
+    availableCharacters
+      .flatMap((character) => [character.name, ...character.aliases])
+      .map((value) => value.trim().toLocaleLowerCase(language).replace(/\s+/g, " "))
+  );
+  const duplicatesExistingCharacter = parsed.data.new_character_candidates.some((candidate) =>
+    [candidate.name, ...candidate.aliases]
+      .map((value) => value.trim().toLocaleLowerCase(language).replace(/\s+/g, " "))
+      .some((identity) => existingIdentityKeys.has(identity))
+  );
+  if (duplicatesExistingCharacter) {
+    return {
+      ok: false,
+      failureClass: "valid_json_wrong_shape",
+      pipelineErrorClass: "unusable_output",
+      qualityFailures: ["runtime_character_duplicate"],
+      schemaIssues: [],
+      repairInstruction: "new_character_candidates duplicated an existing canonical name or alias; omit existing characters and do not fuzzy-merge identities",
     };
   }
 

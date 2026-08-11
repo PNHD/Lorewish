@@ -131,6 +131,34 @@
     "allowanceExhaustedBody": "Your story stays here exactly as it is. Come back after the reset to continue.",
     "alphaAccessRequired": "Real AI play is currently limited to approved alpha testers.",
     "setupLockedNotice": "Story setup is locked after the first scene. Start a new story to change canonical identity or setting.",
-    "backToHome": "Back to Home"
+    "backToHome": "Back to Home",
+    "characters": "Characters",
+    "currentPath": "Current path",
+    "alternatePath": "Alternate path"
+  },
+  "characters": {
+    "backToStory": "Back to Story",
+    "heading": "Characters",
+    "intro": "The important people this story has made real. Each conversation stays with this path.",
+    "currentPath": "Talking from your current story path",
+    "alternatePath": "Talking from an alternate story path",
+    "empty": "No important characters are known on this path yet.",
+    "openChat": "Talk to character"
+  },
+  "chat": {
+    "heading": "Character Chat",
+    "backToStory": "Back to Story",
+    "nonCanonicalNotice": "This conversation is private to this story path. It does not change the story unless you explicitly remember something in canon.",
+    "emptyHeading": "A quieter moment",
+    "emptyBody": "Say what you could not fit into the scene. The character knows the story so far, but this side conversation is not automatically canon.",
+    "placeholder": "Write to this character…",
+    "send": "Send",
+    "sending": "Waiting for a reply…",
+    "failedMessage": "The reply did not arrive. Your message is saved.",
+    "providerError": "The reply could not arrive right now.",
+    "validationError": "That reply could not be safely used. Edit your message and try a different direction.",
+    "retry": "Try the reply again",
+    "rememberInStory": "Remember in story",
+    "remembered": "Remembered in story"
   }
 }

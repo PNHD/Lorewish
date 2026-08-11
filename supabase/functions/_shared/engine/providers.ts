@@ -50,7 +50,14 @@
  * logged, loaded only via an explicit env-file mechanism.
  */
 
-import type { NarrativeContext, NarrativeProvider, ProviderCallMetadata, ProviderCallResult } from "./types.ts";
+import type {
+  CharacterChatContext,
+  CharacterChatProvider,
+  NarrativeContext,
+  NarrativeProvider,
+  ProviderCallMetadata,
+  ProviderCallResult,
+} from "./types.ts";
 import { ProviderOutputError, ProviderTransportError } from "./types.ts";
 import { FakeNarrativeProvider } from "./fake-provider.ts";
 
@@ -94,6 +101,18 @@ const RESULT_TOOL_SCHEMA = {
           salience: { type: "integer", minimum: 1, maximum: 5 },
         },
         required: ["character_id", "memory_type", "fact_key", "fact_text", "salience"],
+      },
+    },
+    new_character_candidates: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          temporary_key: { type: "string" }, name: { type: "string" }, role: { type: "string" },
+          description: { type: "string" }, relationship: { type: "string" },
+          aliases: { type: "array", items: { type: "string" } },
+        },
+        required: ["temporary_key", "name", "role", "description", "relationship", "aliases"],
       },
     },
     next_choices: {
@@ -169,6 +188,20 @@ export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
         additionalProperties: false,
       },
     },
+    new_character_candidates: {
+      type: "array",
+      maxItems: 3,
+      items: {
+        type: "object",
+        properties: {
+          temporary_key: { type: "string", pattern: "^[a-z][a-z0-9_]{1,63}$" },
+          name: { type: "string" }, role: { type: "string" }, description: { type: "string" },
+          relationship: { type: "string" }, aliases: { type: "array", items: { type: "string" } },
+        },
+        required: ["temporary_key", "name", "role", "description", "relationship", "aliases"],
+        additionalProperties: false,
+      },
+    },
     next_choices: {
       type: "array",
       items: {
@@ -205,6 +238,7 @@ export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
     "state_changes",
     "canon_candidates",
     "character_memory_candidates",
+    "new_character_candidates",
     "next_choices",
     "boundary_kind",
     "structured_outcome",
@@ -221,6 +255,7 @@ export function buildPrompt(context: NarrativeContext): { system: string; user: 
     `Never break character, never mention being an AI, never use meta-commentary.`,
     `Every canon_candidates fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$, even when writing Vietnamese. Never put diacritics, spaces, or punctuation in fact_key.`,
     `Character memory is canonical structured state, not a transcript. Emit character_memory_candidates only for durable, relevant facts. Copy character_id exactly from CHARACTER IDENTITY. Reuse fact_key when a relationship/state fact supersedes an earlier one. Never emit configured address terms as memory updates.`,
+    `Emit at most 3 new_character_candidates only for notable, reusable NPCs first introduced in this Scene. Never emit a random named mention, an existing name/alias, a database UUID, or address terms. Use temporary_key only for validation; a new canonical UUID is available starting on the next turn.`,
     `boundary_kind must be "ending" ONLY for a genuine, deliberate story conclusion — never because the scene is merely well-paced or you are unsure how to continue. Default to "none".`,
     `Prohibited copy in any language: "to be continued" or any equivalent phrase.`,
     context.repairReason
@@ -265,8 +300,8 @@ export function buildPrompt(context: NarrativeContext): { system: string; user: 
     `STORY CONFIG\nGenre: ${context.genre}\nStory mode: ${context.storyMode}\nContent language: ${context.contentLanguage}\nPremise: ${context.premise}${context.worldSetting ? `\nWorld/setting: ${context.worldSetting}` : ""}${context.tone ? `\nTone: ${context.tone}` : ""}${context.narrativePov ? `\nNarrative POV: ${context.narrativePov}` : ""}`,
     `PLAYER IDENTITY\nRole: ${context.playerRole ?? "unspecified"}${context.playerName ? `\nName: ${context.playerName}` : ""}${context.playerDescription ? `\nDescription: ${context.playerDescription}` : ""}`,
     characterLines
-      ? `CHARACTER IDENTITY\nPreserve these authored identities; never silently replace them with invented NPCs.\n${characterLines}`
-      : "CHARACTER IDENTITY\nNo authored starting character.",
+      ? `CHARACTER IDENTITY\nPreserve these canonical identities; never silently replace them with invented NPCs.\n${characterLines}`
+      : "CHARACTER IDENTITY\nNo canonical character yet.",
     context.characters.some((character) => character.addressTerms)
       ? `ADDRESS TERMS\nConfigured terms are immutable authoring data for this turn. Preserve speaker/target directionality.\n${context.characters
           .filter((character) => character.addressTerms)
@@ -283,6 +318,7 @@ export function buildPrompt(context: NarrativeContext): { system: string; user: 
       ? "PLAYER ACTION\nGenerate the opening scene for this story."
       : `PLAYER ACTION\nType: ${context.actionType}\nAction: ${context.selectedChoiceLabel ?? context.playerAction}`,
     "Return 2-4 meaningfully distinct next choices unless this is a true ending.",
+    "Return new_character_candidates as [] unless this Scene introduces a genuinely important recurring character.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -396,7 +432,7 @@ const DEEPSEEK_PRICING_USD_PER_1M: Record<string, { inputCacheMiss: number; inpu
 
 export type DeepSeekStructuredOutputMode = "json_object" | "strict_tool";
 
-function parseProviderJson(
+export function parseProviderJson(
   content: string,
   finishReason: unknown,
   metadata: ProviderCallMetadata
@@ -419,6 +455,122 @@ function parseProviderJson(
   }
 }
 
+export function buildCharacterChatPrompt(context: CharacterChatContext): { system: string; user: string } {
+  const languageName = context.contentLanguage.startsWith("vi") ? "Vietnamese" : "English";
+  const character = context.character;
+  const terms = character.addressTerms;
+  const recentScenes = context.recentScenes
+    .map((scene) => `Scene ${scene.seqInBranch}: ${scene.narrative}`)
+    .join("\n\n") || "No prior Scene.";
+  const memories = context.characterMemories
+    .filter((memory) => memory.characterId === character.id)
+    .map((memory) => `- [${memory.memoryType}; ${memory.factKey}] ${memory.factText}`)
+    .join("\n") || "No relevant canonical Character memory.";
+  const recentChat = context.recentChat
+    .map((message) => `${message.role === "player" ? "Player" : character.name}: ${message.content}`)
+    .join("\n") || "No prior messages in this Chat thread.";
+
+  const system = [
+    `You are ${character.name}, speaking in a private, non-canonical Lorewish Character Chat.`,
+    `Reply naturally in ${languageName}, the Story content language, regardless of the app UI language.`,
+    "Stay in character. Never mention being an AI or claim knowledge absent from the provided Story/Chat context.",
+    "Do not advance physical Story events, create Scenes, or imply this side conversation automatically happened in Story canon.",
+    "Configured address terms are immutable. Preserve their direction exactly; emotional tone may change but the terms may not.",
+    "Propose at most 5 small durable chat_memory_candidates only for facts worth an explicit player promotion. Never include hidden reasoning, a transcript, address-term changes, or invented history. When no candidate cleanly fits the exact schema, return an empty array.",
+    "Every fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$.",
+    "For every candidate, memory_type MUST be exactly one of: player_fact, character_fact, relationship_fact, shared_event, promise, discovery. Do not invent another memory_type.",
+    "Return only JSON: {\"reply\": string, \"chat_memory_candidates\": [{\"memory_type\": \"player_fact\"|\"character_fact\"|\"relationship_fact\"|\"shared_event\"|\"promise\"|\"discovery\", \"fact_key\": string, \"fact_text\": string, \"salience\": 1|2|3|4|5}] }.",
+  ].join("\n");
+
+  const user = [
+    `STORY CONFIG\nGenre: ${context.genre}\nMode: ${context.storyMode}\nContent language: ${context.contentLanguage}\nPremise: ${context.premise}${context.worldSetting ? `\nWorld: ${context.worldSetting}` : ""}`,
+    `PLAYER IDENTITY\nRole: ${context.playerRole ?? "unspecified"}${context.playerName ? `\nName: ${context.playerName}` : ""}${context.playerDescription ? `\nDescription: ${context.playerDescription}` : ""}`,
+    `CHARACTER IDENTITY\nName: ${character.name}\nRole: ${character.role ?? "unspecified"}\nDescription: ${character.description ?? "unspecified"}\nRelationship: ${character.storyRelationship ?? "unspecified"}\nAliases: ${character.aliases.join(", ") || "none"}`,
+    terms
+      ? `ADDRESS TERMS\nPlayer self=${terms.speakerSelfReference}; player addresses character=${terms.speakerAddressesTargetAs}; character self=${terms.targetSelfReference}; character addresses player=${terms.targetAddressesSpeakerAs}`
+      : "ADDRESS TERMS\nNo configured address terms.",
+    `CURRENT BRANCH STORY CONTEXT\n${recentScenes}`,
+    `RELEVANT CANONICAL CHARACTER MEMORY\n${memories}`,
+    `RECENT CHAT\n${recentChat}`,
+    `PLAYER MESSAGE\n${context.playerMessage}`,
+  ].join("\n\n");
+  return { system, user };
+}
+
+export class FakeCharacterChatProvider implements CharacterChatProvider {
+  readonly id = "fake";
+  async generateChat(context: CharacterChatContext): Promise<ProviderCallResult> {
+    return {
+      result: {
+        reply: context.contentLanguage.startsWith("vi")
+          ? `${context.character.name} lắng nghe, rồi đáp lại bằng giọng điệu quen thuộc.`
+          : `${context.character.name} listens, then answers in the familiar voice you know.`,
+        chat_memory_candidates: [],
+      },
+      metadata: { provider: this.id, model: "deterministic-chat-v1", inputTokens: 0, outputTokens: 0, costMicros: 0, latencyMs: 0 },
+    };
+  }
+}
+
+export class DeepSeekCharacterChatProvider implements CharacterChatProvider {
+  readonly id = "deepseek";
+  private readonly timeoutMs = 30_000;
+  private readonly pricing: { inputCacheMiss: number; inputCacheHit: number; output: number };
+
+  constructor(private readonly apiKey: string, private readonly model = "deepseek-v4-flash") {
+    const pricing = DEEPSEEK_PRICING_USD_PER_1M[model];
+    if (!pricing) throw new Error(`DeepSeekCharacterChatProvider: unrecognized model "${model}"`);
+    this.pricing = pricing;
+  }
+
+  async generateChat(context: CharacterChatContext): Promise<ProviderCallResult> {
+    const { system, user } = buildCharacterChatPrompt(context);
+    const started = performance.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: this.model,
+          messages: [{ role: "system", content: system }, { role: "user", content: user }],
+          response_format: { type: "json_object" },
+          max_tokens: 1024,
+          thinking: { type: "disabled" },
+        }),
+      });
+    } catch (error) {
+      if ((error as Error).name === "AbortError") throw new ProviderTransportError("character chat timed out", "timeout");
+      throw new ProviderTransportError(`character chat fetch failed: ${(error as Error).message}`, "provider_transport");
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) throw new ProviderTransportError(`character chat provider HTTP ${response.status}`, "provider_http");
+    const body = await response.json();
+    const usage = body?.usage ?? {};
+    const cacheHitTokens = usage.prompt_cache_hit_tokens ?? 0;
+    const cacheMissTokens = usage.prompt_cache_miss_tokens ?? (usage.prompt_tokens ?? 0) - cacheHitTokens;
+    const inputTokens = usage.prompt_tokens ?? cacheHitTokens + cacheMissTokens;
+    const outputTokens = usage.completion_tokens ?? 0;
+    const metadata: ProviderCallMetadata = {
+      provider: this.id,
+      model: this.model,
+      inputTokens,
+      outputTokens,
+      cacheHitTokens,
+      cacheMissTokens,
+      costMicros: Math.round(cacheHitTokens * this.pricing.inputCacheHit + cacheMissTokens * this.pricing.inputCacheMiss + outputTokens * this.pricing.output),
+      latencyMs: Math.round(performance.now() - started),
+    };
+    const content = body?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") throw new ProviderOutputError("character chat response contained no message", "provider_response", metadata);
+    return { result: parseProviderJson(content, body?.choices?.[0]?.finish_reason, metadata), metadata };
+  }
+}
+
 /**
  * DeepSeek's `response_format: {type: "json_object"}` guarantees syntactically valid JSON but,
  * unlike Gemini's `responseSchema` or Anthropic's tool-forced schema, does NOT enforce a specific
@@ -431,7 +583,7 @@ function parseProviderJson(
  * for this adapter, describing that same shape in plain JSON-Schema-shaped text.
  */
 const DEEPSEEK_SCHEMA_INSTRUCTION = `Respond with ONLY a single JSON object — no markdown code fences, no commentary before or after — matching exactly this shape:
-{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "character_memory_candidates": [{"character_id": uuid, "memory_type": "player_fact"|"character_fact"|"relationship_fact"|"shared_event"|"promise"|"discovery", "fact_key": string, "fact_text": string, "salience": 1|2|3|4|5}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
+{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "character_memory_candidates": [{"character_id": uuid, "memory_type": "player_fact"|"character_fact"|"relationship_fact"|"shared_event"|"promise"|"discovery", "fact_key": string, "fact_text": string, "salience": 1|2|3|4|5}], "new_character_candidates": [{"temporary_key": string, "name": string, "role": string, "description": string, "relationship": string, "aliases": [string]}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
 "narrative" and "boundary_kind" are required. Every other field must still be present — use an empty array/object when there is nothing to report, never omit the key.`;
 
 /**
@@ -798,4 +950,19 @@ export function selectProvider(env: { get(key: string): string | undefined }): N
       "See docs/NARRATIVE_MODEL_EVALUATION.md."
   );
   return new FakeNarrativeProvider();
+}
+
+/** Character Chat deliberately follows the controlled DEV Story provider selection. */
+export function selectCharacterChatProvider(env: { get(key: string): string | undefined }): CharacterChatProvider {
+  const configured = env.get("LOREWISH_NARRATIVE_PROVIDER");
+  if (configured === "deepseek") {
+    const key = env.get("DEEPSEEK_API_KEY");
+    if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=deepseek but DEEPSEEK_API_KEY is not set");
+    return new DeepSeekCharacterChatProvider(
+      key,
+      env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-flash"
+    );
+  }
+  if (configured === "fake") return new FakeCharacterChatProvider();
+  throw new Error("Character Chat requires the controlled DeepSeek provider in this milestone");
 }

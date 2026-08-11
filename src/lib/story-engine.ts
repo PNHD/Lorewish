@@ -155,23 +155,45 @@ export interface RunStateDto {
   runBranchId: string;
   status: "CONTINUE_READY" | "EXPLICIT_CHECKPOINT" | "TERMINAL_ENDING";
   scene: SceneDto | null;
+  scenes: SceneDto[];
   storyTitle: string;
   storyPremise: string;
+  contentLanguage: ContentLanguage;
+  branchSeq: number;
+  characters: RunCharacterDto[];
   startingCharacter: { name: string; role: string | null; relationship: string | null } | null;
+}
+
+export interface RunCharacterDto {
+  id: string;
+  name: string;
+  role: string | null;
+  relationship: string | null;
+  description: string | null;
+  origin: "authored" | "runtime";
 }
 
 export async function getRunState(playerRunId: string): Promise<RunStateDto> {
   const { data, error } = await getSupabaseClient().rpc("lw_get_run_state", { p_player_run_id: playerRunId });
   if (error) throw new Error(error.message);
   const payload = data as Record<string, unknown>;
+  const characters = (payload.characters as RunCharacterDto[] | undefined) ?? [];
   return {
     playerRunId,
     runBranchId: payload.run_branch_id as string,
     status: payload.status as RunStateDto["status"],
     scene: toCamelScene(payload.scene as Record<string, unknown>),
+    scenes: ((payload.scenes as Record<string, unknown>[] | undefined) ?? [])
+      .map((scene) => toCamelScene(scene))
+      .filter((scene): scene is SceneDto => Boolean(scene)),
     storyTitle: payload.story_title as string,
     storyPremise: payload.story_premise as string,
-    startingCharacter: (payload.starting_character as RunStateDto["startingCharacter"]) ?? null,
+    contentLanguage: (payload.content_language as ContentLanguage) ?? "en",
+    branchSeq: (payload.branch_seq as number) ?? 0,
+    characters,
+    startingCharacter: characters[0]
+      ? { name: characters[0].name, role: characters[0].role, relationship: characters[0].relationship }
+      : null,
   };
 }
 

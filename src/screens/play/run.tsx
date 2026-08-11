@@ -1,16 +1,14 @@
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
 import { ActionButton } from "@/components/reading/action-button";
 import { ChoiceList } from "@/components/reading/choice-list";
-import { DialogueLine } from "@/components/reading/dialogue-line";
-import { NarrativeBlock } from "@/components/reading/narrative-block";
 import { PlayerActionBanner } from "@/components/reading/player-action-banner";
 import { PlayStateBadge } from "@/components/reading/play-state-badge";
-import { StateChangePanel } from "@/components/reading/state-change-panel";
+import { StorySceneSection } from "@/components/reading/story-scene-section";
 import { Composer } from "@/components/composer";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
@@ -33,6 +31,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
   const { status: authStatus } = useAuth();
 
   const [state, setState] = useState<ScreenState>({ kind: "loading" });
+  const [sceneHistory, setSceneHistory] = useState<SceneDto[]>([]);
+  const scrollRef = useRef<ScrollView>(null);
   const [composerText, setComposerText] = useState("");
   const [lastPlayerAction, setLastPlayerAction] = useState<string | null>(null);
   const [lastTurnArgs, setLastTurnArgs] = useState<{ actionType: "choice" | "custom_action"; selectedChoiceId?: string; rawAction?: string } | null>(null);
@@ -40,6 +40,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
     title: string;
     premise: string;
     character: { name: string; role: string | null; relationship: string | null } | null;
+    branchSeq: number;
+    characterCount: number;
   } | null>(null);
 
   // If playerRunId changes while this screen stays mounted, reset to the
@@ -47,10 +49,13 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
   // for resetting state in response to a prop change — see
   // src/screens/preview/index.tsx for the same idiom used on locale change)
   // rather than an effect, so a real fetch never starts from stale state.
-  const [loadedForRunId, setLoadedForRunId] = useState<string | null>(null);
-  if (loadedForRunId !== playerRunId && state.kind !== "loading") {
+  const [loadedForRunId, setLoadedForRunId] = useState(playerRunId);
+  if (loadedForRunId !== playerRunId) {
     setLoadedForRunId(playerRunId);
     setState({ kind: "loading" });
+    setSceneHistory([]);
+    setStoryHeader(null);
+    setComposerText("");
   }
 
   const load = useCallback(async () => {
@@ -60,7 +65,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
         setState({ kind: "error", message: "This run has no scenes yet." });
         return;
       }
-      setStoryHeader({ title: run.storyTitle, premise: run.storyPremise, character: run.startingCharacter });
+      setStoryHeader({ title: run.storyTitle, premise: run.storyPremise, character: run.startingCharacter, branchSeq: run.branchSeq, characterCount: run.characters.length });
+      setSceneHistory(run.scenes);
       setState({ kind: "ready", scene: run.scene, playState: run.status });
     } catch (err) {
       setState({ kind: "error", message: (err as Error).message });
@@ -80,6 +86,11 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
     if (authStatus === "signed_in") load();
   }, [authStatus, load]);
 
+  useEffect(() => {
+    if (sceneHistory.length === 0) return;
+    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+  }, [sceneHistory.length]);
+
   const currentScene = "scene" in state ? state.scene : null;
 
   const runTurn = async (args: { actionType: "choice" | "custom_action"; selectedChoiceId?: string; rawAction?: string; preview: string }) => {
@@ -98,6 +109,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
       });
       if (result.status === "CONTINUE_READY" || result.status === "EXPLICIT_CHECKPOINT" || result.status === "TERMINAL_ENDING") {
         setComposerText("");
+        setSceneHistory((current) => current.some((scene) => scene.id === result.scene.id) ? current : [...current, result.scene]);
         setState({ kind: "ready", scene: result.scene, playState: result.status });
       } else if (result.status === "ALLOWANCE_EXHAUSTED") {
         // Composer text is preserved (G4/G5) — never cleared on a non-committed turn.
@@ -134,8 +146,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
   const handleReplayFromHere = async () => {
     if (!currentScene) return;
     try {
-      const { scene } = await replayFromScene(playerRunId, currentScene.id);
-      setState({ kind: "ready", scene, playState: scene.boundaryKind === "checkpoint" ? "EXPLICIT_CHECKPOINT" : "CONTINUE_READY" });
+      await replayFromScene(playerRunId, currentScene.id);
+      await load();
     } catch (err) {
       setState({ kind: "error", message: (err as Error).message });
     }
@@ -204,10 +216,12 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
         <LanguageSwitcher />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         {storyHeader && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.xs }}>
-            <ThemedText variant="heading">{storyHeader.title}</ThemedText>
+            <ThemedText variant="heading" accessibilityRole="header">{storyHeader.title}</ThemedText>
+            <ThemedText variant="body" color="secondary">{storyHeader.premise}</ThemedText>
             {storyHeader.character && (
               <ThemedText variant="caption" color="secondary">
                 {storyHeader.character.name}
@@ -215,9 +229,12 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
                 {storyHeader.character.relationship ? ` · ${storyHeader.character.relationship}` : ""}
               </ThemedText>
             )}
-            <ThemedText variant="caption" color="secondary">
-              {t("play.setupLockedNotice")}
-            </ThemedText>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.md, paddingTop: spacing.sm }}>
+              <ThemedText variant="caption" color="secondary">{storyHeader.branchSeq > 0 ? t("play.alternatePath") : t("play.currentPath")}</ThemedText>
+              <Pressable accessibilityRole="link" onPress={() => router.push(`/play/${playerRunId}/characters`)}>
+                <ThemedText variant="label">{t("play.characters")}{storyHeader.characterCount > 0 ? ` · ${storyHeader.characterCount}` : ""}</ThemedText>
+              </Pressable>
+            </View>
           </View>
         )}
         {/* Fixed vertical order per UX_CONTRACT §1A. The previous scene stays
@@ -227,13 +244,9 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
         {badgeLabel && <PlayStateBadge label={badgeLabel} />}
 
-        <NarrativeBlock paragraphs={scene.narrative.split(/\n\n+/)} />
-
-        {scene.dialogue.map((line, index) => (
-          <DialogueLine key={index} speaker={line.speaker} line={line.line} />
+        {(sceneHistory.length > 0 ? sceneHistory : [scene]).map((historyScene, index) => (
+          <StorySceneSection key={historyScene.id} scene={historyScene} whatChanged={t("play.whatChanged")} isFirst={index === 0} />
         ))}
-
-        {scene.stateChangeSummary.length > 0 && <StateChangePanel heading={t("play.whatChanged")} items={scene.stateChangeSummary} />}
 
         {isGenerating && (
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
@@ -282,16 +295,17 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
       </ScrollView>
 
       {composerEnabled && (
-        <View style={{ padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border }}>
-          <Composer
+        <View style={{ padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background }}>
+          <View style={{ width: "100%", maxWidth: readingWidth.maxComposerWidth, alignSelf: "center" }}><Composer
             value={composerText}
             onChangeText={setComposerText}
             onSend={handleSend}
             placeholder={t("play.composerPlaceholder")}
             sendLabel={t("play.composerSend")}
-          />
+          /></View>
         </View>
       )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

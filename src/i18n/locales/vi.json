@@ -131,6 +131,34 @@
     "allowanceExhaustedBody": "Câu chuyện của bạn vẫn được giữ nguyên ở đây. Hãy quay lại sau khi lượt dùng được làm mới để tiếp tục.",
     "alphaAccessRequired": "Chế độ chơi AI thật hiện chỉ dành cho người thử nghiệm alpha đã được phê duyệt.",
     "setupLockedNotice": "Thiết lập câu chuyện được khóa sau cảnh đầu tiên. Hãy bắt đầu câu chuyện mới để đổi danh tính hoặc bối cảnh chính thức.",
-    "backToHome": "Về trang chủ"
+    "backToHome": "Về trang chủ",
+    "characters": "Nhân vật",
+    "currentPath": "Mạch truyện hiện tại",
+    "alternatePath": "Mạch truyện khác"
+  },
+  "characters": {
+    "backToStory": "Trở lại câu chuyện",
+    "heading": "Nhân vật",
+    "intro": "Những người quan trọng đã thực sự hiện diện trong câu chuyện. Mỗi cuộc trò chuyện thuộc về mạch truyện này.",
+    "currentPath": "Đang trò chuyện trong mạch truyện hiện tại",
+    "alternatePath": "Đang trò chuyện trong một mạch truyện khác",
+    "empty": "Mạch truyện này chưa có nhân vật quan trọng nào được biết đến.",
+    "openChat": "Trò chuyện"
+  },
+  "chat": {
+    "heading": "Trò chuyện cùng nhân vật",
+    "backToStory": "Trở lại câu chuyện",
+    "nonCanonicalNotice": "Cuộc trò chuyện này chỉ thuộc về mạch truyện hiện tại. Nó không thay đổi câu chuyện trừ khi bạn chủ động lưu một điều vào chính truyện.",
+    "emptyHeading": "Một khoảnh khắc yên tĩnh",
+    "emptyBody": "Hãy nói điều bạn chưa thể nói trong cảnh truyện. Nhân vật biết câu chuyện đến lúc này, nhưng cuộc trò chuyện riêng không tự động trở thành chính truyện.",
+    "placeholder": "Viết cho nhân vật này…",
+    "send": "Gửi",
+    "sending": "Đang chờ hồi đáp…",
+    "failedMessage": "Chưa nhận được hồi đáp. Tin nhắn của bạn vẫn được lưu.",
+    "providerError": "Hiện chưa thể nhận hồi đáp.",
+    "validationError": "Hồi đáp chưa thể được sử dụng an toàn. Hãy sửa tin nhắn và thử một hướng khác.",
+    "retry": "Thử nhận hồi đáp lại",
+    "rememberInStory": "Lưu vào chính truyện",
+    "remembered": "Đã lưu vào chính truyện"
   }
 }

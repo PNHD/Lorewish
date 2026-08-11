@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ActionType, BoundaryKind, StorySetup, StructuredGenerationResult } from "../types.ts";
+import type { ActionType, AddressTerms, BoundaryKind, ChatMemoryCandidate, StorySetup, StructuredGenerationResult } from "../types.ts";
 import type {
   CommitOutcome,
   ContextInputs,
@@ -28,6 +28,19 @@ interface Run {
   status: "active" | "completed";
   storySetup: StorySetup;
   startingCharacterId: string | null;
+}
+
+interface Character {
+  id: string;
+  runId: string;
+  name: string;
+  aliases: string[];
+  role: string | null;
+  description: string | null;
+  relationship: string | null;
+  addressTerms?: AddressTerms;
+  origin: "authored" | "runtime";
+  sourceSceneId: string | null;
 }
 
 interface Branch {
@@ -74,6 +87,8 @@ interface CanonFact {
   memoryType?: "player_fact" | "character_fact" | "relationship_fact" | "shared_event" | "promise" | "discovery";
   salience?: number;
   supersedesFactId?: string | null;
+  origin?: "story_scene" | "character_chat";
+  sourceChatMessageId?: string;
 }
 
 export class InMemoryTurnRepository implements TurnRepository {
@@ -81,6 +96,7 @@ export class InMemoryTurnRepository implements TurnRepository {
   branches = new Map<string, Branch>();
   scenes = new Map<string, Scene>();
   turns = new Map<string, Turn>();
+  characters = new Map<string, Character>();
   canonFacts: CanonFact[] = [];
   private dailyCap = 30;
   private generationCount = 0;
@@ -126,6 +142,16 @@ export class InMemoryTurnRepository implements TurnRepository {
         .filter((s) => seg.upperBoundSeq === null || s.seqInBranch <= seg.upperBoundSeq)
         .sort((a, b) => a.seqInBranch - b.seqInBranch);
       ids.push(...sceneList.map((s) => s.id));
+    }
+    return ids;
+  }
+
+  private resolveBranchIds(branchId: string): Set<string> {
+    const ids = new Set<string>();
+    let cursor: string | null = branchId;
+    while (cursor) {
+      ids.add(cursor);
+      cursor = this.branches.get(cursor)?.parentBranchId ?? null;
     }
     return ids;
   }
@@ -180,6 +206,22 @@ export class InMemoryTurnRepository implements TurnRepository {
         storySetup: args.storySetup,
         startingCharacterId: args.storySetup.startingCharacter ? randomUUID() : null,
       });
+      const createdRun = this.runs.get(runId)!;
+      if (args.storySetup.startingCharacter && createdRun.startingCharacterId) {
+        const authored = args.storySetup.startingCharacter;
+        this.characters.set(createdRun.startingCharacterId, {
+          id: createdRun.startingCharacterId,
+          runId,
+          name: authored.name,
+          aliases: authored.aliases,
+          role: authored.role,
+          description: authored.description ?? null,
+          relationship: authored.relationship,
+          addressTerms: authored.addressTerms,
+          origin: "authored",
+          sourceSceneId: null,
+        });
+      }
     } else {
       const run = this.runs.get(runId);
       // Mirrors lw_precheck_and_start_turn's "run not found or not owned by
@@ -250,6 +292,11 @@ export class InMemoryTurnRepository implements TurnRepository {
   async loadContextInputs(playerRunId: string, runBranchId: string): Promise<ContextInputs> {
     const run = this.runs.get(playerRunId)!;
     const sceneIds = this.resolveBranchSceneIds(runBranchId);
+    const branchIds = this.resolveBranchIds(runBranchId);
+    const visibleCharacters = [...this.characters.values()].filter(
+      (character) => character.runId === playerRunId &&
+        (character.origin === "authored" || Boolean(character.sourceSceneId && sceneIds.includes(character.sourceSceneId)))
+    );
     const allScenesOldestFirst = sceneIds.map((id) => {
       const s = this.scenes.get(id)!;
       return {
@@ -268,6 +315,7 @@ export class InMemoryTurnRepository implements TurnRepository {
     );
     const visibleMemories = this.canonFacts.filter(
       (f) => f.runId === playerRunId && Boolean(f.characterId) && f.sourceSceneId && sceneIds.includes(f.sourceSceneId)
+        && (f.origin !== "character_chat" || Boolean(f.branchId && branchIds.has(f.branchId)))
     );
     const supersededMemoryIds = new Set(
       visibleMemories.map((memory) => memory.supersedesFactId).filter((id): id is string => Boolean(id))
@@ -284,19 +332,16 @@ export class InMemoryTurnRepository implements TurnRepository {
       playerDescription: run.storySetup.playerDescription ?? null,
       tone: run.storySetup.tone,
       narrativePov: run.storySetup.narrativePov,
-      characters: run.storySetup.startingCharacter
-        ? [
-            {
-              id: run.startingCharacterId!,
-              name: run.storySetup.startingCharacter.name,
-              aliases: run.storySetup.startingCharacter.aliases,
-              role: run.storySetup.startingCharacter.role,
-              description: run.storySetup.startingCharacter.description ?? null,
-              storyRelationship: run.storySetup.startingCharacter.relationship,
-              addressTerms: run.storySetup.startingCharacter.addressTerms,
-            },
-          ]
-        : [],
+      characters: visibleCharacters.map((character) => ({
+        id: character.id,
+        name: character.name,
+        aliases: character.aliases,
+        role: character.role,
+        description: character.description,
+        storyRelationship: character.relationship,
+        addressTerms: character.addressTerms,
+        origin: character.origin,
+      })),
       allScenesOldestFirst,
       allCanonFacts: [...runScope, ...branchScope].map((f) => ({
         id: f.id,
@@ -310,7 +355,7 @@ export class InMemoryTurnRepository implements TurnRepository {
         .map((memory) => ({
           id: memory.id,
           characterId: memory.characterId!,
-          characterName: run.storySetup.startingCharacter?.name ?? "Unknown character",
+          characterName: this.characters.get(memory.characterId!)?.name ?? "Unknown character",
           memoryType: memory.memoryType!,
           factKey: memory.factKey,
           factText: memory.factText,
@@ -344,11 +389,13 @@ export class InMemoryTurnRepository implements TurnRepository {
       };
     }
     if (turn.status !== "generating") throw new Error(`turn ${args.turnId} is not committable (status=${turn.status})`);
-    if (
-      args.result.character_memory_candidates.some(
-        (candidate) => candidate.character_id !== this.runs.get(turn.runId)?.startingCharacterId
-      )
-    ) {
+    const visibleCharacterIds = new Set(
+      [...this.characters.values()]
+        .filter((character) => character.runId === turn.runId &&
+          (character.origin === "authored" || Boolean(character.sourceSceneId && this.resolveBranchSceneIds(turn.branchId).includes(character.sourceSceneId))))
+        .map((character) => character.id)
+    );
+    if (args.result.character_memory_candidates.some((candidate) => !visibleCharacterIds.has(candidate.character_id))) {
       throw new Error("character memory references a character outside this run's Story");
     }
 
@@ -368,6 +415,31 @@ export class InMemoryTurnRepository implements TurnRepository {
     };
     this.scenes.set(sceneId, scene);
 
+    const normalizeIdentity = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+    const existingIdentities = new Set(
+      [...this.characters.values()]
+        .filter((character) => character.runId === turn.runId)
+        .flatMap((character) => [character.name, ...character.aliases])
+        .map(normalizeIdentity)
+    );
+    for (const candidate of args.result.new_character_candidates) {
+      const candidateIdentities = [candidate.name, ...candidate.aliases].map(normalizeIdentity);
+      if (candidateIdentities.some((identity) => existingIdentities.has(identity))) continue;
+      const characterId = randomUUID();
+      this.characters.set(characterId, {
+        id: characterId,
+        runId: turn.runId,
+        name: candidate.name,
+        aliases: candidate.aliases,
+        role: candidate.role,
+        description: candidate.description,
+        relationship: candidate.relationship,
+        origin: "runtime",
+        sourceSceneId: sceneId,
+      });
+      candidateIdentities.forEach((identity) => existingIdentities.add(identity));
+    }
+
     for (const candidate of args.result.canon_candidates) {
       this.canonFacts.push({
         id: randomUUID(),
@@ -378,6 +450,7 @@ export class InMemoryTurnRepository implements TurnRepository {
         factText: candidate.fact_text,
         sourceSceneId: sceneId,
         createdAt: new Date().toISOString(),
+        origin: "story_scene",
       });
     }
 
@@ -409,6 +482,7 @@ export class InMemoryTurnRepository implements TurnRepository {
         memoryType: candidate.memory_type,
         salience: candidate.salience,
         supersedesFactId: previous?.id ?? null,
+        origin: "story_scene",
       });
     }
 
@@ -440,6 +514,37 @@ export class InMemoryTurnRepository implements TurnRepository {
     turn.status = "failed";
     turn.errorClass = args.errorClass;
     return { status: "GENERATION_FAILED", turnId: turn.id, errorClass: args.errorClass };
+  }
+
+  /** Explicit test-only analog of lw_promote_chat_memory; never called by Story generation. */
+  promoteChatMemory(args: {
+    playerRunId: string;
+    runBranchId: string;
+    characterId: string;
+    sourceChatMessageId: string;
+    candidate: ChatMemoryCandidate;
+  }) {
+    const run = this.runs.get(args.playerRunId);
+    if (!run || run.activeBranchId !== args.runBranchId) throw new RepositoryForbiddenError("promotion branch is not active");
+    const sceneIds = this.resolveBranchSceneIds(args.runBranchId);
+    const sourceSceneId = sceneIds.at(-1);
+    if (!sourceSceneId) throw new Error("promotion requires a Scene");
+    if (this.canonFacts.some((fact) => fact.sourceChatMessageId === args.sourceChatMessageId && fact.factKey === args.candidate.fact_key)) {
+      return;
+    }
+    const visible = this.canonFacts.filter((fact) =>
+      fact.runId === args.playerRunId && fact.characterId === args.characterId &&
+      fact.factKey === args.candidate.fact_key && fact.sourceSceneId && sceneIds.includes(fact.sourceSceneId)
+    );
+    const superseded = new Set(visible.map((fact) => fact.supersedesFactId).filter((id): id is string => Boolean(id)));
+    const previous = visible.filter((fact) => !superseded.has(fact.id)).at(-1);
+    this.canonFacts.push({
+      id: randomUUID(), runId: args.playerRunId, scope: "branch", branchId: args.runBranchId,
+      factKey: args.candidate.fact_key, factText: args.candidate.fact_text, sourceSceneId,
+      createdAt: new Date(Date.now() + this.canonFacts.length).toISOString(), characterId: args.characterId,
+      memoryType: args.candidate.memory_type, salience: args.candidate.salience,
+      supersedesFactId: previous?.id ?? null, origin: "character_chat", sourceChatMessageId: args.sourceChatMessageId,
+    });
   }
 
   getGenerationCount(): number {

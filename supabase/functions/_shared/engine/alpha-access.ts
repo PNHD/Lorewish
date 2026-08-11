@@ -1,5 +1,3 @@
-import type { NarrativeProvider } from "./types.ts";
-
 export class AlphaAccessForbiddenError extends Error {
   constructor() {
     super("AI alpha generation access is not enabled for this account");
@@ -20,11 +18,11 @@ export function isAlphaGenerationEnabled(row: { enabled?: boolean | null } | nul
  * Ordering is security-significant: provider construction happens only after
  * the server-side allowlist check succeeds.
  */
-export async function authorizeAlphaProvider(
+export async function authorizeAlphaProvider<T>(
   gate: AlphaAccessGate,
   userJwt: string,
-  providerFactory: () => NarrativeProvider
-): Promise<NarrativeProvider> {
+  providerFactory: () => T
+): Promise<T> {
   await gate.assertAllowed(userJwt);
   return providerFactory();
 }
