@@ -4,6 +4,9 @@ const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const BRANCH_ID = "22222222-2222-4222-8222-222222222222";
 const CHARACTER_ID = "33333333-3333-4333-8333-333333333333";
 const THREAD_ID = "44444444-4444-4444-8444-444444444444";
+const SUPABASE_PROJECT_REF = new URL(
+  process.env.EXPO_PUBLIC_SUPABASE_URL ?? "https://sfarcofvqfeobtcizxyv.supabase.co",
+).hostname.split(".")[0];
 
 type MockChatMessage = {
   id: string;
@@ -31,8 +34,8 @@ const current = {
 };
 
 async function installSignedInMocks(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem("sb-sfarcofvqfeobtcizxyv-auth-token", JSON.stringify({
+  await page.addInitScript((storageKey) => {
+    localStorage.setItem(storageKey, JSON.stringify({
       access_token: "synthetic-e2e-access-token",
       refresh_token: "synthetic-e2e-refresh-token",
       token_type: "bearer",
@@ -40,7 +43,7 @@ async function installSignedInMocks(page: Page) {
       expires_at: 4102444800,
       user: { id: "77777777-7777-4777-8777-777777777777", aud: "authenticated", role: "authenticated", email: "e2e@example.invalid", is_anonymous: false },
     }));
-  });
+  }, `sb-${SUPABASE_PROJECT_REF}-auth-token`);
 
   await page.route("**/rest/v1/rpc/lw_get_run_state", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
