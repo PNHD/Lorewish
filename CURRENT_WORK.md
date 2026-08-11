@@ -1466,6 +1466,7 @@ feature-branch commit (application source, config, and assets); 6 files touched 
 - Allowlist status: `DEFERRED_AUTH_INFRASTRUCTURE`; zero enabled testers; not an M2 closeout blocker
 - Provider policy: `GENERAL_AUDIENCE_13_PLUS`; `MINOR_GUARDIAN_CONSENT_REQUIRED`; `PRODUCTION_POLICY_REVIEW_REQUIRED`
 - Research: `GEMINI_3_6_BAKEOFF_DEFERRED`
-- Implementation HEAD at draft time: `80b0819` (handoff/PR commit pending)
+- Implementation HEAD: `48217de` (policy/runtime/docs closeout; final evidence-pack commit follows)
+- CI: GitHub Actions run `31453808840` PASS on `48217de` (Web/JS, path detection, Android, iOS)
 - M2 verdict: **CLOSED** under the owner-revised technical/server/UI-shell closeout bar
 - Next milestone after M2 close only: M3 — Character Memory + Advanced Setup + Roleplay UX; not started

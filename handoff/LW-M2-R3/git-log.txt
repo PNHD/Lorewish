@@ -1,0 +1,4 @@
+﻿48217de (HEAD -> feature/lw-m2-deepseek-alpha, origin/feature/lw-m2-deepseek-alpha) fix(alpha): align rollout gate with general audience policy
+b590ae4 docs(m2): record DeepSeek alpha evidence
+80b0819 fix(db): use supported JSONB key check
+c84f5bb feat(m2): harden DeepSeek alpha generation

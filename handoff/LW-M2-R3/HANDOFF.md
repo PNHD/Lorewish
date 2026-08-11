@@ -11,6 +11,7 @@ Task: DeepSeek Flash Alpha Soak + Reliability Hardening + revised public UI-shel
 - Provider/model: DeepSeek `deepseek-v4-flash`; thinking disabled
 - Structured output: official JSON object mode plus authoritative Lorewish Zod/moderation/quality validation
 - Repair: one Flash repair maximum; no Pro fallback selected
+- Implementation snapshot: `48217de7ef0b1ad1c3ddbfd9ba747adcc9acfeb2`
 - Product/provider policy: `GENERAL_AUDIENCE_13_PLUS`; `MINOR_GUARDIAN_CONSENT_REQUIRED`; `PRODUCTION_POLICY_REVIEW_REQUIRED`
 - Auth roadmap: `USER_AUTH_UX_DEFERRED`; `SOCIAL_AUTH_DEFERRED`; `PUBLIC_REAL_AI_BROWSER_E2E_DEFERRED`; `DEFERRED_AUTH_INFRASTRUCTURE`
 - Deferred: `GEMINI_3_6_BAKEOFF_DEFERRED`
@@ -24,6 +25,7 @@ Task: DeepSeek Flash Alpha Soak + Reliability Hardening + revised public UI-shel
 - DeepSeek key is an Edge secret and was not found in the web bundle.
 - Live web deployed to `https://lorewish.pages.dev` (deployment `https://35d2e67b.lorewish.pages.dev`); `/preview` remains public and deterministic, while `/play` exposes no anonymous inference.
 - Revised browser gate: public `/preview` and signed-out `/play` shell verified; real provider correctness is proven independently at the server/engine boundary. See `browser-e2e.md`.
+- GitHub Actions run `31453808840` passed Web/JS, change detection, Android, and iOS on implementation SHA `48217de`.
 
 ## Important interpretation
 
