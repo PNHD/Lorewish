@@ -26,6 +26,12 @@ export function SetupTextField({
 }) {
   const { colors } = useAppTheme();
   const [contentHeight, setContentHeight] = useState(104);
+  const nativeId = `story-setup-${label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
   return (
     <View style={{ gap: spacing.xs }}>
       <ThemedText variant="label">
@@ -33,6 +39,7 @@ export function SetupTextField({
         {required ? " *" : ""}
       </ThemedText>
       <TextInput
+        nativeID={nativeId}
         accessibilityLabel={label}
         value={value}
         onChangeText={onChangeText}
