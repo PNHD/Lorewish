@@ -10,7 +10,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeepSeekNarrativeProvider, GeminiNarrativeProvider } from "./providers.ts";
-import { ProviderTransportError } from "./types.ts";
+import { ProviderOutputError, ProviderTransportError } from "./types.ts";
 import type { NarrativeContext } from "./types.ts";
 
 function baseContext(): NarrativeContext {
@@ -207,7 +207,23 @@ function deepSeekResponse(status: number, content: string, usage: Record<string,
   return jsonResponse(status, {
     id: "test",
     object: "chat.completion",
-    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content,
+          tool_calls: [
+            {
+              id: "call_test",
+              type: "function",
+              function: { name: "emit_story_turn", arguments: content },
+            },
+          ],
+        },
+        finish_reason: "stop",
+      },
+    ],
     usage: { prompt_tokens: 100, completion_tokens: 50, ...usage },
   });
 }
@@ -232,7 +248,7 @@ describe("DeepSeekNarrativeProvider — successful parse + accounting", () => {
     expect(metadata.model).toBe("deepseek-v4-pro");
     expect(metadata.inputTokens).toBe(100);
     expect(metadata.outputTokens).toBe(50);
-    // deepseek-v4-pro: $0.435/1M input (no separate cache-hit rate documented), $0.87/1M output.
+    // No cache split is reported, so all input is conservatively costed as cache miss.
     expect(metadata.costMicros).toBe(Math.round(100 * 0.435 + 50 * 0.87));
   });
 
@@ -269,7 +285,9 @@ describe("DeepSeekNarrativeProvider — successful parse + accounting", () => {
     const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
     vi.stubGlobal("fetch", fetchSpy);
 
-    const provider = new DeepSeekNarrativeProvider("fake-key");
+    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-flash", {
+      structuredOutputMode: "json_object",
+    });
     await provider.generateTurn(baseContext());
 
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -279,11 +297,67 @@ describe("DeepSeekNarrativeProvider — successful parse + accounting", () => {
     expect(requestBody.messages[0].content).toMatch(/boundary_kind/);
   });
 
+  it("uses the official strict tool schema on DeepSeek's documented beta base URL", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-flash", {
+      structuredOutputMode: "strict_tool",
+    });
+    await provider.generateTurn(baseContext());
+
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const requestBody = JSON.parse(init.body as string);
+    expect(url).toBe("https://api.deepseek.com/beta/chat/completions");
+    expect(requestBody.response_format).toBeUndefined();
+    expect(requestBody.tools[0].function.strict).toBe(true);
+    expect(requestBody.tools[0].function.parameters.additionalProperties).toBe(false);
+    expect(requestBody.tools[0].function.parameters.required).toContain("next_choices");
+    expect(requestBody.tool_choice).toEqual({
+      type: "function",
+      function: { name: "emit_story_turn" },
+    });
+  });
+
+  it("includes configured identity, relationship, and Vietnamese address terms in first-turn context", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
+    vi.stubGlobal("fetch", fetchSpy);
+    const context = baseContext();
+    context.contentLanguage = "vi";
+    context.actionType = "start";
+    context.characters = [
+      {
+        name: "Tướng Lâm Vũ",
+        aliases: ["Tướng quân"],
+        description: "vị tướng biên phòng",
+        storyRelationship: "người chặn đoàn hộ tống",
+        addressTerms: {
+          speakerSelfReference: "tôi",
+          speakerAddressesTargetAs: "tướng quân",
+          targetSelfReference: "ta",
+          targetAddressesSpeakerAs: "cậu",
+        },
+      },
+    ];
+
+    await new DeepSeekNarrativeProvider("fake-key").generateTurn(context);
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const requestBody = JSON.parse(init.body as string);
+    const prompt = requestBody.messages.map((message: { content: string }) => message.content).join("\n");
+    expect(prompt).toContain("Tướng Lâm Vũ");
+    expect(prompt).toContain("vị tướng biên phòng");
+    expect(prompt).toContain("người chặn đoàn hộ tống");
+    expect(prompt).toContain("speaker self=tôi");
+    expect(prompt).toContain("character addresses speaker=cậu");
+  });
+
   it("LW-M2-R2: disables thinking mode — found live, default thinking can consume the entire max_tokens budget on reasoning and return empty content", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
     vi.stubGlobal("fetch", fetchSpy);
 
-    const provider = new DeepSeekNarrativeProvider("fake-key");
+    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-flash", {
+      structuredOutputMode: "strict_tool",
+    });
     await provider.generateTurn(baseContext());
 
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -335,7 +409,7 @@ describe("DeepSeekNarrativeProvider — malformed structured provider response",
   it("throws a clean error when the response has no choices", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { choices: [] })));
     const provider = new DeepSeekNarrativeProvider("fake-key");
-    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/no usable message content/i);
+    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/no usable (message content|tool arguments)/i);
   });
 
   it("throws a clean error when the message content is not valid JSON (the exact failure mode DeepSeek's own docs warn about)", async () => {
@@ -348,5 +422,50 @@ describe("DeepSeekNarrativeProvider — malformed structured provider response",
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { choices: [] })));
     const provider = new DeepSeekNarrativeProvider("fake-key");
     await expect(provider.generateTurn(baseContext())).rejects.not.toBeInstanceOf(ProviderTransportError);
+  });
+
+  it("accepts one harmless complete Markdown JSON fence without weakening semantic validation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(deepSeekResponse(200, `\`\`\`json\n${JSON.stringify(VALID_RESULT)}\n\`\`\``))
+    );
+    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-flash", {
+      structuredOutputMode: "json_object",
+    });
+    await expect(provider.generateTurn(baseContext())).resolves.toMatchObject({ result: VALID_RESULT });
+  });
+
+  it("classifies finish_reason=length invalid JSON as truncated and retains billed metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  { function: { name: "emit_story_turn", arguments: '{"narrative":"cut off"' } },
+                ],
+              },
+              finish_reason: "length",
+            },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 50 },
+        })
+      )
+    );
+    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-flash", {
+      structuredOutputMode: "strict_tool",
+    });
+    try {
+      await provider.generateTurn(baseContext());
+      throw new Error("expected ProviderOutputError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ProviderOutputError);
+      expect((err as ProviderOutputError).failureKind).toBe("truncated_json");
+      expect((err as ProviderOutputError).metadata.inputTokens).toBe(100);
+      expect((err as ProviderOutputError).metadata.outputTokens).toBe(50);
+      expect((err as ProviderOutputError).metadata.costMicros).toBeGreaterThan(0);
+    }
   });
 });

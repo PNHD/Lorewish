@@ -67,6 +67,31 @@ describe("turn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)",
     ).rejects.toBeInstanceOf(RepositoryValidationError);
   });
 
+  it("passes the authoritative predefined-choice label into the real provider context", async () => {
+    const repo = new InMemoryTurnRepository();
+    const { run, result: startResult } = await startRun(repo);
+    const firstScene = (startResult as { scene: { nextChoices: { id: string; label: string }[] } }).scene;
+    const chosen = firstScene.nextChoices[0];
+
+    class CapturingProvider extends FakeNarrativeProvider {
+      seen: NarrativeContext[] = [];
+      override async generateTurn(context: NarrativeContext) {
+        this.seen.push(context);
+        return super.generateTurn(context);
+      }
+    }
+    const provider = new CapturingProvider();
+    await submitTurn(repo, provider, {
+      turnId: randomUUID(),
+      playerRunId: run.id,
+      actionType: "choice",
+      selectedChoiceId: chosen.id,
+    });
+
+    expect(provider.seen[0].selectedChoiceLabel).toBe(chosen.label);
+    expect(provider.seen[0].playerAction).toBeNull();
+  });
+
   it("LW-M2-R2: submitting a turn against a run that is not found/owned is a RepositoryForbiddenError (maps to HTTP 403, not 500 — see repository.test.ts)", async () => {
     const repo = new InMemoryTurnRepository();
     await expect(
@@ -144,6 +169,139 @@ describe("turn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)",
     // assertion is really about the pipeline reaching a committed state
     // after exactly one internal repair, which the FlakyOnceProvider forces.
     expect(turn).toBeDefined();
+  });
+
+  it("supports one explicit Pro repair provider, totals both calls, and debits one successful intent", async () => {
+    class FixedProvider implements NarrativeProvider {
+      calls = 0;
+      constructor(
+        readonly id: string,
+        private readonly model: string,
+        private readonly narrative: string,
+        private readonly costMicros: number
+      ) {}
+      async generateTurn(): Promise<ProviderCallResult> {
+        this.calls += 1;
+        return {
+          result: {
+            narrative: this.narrative,
+            dialogue: [],
+            state_changes: [],
+            canon_candidates: [],
+            next_choices: [
+              { id: "continue", label: "Continue onward" },
+              { id: "wait", label: "Wait and observe" },
+            ],
+            boundary_kind: "none",
+            structured_outcome: { rolled: false },
+          },
+          metadata: {
+            provider: "deepseek",
+            model: this.model,
+            inputTokens: 10,
+            outputTokens: 20,
+            costMicros: this.costMicros,
+            latencyMs: 30,
+          },
+        };
+      }
+    }
+
+    const repo = new InMemoryTurnRepository();
+    const { run } = await startRun(repo);
+    const allowanceBefore = repo.getGenerationCount();
+    const flash = new FixedProvider(
+      "flash",
+      "deepseek-v4-flash",
+      "As an AI, I cannot continue this story.",
+      100
+    );
+    const pro = new FixedProvider(
+      "pro",
+      "deepseek-v4-pro",
+      "The gate opens, and the road continues beneath the morning sky.",
+      200
+    );
+
+    const result = await submitTurn(
+      repo,
+      flash,
+      {
+        turnId: randomUUID(),
+        playerRunId: run.id,
+        actionType: "custom_action",
+        rawAction: "open the gate",
+      },
+      pro
+    );
+
+    expect(result.status).toBe("CONTINUE_READY");
+    expect(flash.calls).toBe(1);
+    expect(pro.calls).toBe(1);
+    expect(repo.getGenerationCount()).toBe(allowanceBefore + 1);
+    expect(repo.commitHistory.at(-1)).toMatchObject({
+      generationAttemptCount: 2,
+      model: "deepseek-v4-flash -> deepseek-v4-pro",
+      inputTokens: 20,
+      outputTokens: 40,
+      costMicros: 300,
+      latencyMs: 60,
+    });
+  });
+
+  it("never makes a third attempt when Flash and Pro repair both fail, and debits no allowance", async () => {
+    class AlwaysInvalidProvider implements NarrativeProvider {
+      calls = 0;
+      constructor(readonly id: string, private readonly model: string, private readonly costMicros: number) {}
+      async generateTurn(): Promise<ProviderCallResult> {
+        this.calls += 1;
+        return {
+          result: {
+            narrative: "As an AI, I cannot continue this story.",
+            dialogue: [],
+            state_changes: [],
+            canon_candidates: [],
+            next_choices: [{ id: "retry", label: "Retry" }],
+            boundary_kind: "none",
+            structured_outcome: { rolled: false },
+          },
+          metadata: {
+            provider: "deepseek",
+            model: this.model,
+            inputTokens: 10,
+            outputTokens: 20,
+            costMicros: this.costMicros,
+            latencyMs: 30,
+          },
+        };
+      }
+    }
+
+    const repo = new InMemoryTurnRepository();
+    const { run } = await startRun(repo);
+    const allowanceBefore = repo.getGenerationCount();
+    const flash = new AlwaysInvalidProvider("flash", "deepseek-v4-flash", 100);
+    const pro = new AlwaysInvalidProvider("pro", "deepseek-v4-pro", 200);
+    const result = await submitTurn(
+      repo,
+      flash,
+      {
+        turnId: randomUUID(),
+        playerRunId: run.id,
+        actionType: "custom_action",
+        rawAction: "open the gate",
+      },
+      pro
+    );
+
+    expect(result.status).toBe("GENERATION_FAILED");
+    expect(flash.calls).toBe(1);
+    expect(pro.calls).toBe(1);
+    expect(repo.getGenerationCount()).toBe(allowanceBefore);
+    expect(repo.failHistory.at(-1)).toMatchObject({
+      generationAttemptCount: 2,
+      costMicros: 300,
+    });
   });
 
   it("boundary_kind=ending is set only by an explicit trigger, never inferred (terminal ending is explicit only)", async () => {

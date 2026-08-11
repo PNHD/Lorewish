@@ -47,6 +47,8 @@
     "export:web": "expo export -p web",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bakeoff": "tsx supabase/functions/_shared/engine/golden-set/bakeoff.ts"
+    "bakeoff": "tsx supabase/functions/_shared/engine/golden-set/bakeoff.ts",
+    "soak:deepseek": "tsx supabase/functions/_shared/engine/golden-set/soak.ts",
+    "soak:continuity": "tsx supabase/functions/_shared/engine/golden-set/continuity-soak.ts"
   }
 }

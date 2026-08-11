@@ -85,6 +85,7 @@
     "editActionButton": "Sửa hành động của tôi",
     "allowanceExhaustedHeading": "Bạn đã dùng hết lượt tạo miễn phí hôm nay",
     "allowanceExhaustedBody": "Câu chuyện của bạn vẫn được giữ nguyên ở đây. Hãy quay lại sau khi lượt dùng được làm mới để tiếp tục.",
+    "alphaAccessRequired": "Chế độ chơi AI thật hiện chỉ dành cho người thử nghiệm alpha trưởng thành đã được phê duyệt.",
     "backToHome": "Về trang chủ"
   }
 }

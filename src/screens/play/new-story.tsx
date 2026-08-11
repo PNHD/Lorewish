@@ -79,7 +79,11 @@ export function NewStoryScreen() {
         setError(t("play.failedHeading"));
       }
     } catch (err) {
-      setError((err as Error).message);
+      setError(
+        (err as Error).message === "alpha_access_required"
+          ? t("play.alphaAccessRequired")
+          : t("play.failedHeading")
+      );
     } finally {
       setSubmitting(false);
     }
