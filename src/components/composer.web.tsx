@@ -9,7 +9,8 @@ import {
 
 import { ThemedText } from "@/components/themed-text";
 import { useAutoGrowHeight } from "@/hooks/use-auto-grow-height";
-import { interactiveState, readingWidth } from "@/theme/tokens";
+import { readingWidth } from "@/theme/tokens";
+import { focusRingStyle, hoverOpacity, type PressableVisualState } from "@/theme/interactive";
 import { useAppTheme } from "@/theme/use-app-theme";
 
 import {
@@ -114,12 +115,13 @@ export function Composer({ value, onChangeText, onSend, placeholder, sendLabel, 
         accessibilityLabel={sendLabel}
         disabled={!canSend}
         onPress={handleSend}
-        style={({ pressed }) => [
+        style={(state: PressableVisualState) => [
           composerStyles.sendButton,
           {
             backgroundColor: colors.accent,
-            opacity: !canSend ? interactiveState.disabledOpacity : pressed ? interactiveState.pressedOpacity : 1,
+            opacity: hoverOpacity(state, !canSend),
           },
+          focusRingStyle(state, colors),
         ]}
       >
         <ThemedText variant="label" color="onAccent">

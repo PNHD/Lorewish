@@ -124,7 +124,12 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
               </View>
               {message.role === "character" && message.memory_candidates.map((candidate, candidateIndex) => {
                 const key = `${message.id}:${candidateIndex}`;
-                const isPromoted = promoted.has(key);
+                // Server truth (candidate.promoted, from canon_facts) is the
+                // source of what survives a reload; the local `promoted` set
+                // only covers the gap between a successful promote and the
+                // next load() round-trip, so the button doesn't flicker back
+                // to "Remember in story" for the rest of this session.
+                const isPromoted = candidate.promoted || promoted.has(key);
                 return (
                   <Pressable
                     key={key}

@@ -104,6 +104,8 @@ export function NewStoryScreen() {
     characterDescriptionPlaceholder: t("setup.characterDescriptionPlaceholder"), characterRelationship: t("setup.characterRelationship"),
     characterRelationshipPlaceholder: t("setup.characterRelationshipPlaceholder"), aliases: t("setup.aliases"), aliasesPlaceholder: t("setup.aliasesPlaceholder"),
     addressSection: t("setup.addressSection"), addressHint: t("setup.addressHint"), requiredError: t("setup.requiredError"),
+    addressCharacterCallsYou: t("setup.addressCharacterCallsYou"), addressCharacterCallsSelf: t("setup.addressCharacterCallsSelf"),
+    addressYouCallCharacter: t("setup.addressYouCallCharacter"), addressYouCallSelf: t("setup.addressYouCallSelf"),
   };
   const starter = STARTER_OPTIONS[draft.genre];
 

@@ -103,6 +103,10 @@
     "aliasesPlaceholder": "Comma-separated, optional",
     "addressSection": "Vietnamese forms of address",
     "addressHint": "The four slots keep who speaks and who is addressed unambiguous. They remain locked once the story begins.",
+    "addressCharacterCallsYou": "Character calls you",
+    "addressCharacterCallsSelf": "Character calls themselves",
+    "addressYouCallCharacter": "You call the character",
+    "addressYouCallSelf": "You call yourself",
     "requiredError": "This field is required."
   },
   "play": {

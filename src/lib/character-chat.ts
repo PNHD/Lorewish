@@ -5,6 +5,8 @@ export interface ChatMemoryCandidateDto {
   fact_key: string;
   fact_text: string;
   salience: number;
+  /** Server truth: a canon_facts row already exists for this candidate (LW-W5-R1 P0-3). */
+  promoted: boolean;
 }
 
 export interface ChatMessageDto {

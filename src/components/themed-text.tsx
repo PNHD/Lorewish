@@ -13,7 +13,7 @@ export type ThemedTextProps = Omit<RNTextProps, "role"> & {
    * the bug this naming avoids.
    */
   variant?: TextVariant;
-  color?: "primary" | "secondary" | "onAccent" | "danger";
+  color?: "primary" | "secondary" | "onAccent" | "danger" | "warning" | "success";
 };
 
 /**
@@ -27,6 +27,8 @@ export function ThemedText({ variant = "body", color = "primary", style, ...rest
     secondary: colors.textSecondary,
     onAccent: colors.textOnAccent,
     danger: colors.danger,
+    warning: colors.warningText,
+    success: colors.success,
   } as const;
 
   return (

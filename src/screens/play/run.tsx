@@ -8,6 +8,7 @@ import { ActionButton } from "@/components/reading/action-button";
 import { ChoiceList } from "@/components/reading/choice-list";
 import { PlayerActionBanner } from "@/components/reading/player-action-banner";
 import { PlayStateBadge } from "@/components/reading/play-state-badge";
+import { ReplayLink } from "@/components/reading/replay-link";
 import { StorySceneSection } from "@/components/reading/story-scene-section";
 import { Composer } from "@/components/composer";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -255,13 +256,11 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
           <View key={historyScene.id} style={{ gap: spacing.md }}>
             <StorySceneSection scene={historyScene} whatChanged={t("play.whatChanged")} sceneLabel={t("play.sceneLabel")} isFirst={index === 0} sceneNumber={index + 1} />
             {state.kind === "ready" && historyScene.id !== scene.id && (
-              <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%" }}>
-                <ActionButton
-                  label={replayingSceneId === historyScene.id ? t("play.replayingLabel") : t("play.replayFromHereLabel")}
-                  variant="secondary"
-                  onPress={() => void handleReplayFromHere(historyScene.id)}
-                />
-              </View>
+              <ReplayLink
+                label={replayingSceneId === historyScene.id ? t("play.replayingLabel") : t("play.replayFromHereLabel")}
+                disabled={replayingSceneId !== null}
+                onPress={() => void handleReplayFromHere(historyScene.id)}
+              />
             )}
           </View>
         ))}
