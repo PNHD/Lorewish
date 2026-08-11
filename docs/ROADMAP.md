@@ -1,5 +1,29 @@
 # Roadmap
 
+> **WEB_FIRST_UNTIL_RELEASE_CANDIDATE** (LW-W3-R1, 2026-08-11). Web is the only
+> active delivery target through WEB-RC. Routine CI covers typecheck,
+> deterministic tests, lint, production web export, server/database validation,
+> and relevant browser E2E. Existing native workflow logic is retained behind
+> explicit manual dispatch only.
+>
+> `NATIVE_BUILD_VALIDATION_DEFERRED`
+> `IOS_RELEASE_DEFERRED`
+> `ANDROID_RELEASE_DEFERRED`
+
+## Active web-first sequence
+
+1. **WEB-M3 â€” Character Memory + Advanced Setup + Roleplay Depth**
+2. **WEB-M4 â€” Guest Access + Safe Public Real-AI Beta**
+3. **WEB-M5 â€” Web Product UX Completion**
+4. **WEB-M6 â€” Monetization Experiment**
+5. **WEB-M7 â€” Creator / Discovery only if validated**
+6. **WEB-RC â€” Web Release Candidate / Final QA**
+7. **NATIVE â€” iOS + Android adaptation/build/store work**
+
+The detailed historical milestone definitions below remain as product-decision
+context. Where their platform sequencing conflicts with this active sequence,
+the web-first sequence above is authoritative until WEB-RC.
+
 Status: PROVISIONAL (M0 product definition)
 Last updated: 2026-08-10 (revised by LW-M0-R2 — monetization resequenced; M1 entry conditions and
 per-platform evidence revised by LW-M0-R3; M1 web-first test channel and bilingual UI, M7 locale

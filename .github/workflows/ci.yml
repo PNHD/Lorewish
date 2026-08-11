@@ -1,39 +1,16 @@
 name: CI
 
-# Web/JS checks on every push and PR; Android + iOS Simulator native builds are
-# the M1 native-foundation evidence bar (LW-M1-R2). Standard GitHub-hosted
-# runners only (ubuntu-latest, macos-latest) — no larger/paid runner classes.
-# No EAS account or build quota is used anywhere in this workflow.
+# LW-W3-R1 policy record:
+# WEB_FIRST_UNTIL_RELEASE_CANDIDATE
+# NATIVE_BUILD_VALIDATION_DEFERRED
+# IOS_RELEASE_DEFERRED
+# ANDROID_RELEASE_DEFERRED
+# Routine push/PR validation is web/server only. Native definitions remain
+# available exclusively through explicit workflow_dispatch.
 
-# Cost control (LW-M1-R3): the Android job alone runs 35-45 minutes per push. The
-# final LW-M1-R2 commit (f97dd28) changed only CURRENT_WORK.md and handoff/ and
-# still launched the full native matrix — ~37 minutes of runner time that could
-# not have told us anything, because no input to a native build had changed.
-#
-# `paths-ignore` skips a run only when EVERY changed file in the push matches, so
-# a commit touching one doc and one source file still builds. The list below is
-# deliberately limited to files that are never inputs to a build: prose and
-# review artifacts. Everything that can affect the app or the pipeline —
-# src/**, package.json, package-lock.json, app.json, eas.json, assets/**,
-# tsconfig.json, eslint.config.js, supabase/**, and .github/** itself — is
-# absent from this list on purpose and always triggers a full run. When in
-# doubt, leave a path out: the failure mode of an unnecessary build is wasted
-# minutes, the failure mode of a wrongly skipped one is unverified code.
-#
-# LW-M2-R1: a second, narrower filter (the `changes` job, `dorny/paths-filter`)
-# gates ONLY the two native jobs, separately from the workflow-level
-# `paths-ignore` above. M2 added supabase/functions/** (Deno-only Edge
-# Function / story-engine server code) and its vitest suite — real,
-# CI-required code that the `web` job's typecheck/lint/test/export steps
-# fully exercise, but that has zero effect on what `expo prebuild` /
-# `gradlew assembleRelease` / `xcodebuild` produce. The exact native-relevant
-# path list is on the `changes` job below; everything not in that list
-# (supabase/**, docs/**, *.md, handoff/**, and any future server-only
-# directory) runs the fast web job only. This does not weaken native
-# verification for anything that could actually change a native build — it
-# only stops re-running one when nothing native-relevant changed.
-# `workflow_dispatch` bypasses the filter entirely for a manual, on-demand
-# full run.
+# Web/server checks run on every relevant push and PR. Android and iOS job
+# definitions remain available only for explicit workflow_dispatch; preserving
+# them keeps the Expo universal architecture ready for the deferred native phase.
 on:
   push:
     branches: [main, "feature/**"]
@@ -46,9 +23,7 @@ on:
       - "docs/**"
       - "handoff/**"
       - "*.md"
-  # LW-M2-R1: manual invocation of the full matrix (including native evidence),
-  # independent of which paths changed — e.g. to re-verify native build
-  # equivalence without making a throwaway source commit.
+  # The only event permitted to schedule native validation during web-first.
   workflow_dispatch: {}
 
 # Keyed on the SOURCE branch, not github.ref. A push to a branch that has an
@@ -83,59 +58,14 @@ env:
   EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder_0000000000000000
 
-# Fork-PR policy for a PUBLIC repository (LW-M1-R3 closeout).
-#
-# The native matrix is expensive (~25m macOS + ~35m ubuntu) and, on a public
-# repo, any stranger can open a PR. So the two native jobs are gated on the PR
-# coming from THIS repository; a fork PR gets the cheap web/JS job only, which
-# is enough to tell an outside contributor whether their change typechecks,
-# lints and exports. A maintainer who wants full native coverage for a fork PR
-# pushes the branch into this repo (or merges it to a feature branch), which
-# satisfies the same condition — so this withholds cost, never correctness.
-#
-# Owner-authored work is unaffected: `github.event_name == 'push'` covers every
-# push to main and feature/**, and same-repo PRs match the second clause. There
-# is no path by which an owner source commit gets less validation than before.
-#
 # This workflow deliberately uses `pull_request`, never `pull_request_target`:
 # `pull_request` runs fork code against a read-only token with no access to
 # repository secrets, which is exactly what we want. Do NOT switch to
 # `pull_request_target` to "make secrets available to PRs" — that runs with the
 # base repo's privileges and is the classic fork-PR compromise. This workflow
 # needs no secrets at all: the Supabase values above are non-functional
-# placeholders, and native builds prove compilation, not backend connectivity.
+# placeholders.
 jobs:
-  # LW-M2-R1: distinguishes "does the native app need re-verifying" from "did
-  # anything change at all". M2 added supabase/functions/** (Deno-only server
-  # code) and a vitest suite under the same tree — neither touches anything
-  # the Android/iOS native jobs build, so a commit that only changes them
-  # would previously still have burned the full ~25m/~35m native matrix for
-  # no native-relevant input. `dorny/paths-filter` reads the diff without
-  # needing secrets or repo write access, so it's safe to run unconditionally
-  # on fork PRs too (it just decides what runs next).
-  changes:
-    name: Detect native-affecting changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      native: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.native }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            native:
-              - 'src/**'
-              - 'app.json'
-              - 'eas.json'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'assets/**'
-              - 'ios/**'
-              - 'android/**'
-              - '.github/workflows/ci.yml'
-
   web:
     name: Web / JS checks
     # Runs for everyone, including fork PRs — cheap, no secrets, no privilege.
@@ -169,18 +99,16 @@ jobs:
       - name: Production web export
         run: npm run export:web
 
+      - name: Install Chromium for browser E2E
+        run: npx playwright install --with-deps chromium
+
+      - name: Public story setup browser E2E
+        run: npm run test:e2e
+
   android:
     name: Android (preview APK)
-    needs: changes
-    # Same-repository work only, AND only when something native-relevant
-    # changed (or this run was manually dispatched) — see the `changes` job.
-    # Fork PRs skip this job either way (see the fork-PR policy note above).
-    if: >-
-      needs.changes.outputs.native == 'true' && (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        github.event.pull_request.head.repo.full_name == github.repository
-      )
+    if: github.event_name == 'workflow_dispatch'
+    # Deferred native evidence; manual dispatch only during web-first.
     runs-on: ubuntu-latest
     # A cold Gradle cache (first-ever run: no prior actions/cache hit) took
     # longer than 30 minutes to compile the full RN + Expo native stack from
@@ -269,15 +197,8 @@ jobs:
 
   ios-simulator:
     name: iOS Simulator (build, install, launch)
-    needs: changes
-    # Same-repository work only, AND only when something native-relevant
-    # changed (or manually dispatched) — see the android job and the changes job.
-    if: >-
-      needs.changes.outputs.native == 'true' && (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        github.event.pull_request.head.repo.full_name == github.repository
-      )
+    if: github.event_name == 'workflow_dispatch'
+    # Deferred native evidence; manual dispatch only during web-first.
     runs-on: macos-latest
     # Raised from 30 -> 40 (LW-M2-R1): the LW-M1-R3 public-repo green run
     # finished in 27m54s against a 30-minute cap — ~2 minutes of headroom,

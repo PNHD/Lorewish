@@ -30,11 +30,12 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.1",
-    "typescript": "~6.0.3",
     "tsx": "^4.19.2",
+    "typescript": "~6.0.3",
     "vitest": "^3.0.5"
   },
   "scripts": {
@@ -45,6 +46,8 @@
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
     "export:web": "expo export -p web",
+    "serve:web-export": "node scripts/serve-web-export.mjs",
+    "test:e2e": "playwright test",
     "test": "vitest run",
     "test:watch": "vitest",
     "bakeoff": "tsx supabase/functions/_shared/engine/golden-set/bakeoff.ts",
