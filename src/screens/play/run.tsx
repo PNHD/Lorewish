@@ -274,9 +274,18 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
           </View>
         )}
 
+        {/* Color differentiates a real failure (danger) from a boundary the
+            player can act on themselves (warning) — previously all three
+            states below rendered in the same default text color
+            (LW-W5-R1 P1-3). Personal allowance vs. beta capacity stay the
+            same warning tone (both are "not broken, just wait"); the copy
+            itself carries the distinction between "your limit" and
+            "everyone's limit" per Part 14. */}
         {state.kind === "failed" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ThemedText variant="label">{t(state.errorClass === "input_rejected" ? "play.safetyRejectedHeading" : state.errorClass === "network_error" ? "play.networkErrorHeading" : "play.failedHeading")}</ThemedText>
+            <ThemedText variant="label" color={state.errorClass === "input_rejected" || state.errorClass === "network_error" ? "warning" : "danger"}>
+              {t(state.errorClass === "input_rejected" ? "play.safetyRejectedHeading" : state.errorClass === "network_error" ? "play.networkErrorHeading" : "play.failedHeading")}
+            </ThemedText>
             <ThemedText variant="caption" color="secondary">
               {t(state.errorClass === "input_rejected" ? "play.safetyRejectedBody" : state.errorClass === "network_error" ? "play.networkErrorBody" : "play.failedBody")}
             </ThemedText>
@@ -286,7 +295,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
         {state.kind === "allowance_exhausted" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ThemedText variant="label">{t("play.allowanceExhaustedHeading")}</ThemedText>
+            <ThemedText variant="label" color="warning">{t("play.allowanceExhaustedHeading")}</ThemedText>
             <ThemedText variant="caption" color="secondary">
               {t("play.allowanceExhaustedBody")}
             </ThemedText>
@@ -295,7 +304,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
         {state.kind === "beta_capacity" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ThemedText variant="label">{t("play.betaCapacityHeading")}</ThemedText>
+            <ThemedText variant="label" color="warning">{t("play.betaCapacityHeading")}</ThemedText>
             <ThemedText variant="caption" color="secondary">{t("play.betaCapacityBody")}</ThemedText>
           </View>
         )}
