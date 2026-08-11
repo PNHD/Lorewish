@@ -19,17 +19,15 @@ import { submitTurn } from "../_shared/engine/turn-pipeline.ts";
 import { SupabaseTurnRepository } from "../_shared/engine/supabase-repository.ts";
 import { selectProvider } from "../_shared/engine/providers.ts";
 import { mapRepositoryErrorToHttpStatus } from "../_shared/engine/repository.ts";
-import { authorizeAlphaProvider, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
+import { authorizeGenerationUser, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
 import { SupabaseAlphaAccessGate } from "../_shared/engine/supabase-alpha-access.ts";
+import { BudgetedNarrativeProvider } from "../_shared/engine/provider-budget.ts";
+import { SupabaseProviderAttemptBudget } from "../_shared/engine/supabase-provider-budget.ts";
 import { ActionTypeSchema, StorySetupSchema } from "../_shared/engine/types.ts";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
+  const CORS_HEADERS = corsHeaders(req.headers.get("Origin"));
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
   }
@@ -85,12 +83,21 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const gate = new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey);
-    const provider = await authorizeAlphaProvider(gate, userJwt, () => {
-      if (!Deno.env.get("LOREWISH_NARRATIVE_PROVIDER")) {
-        throw new Error("LOREWISH_NARRATIVE_PROVIDER is required for the AI alpha");
-      }
-      return selectProvider({ get: (k) => Deno.env.get(k) });
+    const configuredProvider = Deno.env.get("LOREWISH_NARRATIVE_PROVIDER");
+    const configuredModel = Deno.env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-flash";
+    if (configuredProvider !== "deepseek" || configuredModel !== "deepseek-v4-flash") {
+      throw new Error("W4 real generation requires DeepSeek deepseek-v4-flash");
+    }
+    const identity = await authorizeGenerationUser(
+      new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey),
+      userJwt,
+    );
+    const provider = new BudgetedNarrativeProvider({
+      ...identity,
+      provider: configuredProvider,
+      model: configuredModel,
+      budget: new SupabaseProviderAttemptBudget(supabaseUrl, serviceRoleKey),
+      providerFactory: () => selectProvider({ get: (k) => Deno.env.get(k) }),
     });
     const repo = new SupabaseTurnRepository(supabaseUrl, anonKey, userJwt, serviceRoleKey);
     const result = await submitTurn(repo, provider, {

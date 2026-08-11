@@ -116,4 +116,32 @@ describe("generation failure classification", () => {
       )
     ).toMatchObject({ ok: true });
   });
+
+  it("rejects Vietnamese dialogue that substitutes pronouns for immutable address terms", () => {
+    const configured = [{
+      id: "00000000-0000-4000-8000-000000000003",
+      name: "Thư Ly",
+      aliases: [],
+      role: "người giữ thư quán",
+      description: null,
+      storyRelationship: "người chị dẫn đường",
+      addressTerms: {
+        speakerSelfReference: "em",
+        speakerAddressesTargetAs: "chị",
+        targetSelfReference: "chị",
+        targetAddressesSpeakerAs: "em",
+      },
+    }];
+    expect(evaluateGeneratedResult({
+      ...valid,
+      narrative: "Thư Ly đặt tách trà xuống và chờ câu trả lời.",
+      dialogue: [
+        { speaker: "Bạn", line: "Làm sao chị biết tên của tôi?" },
+        { speaker: "Thư Ly", line: "Ta đã chờ em từ lâu." },
+      ],
+    }, "vi", [], configured)).toMatchObject({
+      ok: false,
+      qualityFailures: ["address_terms_drift"],
+    });
+  });
 });

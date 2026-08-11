@@ -23,6 +23,7 @@ type ScreenState =
   | { kind: "generating"; scene: SceneDto; playerActionPreview: string | null }
   | { kind: "failed"; scene: SceneDto; errorClass: string }
   | { kind: "allowance_exhausted"; scene: SceneDto; resetAt: string }
+  | { kind: "beta_capacity"; scene: SceneDto; resetAt: string }
   | { kind: "error"; message: string };
 
 export function RunScreen({ playerRunId }: { playerRunId: string }) {
@@ -34,6 +35,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
   const [sceneHistory, setSceneHistory] = useState<SceneDto[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const [composerText, setComposerText] = useState("");
+  const [replayingSceneId, setReplayingSceneId] = useState<string | null>(null);
   const [lastPlayerAction, setLastPlayerAction] = useState<string | null>(null);
   const [lastTurnArgs, setLastTurnArgs] = useState<{ actionType: "choice" | "custom_action"; selectedChoiceId?: string; rawAction?: string } | null>(null);
   const [storyHeader, setStoryHeader] = useState<{
@@ -114,6 +116,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
       } else if (result.status === "ALLOWANCE_EXHAUSTED") {
         // Composer text is preserved (G4/G5) — never cleared on a non-committed turn.
         setState({ kind: "allowance_exhausted", scene: currentScene, resetAt: result.resetAt });
+      } else if (result.status === "BETA_CAPACITY_REACHED") {
+        setState({ kind: "beta_capacity", scene: currentScene, resetAt: result.resetAt });
       } else if (result.status === "GENERATION_FAILED") {
         setState({ kind: "failed", scene: currentScene, errorClass: result.errorClass });
       } else {
@@ -143,13 +147,16 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
     runTurn({ ...lastTurnArgs, preview: lastPlayerAction ?? "" });
   };
 
-  const handleReplayFromHere = async () => {
-    if (!currentScene) return;
+  const handleReplayFromHere = async (sourceSceneId = currentScene?.id) => {
+    if (!sourceSceneId || replayingSceneId) return;
+    setReplayingSceneId(sourceSceneId);
     try {
-      await replayFromScene(playerRunId, currentScene.id);
+      await replayFromScene(playerRunId, sourceSceneId);
       await load();
     } catch (err) {
       setState({ kind: "error", message: (err as Error).message });
+    } finally {
+      setReplayingSceneId(null);
     }
   };
 
@@ -183,7 +190,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
   const scene = state.scene;
   const isGenerating = state.kind === "generating";
-  const composerEnabled = !isGenerating && state.kind !== "allowance_exhausted" && scene.boundaryKind !== "ending" && state.kind !== "failed";
+  const composerEnabled = !isGenerating && state.kind !== "allowance_exhausted" && state.kind !== "beta_capacity" && scene.boundaryKind !== "ending" && state.kind !== "failed";
   const displayedPlayerAction = isGenerating ? state.playerActionPreview : lastPlayerAction;
 
   const badgeLabel =
@@ -245,7 +252,18 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
         {badgeLabel && <PlayStateBadge label={badgeLabel} />}
 
         {(sceneHistory.length > 0 ? sceneHistory : [scene]).map((historyScene, index) => (
-          <StorySceneSection key={historyScene.id} scene={historyScene} whatChanged={t("play.whatChanged")} isFirst={index === 0} />
+          <View key={historyScene.id} style={{ gap: spacing.md }}>
+            <StorySceneSection scene={historyScene} whatChanged={t("play.whatChanged")} sceneLabel={t("play.sceneLabel")} isFirst={index === 0} sceneNumber={index + 1} />
+            {state.kind === "ready" && historyScene.id !== scene.id && (
+              <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%" }}>
+                <ActionButton
+                  label={replayingSceneId === historyScene.id ? t("play.replayingLabel") : t("play.replayFromHereLabel")}
+                  variant="secondary"
+                  onPress={() => void handleReplayFromHere(historyScene.id)}
+                />
+              </View>
+            )}
+          </View>
         ))}
 
         {isGenerating && (
@@ -259,11 +277,11 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
         {state.kind === "failed" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ThemedText variant="label">{t("play.failedHeading")}</ThemedText>
+            <ThemedText variant="label">{t(state.errorClass === "input_rejected" ? "play.safetyRejectedHeading" : state.errorClass === "network_error" ? "play.networkErrorHeading" : "play.failedHeading")}</ThemedText>
             <ThemedText variant="caption" color="secondary">
-              {t("play.failedBody")}
+              {t(state.errorClass === "input_rejected" ? "play.safetyRejectedBody" : state.errorClass === "network_error" ? "play.networkErrorBody" : "play.failedBody")}
             </ThemedText>
-            <ActionButton label={t("play.retryButton")} onPress={handleRetry} />
+            {state.errorClass !== "input_rejected" && <ActionButton label={t("play.retryButton")} onPress={handleRetry} />}
           </View>
         )}
 
@@ -276,19 +294,26 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
           </View>
         )}
 
+        {state.kind === "beta_capacity" && (
+          <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
+            <ThemedText variant="label">{t("play.betaCapacityHeading")}</ThemedText>
+            <ThemedText variant="caption" color="secondary">{t("play.betaCapacityBody")}</ThemedText>
+          </View>
+        )}
+
         {state.kind === "ready" && state.playState !== "TERMINAL_ENDING" && scene.nextChoices.length > 0 && (
           <ChoiceList heading={t("play.choicesHeading")} choices={scene.nextChoices} onSelect={handleChoice} disabled={isGenerating} />
         )}
 
         {state.kind === "ready" && state.playState === "EXPLICIT_CHECKPOINT" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%" }}>
-            <ActionButton label={t("play.replayFromHereLabel")} variant="secondary" onPress={handleReplayFromHere} />
+            <ActionButton label={t("play.replayFromHereLabel")} variant="secondary" onPress={() => void handleReplayFromHere()} />
           </View>
         )}
 
         {state.kind === "ready" && state.playState === "TERMINAL_ENDING" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ActionButton label={t("play.endingReplayLabel")} onPress={handleReplayFromHere} />
+            <ActionButton label={t("play.endingReplayLabel")} onPress={() => void handleReplayFromHere()} />
             <ActionButton variant="secondary" label={t("play.endingNewStoryLabel")} onPress={() => router.push("/play")} />
           </View>
         )}

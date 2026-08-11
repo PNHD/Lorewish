@@ -104,7 +104,8 @@ test("Story reader remains editorial, long-session safe, and duplicate-submit re
   await expect(page.getByText("The hidden stair opens beneath your hand.")).toBeVisible();
   await expect(page.getByText("Alternate path", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Characters/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Replay from here" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Replay from here" })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Replay from here" }).first()).toBeVisible();
   await page.getByRole("heading", { name: "The Archive Below" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("story.png"), fullPage: false });
 

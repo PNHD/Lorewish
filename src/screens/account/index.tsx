@@ -223,18 +223,19 @@ function SignedInView() {
   return (
     <View style={{ gap: spacing.lg, width: "100%", alignItems: "center" }}>
       <ThemedText variant="body" style={{ textAlign: "center" }}>
-        {t("account.signedInAs", { email: user?.email ?? "" })}
+        {user?.is_anonymous ? t("account.guestSession") : t("account.signedInAs", { email: user?.email ?? "" })}
       </ThemedText>
+      {user?.is_anonymous && <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>{t("account.guestPersistence")}</ThemedText>}
       {signOutFailed && (
         <ThemedText variant="caption" color="danger">
           {t("account.signOutError")}
         </ThemedText>
       )}
-      <SubmitButton
+      {!user?.is_anonymous && <SubmitButton
         label={signingOut ? t("account.loading") : t("account.signOut")}
         onPress={handleSignOut}
         disabled={signingOut}
-      />
+      />}
     </View>
   );
 }

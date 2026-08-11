@@ -5,8 +5,22 @@ export class AlphaAccessForbiddenError extends Error {
   }
 }
 
+export class GenerationUnauthenticatedError extends Error {
+  constructor() {
+    super("unauthenticated");
+    this.name = "GenerationUnauthenticatedError";
+  }
+}
+
 export interface AlphaAccessGate {
-  assertAllowed(userJwt: string): Promise<{ userId: string }>;
+  assertAllowed(userJwt: string): Promise<{ userId: string; isAnonymous: boolean }>;
+}
+
+export function authorizeGenerationUser(
+  gate: AlphaAccessGate,
+  userJwt: string,
+): Promise<{ userId: string; isAnonymous: boolean }> {
+  return gate.assertAllowed(userJwt);
 }
 
 /** The DEV allowlist is a rollout/cost control, not an age-verification mechanism. */
@@ -28,6 +42,9 @@ export async function authorizeAlphaProvider<T>(
 }
 
 export function mapAlphaAccessError(err: unknown): { status: number; body: { error: string } } | null {
+  if (err instanceof GenerationUnauthenticatedError) {
+    return { status: 401, body: { error: "unauthenticated" } };
+  }
   if (err instanceof AlphaAccessForbiddenError) {
     return { status: 403, body: { error: "alpha_access_required" } };
   }

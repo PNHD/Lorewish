@@ -6,7 +6,11 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
-test("Quick Start and Advanced Setup remain public, responsive, and draft-safe", async ({ page }) => {
+test("Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe", async ({ page }) => {
+  let anonymousSignups = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/auth/v1/signup")) anonymousSignups += 1;
+  });
   await expect(page.getByText("Start a new story", { exact: true })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Quick Start" })).toBeChecked();
   await expect(page.getByText("Starter", { exact: true })).toBeVisible();
@@ -22,7 +26,8 @@ test("Quick Start and Advanced Setup remain public, responsive, and draft-safe",
   await page.reload();
   await expect(page.getByRole("radio", { name: "Advanced Setup" })).toBeChecked();
   await expect(page.getByLabel("Premise")).toHaveValue("A lighthouse remembers every visitor.");
-  await expect(page.getByRole("button", { name: "Sign in to start" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  expect(anonymousSignups).toBe(0);
 
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
@@ -32,5 +37,5 @@ test("manual UI language switch renders Vietnamese setup copy", async ({ page })
   await page.getByLabel("Language").getByRole("radio", { name: "Tiếng Việt" }).click();
   await expect(page.getByText("Bắt đầu một câu chuyện mới", { exact: true })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Thiết lập nâng cao" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Đăng nhập để bắt đầu" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Bắt đầu", exact: true })).toBeVisible();
 });
