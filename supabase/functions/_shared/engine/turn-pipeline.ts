@@ -93,7 +93,8 @@ async function attemptGeneration(
   const validation = evaluateGeneratedResult(
     raw.result,
     context.contentLanguage,
-    context.recentScenes.length === 0 ? context.characters : []
+    context.recentScenes.length === 0 ? context.characters : [],
+    context.characters
   );
   if (!validation.ok) {
     return {

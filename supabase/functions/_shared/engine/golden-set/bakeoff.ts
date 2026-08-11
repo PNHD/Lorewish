@@ -56,11 +56,15 @@ function toContext(c: GoldenCase): NarrativeContext {
     premise: c.premise,
     worldSetting: null,
     playerRole: c.playerRole,
+    playerName: null,
+    playerDescription: null,
     tone: null,
     narrativePov: "second_person",
-    characters: c.characterIdentity.map((ch) => ({
+    characters: c.characterIdentity.map((ch, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       name: ch.name,
       aliases: ch.aliases,
+      role: null,
       description: null,
       storyRelationship: null,
       addressTerms: c.formsOfAddress
@@ -74,6 +78,7 @@ function toContext(c: GoldenCase): NarrativeContext {
     })),
     recentScenes: [],
     olderHistorySummary: c.startingSituation,
+    characterMemories: [],
     canonFacts: [],
     actionType: "custom_action",
     playerAction: c.initialDecision,

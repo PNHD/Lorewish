@@ -71,6 +71,26 @@ export function HomeScreen() {
           <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>
             {t("home.previewCaption")}
           </ThemedText>
+
+          <Link href="/play" asChild>
+            <Pressable
+              accessibilityRole="button"
+              style={({ pressed }) => ({
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surface,
+                borderRadius: radius.pill,
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.xxl,
+                opacity: pressed ? interactiveState.pressedOpacity : 1,
+              })}
+            >
+              <ThemedText variant="label">{t("home.newStoryCta")}</ThemedText>
+            </Pressable>
+          </Link>
+          <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>
+            {t("home.newStoryCaption")}
+          </ThemedText>
         </View>
 
         <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>

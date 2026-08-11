@@ -4,63 +4,71 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
-import { Composer } from "@/components/composer";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
+import { AdvancedSetupForm } from "@/features/story-setup/advanced-setup-form";
+import {
+  GENRE_OPTIONS,
+  STARTER_OPTIONS,
+  toStorySetup,
+  validateDraft,
+  type GenreId,
+  type SetupErrorKey,
+  type SetupPath,
+  type StorySetupDraft,
+} from "@/features/story-setup/model";
+import { useStorySetupDraft } from "@/features/story-setup/use-story-setup-draft";
 import { useTranslation } from "@/i18n";
 import { newTurnId, submitTurn, type ContentLanguage } from "@/lib/story-engine";
 import { readingWidth, radius, spacing } from "@/theme/tokens";
 import { useAppTheme } from "@/theme/use-app-theme";
 
-const GENRES = ["fantasy", "romance", "adventure", "mystery", "scifi", "comedy", "slice_of_life"] as const;
-const GENRE_LABELS: Record<(typeof GENRES)[number], string> = {
-  fantasy: "Fantasy",
-  romance: "Romance",
-  adventure: "Adventure",
-  mystery: "Mystery",
-  scifi: "Sci-fi",
-  comedy: "Comedy",
-  slice_of_life: "Slice of Life",
-};
+function ChoicePill({ selected, label, onPress }: { selected: boolean; label: string; onPress: () => void }) {
+  const { colors } = useAppTheme();
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
+      aria-checked={selected}
+      onPress={onPress}
+      style={{
+        borderWidth: 1,
+        borderColor: selected ? colors.accent : colors.border,
+        backgroundColor: selected ? colors.accent : colors.surface,
+        borderRadius: radius.pill,
+        paddingVertical: spacing.xs,
+        paddingHorizontal: spacing.md,
+      }}
+    >
+      <ThemedText variant="label" color={selected ? "onAccent" : "primary"}>{label}</ThemedText>
+    </Pressable>
+  );
+}
 
-/**
- * Quick Start (MVP_SPEC.md §1.2) for the M2 real engine — a single premise
- * field, one primary action, exactly per UX_CONTRACT.md §4. Advanced Setup
- * is out of M2 scope (M3, per ROADMAP.md).
- */
 export function NewStoryScreen() {
   const { t, locale } = useTranslation();
   const { colors } = useAppTheme();
   const { status } = useAuth();
-
-  const [premise, setPremise] = useState("");
-  const [genre, setGenre] = useState<(typeof GENRES)[number]>("fantasy");
-  const [contentLanguage, setContentLanguage] = useState<ContentLanguage>(locale);
+  const { draft, setDraft, clearDraft } = useStorySetupDraft(locale);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<SetupErrorKey, true>>>({});
 
-  if (status === "signed_out") {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", padding: spacing.xl }}>
-        <ThemedText variant="body" style={{ textAlign: "center", marginBottom: spacing.lg }}>
-          {t("play.signInRequired")}
-        </ThemedText>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push("/account")}
-          style={{ backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg }}
-        >
-          <ThemedText variant="label" color="onAccent">
-            {t("play.goToAccount")}
-          </ThemedText>
-        </Pressable>
-      </SafeAreaView>
-    );
-  }
+  const update = <K extends keyof StorySetupDraft>(key: K, value: StorySetupDraft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    if (key in fieldErrors) setFieldErrors((current) => ({ ...current, [key]: undefined }));
+  };
 
   const handleStart = async () => {
-    const trimmed = premise.trim();
-    if (!trimmed || submitting) return;
+    const nextErrors = validateDraft(draft);
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0 || submitting) return;
+    if (status !== "signed_in") {
+      setError(t("setup.signInToStart"));
+      router.push("/account");
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
@@ -68,143 +76,107 @@ export function NewStoryScreen() {
         turnId: newTurnId(),
         playerRunId: null,
         actionType: "start",
-        storySetup: { premise: trimmed, genre, contentLanguage, storyMode: "narrative" },
+        storySetup: toStorySetup(draft),
       });
       if (result.status === "CONTINUE_READY" || result.status === "EXPLICIT_CHECKPOINT" || result.status === "TERMINAL_ENDING") {
         const playerRunId = await resolveRunId(result);
+        clearDraft();
         router.replace({ pathname: "/play/[runId]", params: { runId: playerRunId } });
       } else if (result.status === "ALLOWANCE_EXHAUSTED") {
         setError(t("play.allowanceExhaustedHeading"));
       } else {
         setError(t("play.failedHeading"));
       }
-    } catch (err) {
-      setError(
-        (err as Error).message === "alpha_access_required"
-          ? t("play.alphaAccessRequired")
-          : t("play.failedHeading")
-      );
+    } catch (caught) {
+      setError((caught as Error).message === "alpha_access_required" ? t("play.alphaAccessRequired") : t("play.failedHeading"));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const advancedCopy: Record<string, string> = {
+    storySection: t("setup.storySection"), premise: t("setup.premise"), premisePlaceholder: t("setup.premisePlaceholder"),
+    worldSetting: t("setup.worldSetting"), worldPlaceholder: t("setup.worldPlaceholder"), tone: t("setup.tone"),
+    toneLight: t("setup.toneLight"), toneBalanced: t("setup.toneBalanced"), toneDark: t("setup.toneDark"), pov: t("setup.pov"),
+    povFirst: t("setup.povFirst"), povSecond: t("setup.povSecond"), povThird: t("setup.povThird"), playerSection: t("setup.playerSection"),
+    playerRole: t("setup.playerRole"), playerRolePlaceholder: t("setup.playerRolePlaceholder"), playerName: t("setup.playerName"),
+    optionalPlaceholder: t("setup.optionalPlaceholder"), playerDescription: t("setup.playerDescription"), playerDescriptionPlaceholder: t("setup.playerDescriptionPlaceholder"),
+    characterSection: t("setup.characterSection"), characterName: t("setup.characterName"), characterNamePlaceholder: t("setup.characterNamePlaceholder"),
+    characterRole: t("setup.characterRole"), characterRolePlaceholder: t("setup.characterRolePlaceholder"), characterDescription: t("setup.characterDescription"),
+    characterDescriptionPlaceholder: t("setup.characterDescriptionPlaceholder"), characterRelationship: t("setup.characterRelationship"),
+    characterRelationshipPlaceholder: t("setup.characterRelationshipPlaceholder"), aliases: t("setup.aliases"), aliasesPlaceholder: t("setup.aliasesPlaceholder"),
+    addressSection: t("setup.addressSection"), addressHint: t("setup.addressHint"), requiredError: t("setup.requiredError"),
+  };
+  const starter = STARTER_OPTIONS[draft.genre];
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.sm,
-          paddingBottom: spacing.sm,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        }}
-      >
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border }}>
         <Pressable accessibilityRole="link" onPress={() => router.push("/")}>
-          <ThemedText variant="label" color="secondary">
-            {"‹ "}
-            {t("play.backToHome")}
-          </ThemedText>
+          <ThemedText variant="label" color="secondary">{"‹ "}{t("play.backToHome")}</ThemedText>
         </Pressable>
         <LanguageSwitcher />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-        <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.md }}>
-          <ThemedText variant="heading">{t("play.newStoryHeading")}</ThemedText>
-          <ThemedText variant="body" color="secondary">
-            {t("play.newStorySubheading")}
-          </ThemedText>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+        <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.xl }}>
+          <View style={{ gap: spacing.sm }}>
+            <ThemedText variant="heading">{t("play.newStoryHeading")}</ThemedText>
+            <ThemedText variant="body" color="secondary">{t("setup.subheading")}</ThemedText>
+          </View>
 
-          <ThemedText variant="label">{t("play.genreLabel")}</ThemedText>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={{ flexDirection: "row", gap: spacing.sm }}>
-              {GENRES.map((g) => (
-                <Pressable
-                  key={g}
-                  accessibilityRole="button"
-                  onPress={() => setGenre(g)}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: g === genre ? colors.accent : colors.border,
-                    backgroundColor: g === genre ? colors.accent : colors.surface,
-                    borderRadius: radius.pill,
-                    paddingVertical: spacing.xs,
-                    paddingHorizontal: spacing.md,
-                  }}
-                >
-                  <ThemedText variant="label" color={g === genre ? "onAccent" : "primary"}>
-                    {GENRE_LABELS[g]}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </View>
-          </ScrollView>
-
-          <ThemedText variant="label">{t("play.languageLabel")}</ThemedText>
-          <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            {(["en", "vi"] as ContentLanguage[]).map((lang) => (
-              <Pressable
-                key={lang}
-                accessibilityRole="button"
-                onPress={() => setContentLanguage(lang)}
-                style={{
-                  borderWidth: 1,
-                  borderColor: lang === contentLanguage ? colors.accent : colors.border,
-                  backgroundColor: lang === contentLanguage ? colors.accent : colors.surface,
-                  borderRadius: radius.pill,
-                  paddingVertical: spacing.xs,
-                  paddingHorizontal: spacing.md,
-                }}
-              >
-                <ThemedText variant="label" color={lang === contentLanguage ? "onAccent" : "primary"}>
-                  {lang === "en" ? t("common.languageEnglish") : t("common.languageVietnamese")}
-                </ThemedText>
-              </Pressable>
+          <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: spacing.sm }}>
+            {(["quick", "advanced"] as SetupPath[]).map((path) => (
+              <ChoicePill key={path} selected={draft.path === path} label={t(path === "quick" ? "setup.quickTab" : "setup.advancedTab")} onPress={() => update("path", path)} />
             ))}
           </View>
 
-          <ThemedText variant="label">{t("play.premiseLabel")}</ThemedText>
-          <Composer
-            value={premise}
-            onChangeText={setPremise}
-            onSend={() => handleStart()}
-            placeholder={t("play.premisePlaceholder")}
-            sendLabel={submitting ? "…" : t("play.startButton")}
-            disabled={submitting}
-          />
-
-          {submitting && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-              <ActivityIndicator />
-              <ThemedText variant="caption" color="secondary">
-                {t("play.generatingScene")}
-              </ThemedText>
+          <View style={{ gap: spacing.md }}>
+            <ThemedText variant="label">{t("play.languageLabel")}</ThemedText>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+              {(["en", "vi"] as ContentLanguage[]).map((language) => (
+                <ChoicePill key={language} selected={draft.contentLanguage === language} label={language === "en" ? t("common.languageEnglish") : t("common.languageVietnamese")} onPress={() => update("contentLanguage", language)} />
+              ))}
             </View>
+          </View>
+
+          <View style={{ gap: spacing.md }}>
+            <ThemedText variant="label">{t("play.genreLabel")}</ThemedText>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
+              {GENRE_OPTIONS.map((option) => (
+                <ChoicePill key={option.id} selected={draft.genre === option.id} label={option.label} onPress={() => update("genre", option.id as GenreId)} />
+              ))}
+            </View>
+          </View>
+
+          {draft.path === "quick" ? (
+            <View style={{ gap: spacing.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.lg }}>
+              <ThemedText variant="label">{t("setup.starterLabel")}</ThemedText>
+              <ThemedText variant="body">{starter.premise[draft.contentLanguage]}</ThemedText>
+              <ThemedText variant="caption" color="secondary">{starter.character.name} · {starter.character.role}</ThemedText>
+            </View>
+          ) : (
+            <AdvancedSetupForm draft={draft} update={update} errors={fieldErrors} copy={advancedCopy} />
           )}
 
-          {error && (
-            <ThemedText variant="caption" color="danger">
-              {error}
-            </ThemedText>
-          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: submitting }}
+            disabled={submitting}
+            onPress={handleStart}
+            style={{ backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center", opacity: submitting ? 0.5 : 1 }}
+          >
+            <ThemedText variant="label" color="onAccent">{submitting ? t("play.generatingScene") : status === "signed_in" ? t("play.startButton") : t("setup.signInButton")}</ThemedText>
+          </Pressable>
+
+          {submitting ? <ActivityIndicator /> : null}
+          {error ? <ThemedText variant="caption" color="danger" accessibilityLiveRegion="polite">{error}</ThemedText> : null}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-/**
- * submitTurn's response carries the scene and run_branch_id but not
- * player_run_id directly on a fresh 'start' — this reads it back via a tiny
- * follow-up lookup so the client never needs the RPC to over-return fields
- * it does not otherwise need. Kept intentionally simple for M2: one extra
- * round trip on the rare "start a new story" action only, never on a normal
- * turn.
- */
 async function resolveRunId(result: { scene: { runBranchId: string } }): Promise<string> {
   const { getSupabaseClient } = await import("@/lib/supabase");
   const { data, error } = await getSupabaseClient()

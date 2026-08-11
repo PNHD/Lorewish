@@ -36,6 +36,11 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
   const [composerText, setComposerText] = useState("");
   const [lastPlayerAction, setLastPlayerAction] = useState<string | null>(null);
   const [lastTurnArgs, setLastTurnArgs] = useState<{ actionType: "choice" | "custom_action"; selectedChoiceId?: string; rawAction?: string } | null>(null);
+  const [storyHeader, setStoryHeader] = useState<{
+    title: string;
+    premise: string;
+    character: { name: string; role: string | null; relationship: string | null } | null;
+  } | null>(null);
 
   // If playerRunId changes while this screen stays mounted, reset to the
   // loading state synchronously during render (React's documented pattern
@@ -55,6 +60,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
         setState({ kind: "error", message: "This run has no scenes yet." });
         return;
       }
+      setStoryHeader({ title: run.storyTitle, premise: run.storyPremise, character: run.startingCharacter });
       setState({ kind: "ready", scene: run.scene, playState: run.status });
     } catch (err) {
       setState({ kind: "error", message: (err as Error).message });
@@ -199,6 +205,21 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+        {storyHeader && (
+          <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.xs }}>
+            <ThemedText variant="heading">{storyHeader.title}</ThemedText>
+            {storyHeader.character && (
+              <ThemedText variant="caption" color="secondary">
+                {storyHeader.character.name}
+                {storyHeader.character.role ? ` · ${storyHeader.character.role}` : ""}
+                {storyHeader.character.relationship ? ` · ${storyHeader.character.relationship}` : ""}
+              </ThemedText>
+            )}
+            <ThemedText variant="caption" color="secondary">
+              {t("play.setupLockedNotice")}
+            </ThemedText>
+          </View>
+        )}
         {/* Fixed vertical order per UX_CONTRACT §1A. The previous scene stays
             rendered and readable while a next one generates (G6) — this
             screen never swaps the narrative out for a spinner. */}

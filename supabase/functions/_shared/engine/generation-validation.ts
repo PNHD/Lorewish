@@ -7,7 +7,7 @@ import {
   type StructuredGenerationResult,
 } from "./types.ts";
 
-export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing";
+export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing" | "character_memory_unknown";
 
 export type SanitizedGenerationFailureClass =
   | "invalid_json"
@@ -58,7 +58,8 @@ function classifyQualityFailure(failures: QualityFailureCode[]): SanitizedGenera
 export function evaluateGeneratedResult(
   raw: unknown,
   language: ContentLanguage,
-  requiredStartingCharacters: ContextCharacter[] = []
+  requiredStartingCharacters: ContextCharacter[] = [],
+  availableCharacters: ContextCharacter[] = requiredStartingCharacters
 ): GenerationValidationResult {
   const parsed = StructuredGenerationResultSchema.safeParse(raw);
   if (!parsed.success) {
@@ -87,6 +88,22 @@ export function evaluateGeneratedResult(
       qualityFailures: [],
       schemaIssues: [],
       repairInstruction: "output was blocked by moderation",
+    };
+  }
+
+  const availableCharacterIds = new Set(availableCharacters.map((character) => character.id));
+  if (
+    parsed.data.character_memory_candidates.some(
+      (candidate) => !availableCharacterIds.has(candidate.character_id)
+    )
+  ) {
+    return {
+      ok: false,
+      failureClass: "valid_json_wrong_shape",
+      pipelineErrorClass: "unusable_output",
+      qualityFailures: ["character_memory_unknown"],
+      schemaIssues: [],
+      repairInstruction: "character memory referenced an unknown character_id; copy the UUID exactly from CHARACTER IDENTITY",
     };
   }
 

@@ -41,42 +41,61 @@ export type Database = {
     Tables: {
       canon_facts: {
         Row: {
+          character_id: string | null
           created_at: string
           fact_key: string
           fact_text: string
           id: string
+          memory_type: string | null
           origin: string
           player_run_id: string
           run_branch_id: string | null
+          salience: number | null
           scope: string
           source_scene_id: string | null
           source_turn_id: string | null
+          supersedes_fact_id: string | null
         }
         Insert: {
+          character_id?: string | null
           created_at?: string
           fact_key: string
           fact_text: string
           id?: string
+          memory_type?: string | null
           origin?: string
           player_run_id: string
           run_branch_id?: string | null
+          salience?: number | null
           scope: string
           source_scene_id?: string | null
           source_turn_id?: string | null
+          supersedes_fact_id?: string | null
         }
         Update: {
+          character_id?: string | null
           created_at?: string
           fact_key?: string
           fact_text?: string
           id?: string
+          memory_type?: string | null
           origin?: string
           player_run_id?: string
           run_branch_id?: string | null
+          salience?: number | null
           scope?: string
           source_scene_id?: string | null
           source_turn_id?: string | null
+          supersedes_fact_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "canon_facts_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "canon_facts_player_run_id_fkey"
             columns: ["player_run_id"]
@@ -103,6 +122,13 @@ export type Database = {
             columns: ["source_turn_id"]
             isOneToOne: false
             referencedRelation: "turns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "canon_facts_supersedes_fact_id_fkey"
+            columns: ["supersedes_fact_id"]
+            isOneToOne: false
+            referencedRelation: "canon_facts"
             referencedColumns: ["id"]
           },
         ]
@@ -382,31 +408,37 @@ export type Database = {
       }
       characters: {
         Row: {
+          address_terms: Json | null
           aliases: string[]
           created_at: string
           description: string | null
           id: string
           name: string
+          role: string | null
           story_id: string
           story_relationship: string | null
           updated_at: string
         }
         Insert: {
+          address_terms?: Json | null
           aliases?: string[]
           created_at?: string
           description?: string | null
           id?: string
           name: string
+          role?: string | null
           story_id: string
           story_relationship?: string | null
           updated_at?: string
         }
         Update: {
+          address_terms?: Json | null
           aliases?: string[]
           created_at?: string
           description?: string | null
           id?: string
           name?: string
+          role?: string | null
           story_id?: string
           story_relationship?: string | null
           updated_at?: string
@@ -492,6 +524,8 @@ export type Database = {
           created_at: string
           id: string
           narrative_pov: string | null
+          player_description: string | null
+          player_name: string | null
           player_role: string | null
           randomness_mode: string
           starting_situation: string | null
@@ -504,6 +538,8 @@ export type Database = {
           created_at?: string
           id?: string
           narrative_pov?: string | null
+          player_description?: string | null
+          player_name?: string | null
           player_role?: string | null
           randomness_mode?: string
           starting_situation?: string | null
@@ -516,6 +552,8 @@ export type Database = {
           created_at?: string
           id?: string
           narrative_pov?: string | null
+          player_description?: string | null
+          player_name?: string | null
           player_role?: string | null
           randomness_mode?: string
           starting_situation?: string | null
@@ -589,6 +627,7 @@ export type Database = {
         Args: {
           p_boundary_kind: string
           p_canon_candidates: Json
+          p_character_memory_candidates: Json
           p_dialogue: Json
           p_generation_attempt_count: number
           p_input_tokens: number

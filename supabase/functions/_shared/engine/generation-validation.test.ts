@@ -63,8 +63,10 @@ describe("generation failure classification", () => {
   it("rejects a first scene that silently replaces a configured character identity", () => {
     const configured = [
       {
+        id: "00000000-0000-4000-8000-000000000001",
         name: "Captain Ysolde Marrow",
         aliases: ["Marrow"],
+        role: "guard captain",
         description: "guard captain",
         storyRelationship: "first person to meet the player",
       },
@@ -85,8 +87,10 @@ describe("generation failure classification", () => {
   it("accepts a Vietnamese opening identified by the complete configured address register", () => {
     const configured = [
       {
+        id: "00000000-0000-4000-8000-000000000002",
         name: "Biên tập viên Thảo Chi",
         aliases: ["Thảo Chi", "chị Chi"],
+        role: "editor",
         description: "the strict editor",
         storyRelationship: "the player's co-creator",
         addressTerms: {

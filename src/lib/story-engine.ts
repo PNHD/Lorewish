@@ -72,10 +72,18 @@ export interface SubmitTurnArgs {
     genre: string;
     contentLanguage: ContentLanguage;
     storyMode: StoryMode;
+    worldSetting?: string;
+    tone: "light" | "balanced" | "dark";
+    narrativePov: "first_person" | "second_person" | "third_person";
+    playerRole: string;
+    playerName?: string;
+    playerDescription?: string;
     startingCharacter?: {
       name: string;
-      identity: string;
+      role: string;
+      description?: string;
       relationship: string;
+      aliases: string[];
       addressTerms?: {
         speakerSelfReference: string;
         speakerAddressesTargetAs: string;
@@ -147,6 +155,9 @@ export interface RunStateDto {
   runBranchId: string;
   status: "CONTINUE_READY" | "EXPLICIT_CHECKPOINT" | "TERMINAL_ENDING";
   scene: SceneDto | null;
+  storyTitle: string;
+  storyPremise: string;
+  startingCharacter: { name: string; role: string | null; relationship: string | null } | null;
 }
 
 export async function getRunState(playerRunId: string): Promise<RunStateDto> {
@@ -158,6 +169,9 @@ export async function getRunState(playerRunId: string): Promise<RunStateDto> {
     runBranchId: payload.run_branch_id as string,
     status: payload.status as RunStateDto["status"],
     scene: toCamelScene(payload.scene as Record<string, unknown>),
+    storyTitle: payload.story_title as string,
+    storyPremise: payload.story_premise as string,
+    startingCharacter: (payload.starting_character as RunStateDto["startingCharacter"]) ?? null,
   };
 }
 
