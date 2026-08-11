@@ -255,6 +255,9 @@ export function buildPrompt(context: NarrativeContext): { system: string; user: 
     `Never break character, never mention being an AI, never use meta-commentary.`,
     `Every canon_candidates fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$, even when writing Vietnamese. Never put diacritics, spaces, or punctuation in fact_key.`,
     `Character memory is canonical structured state, not a transcript. Emit character_memory_candidates only for durable, relevant facts. Copy character_id exactly from CHARACTER IDENTITY. Reuse fact_key when a relationship/state fact supersedes an earlier one. Never emit configured address terms as memory updates.`,
+    context.characters.some((character) => character.addressTerms)
+      ? `Vietnamese address terms are an exact output constraint, not tone guidance. In every participant dialogue line, use only the configured self-reference and target-address pair for that speaker. Never substitute tôi, ta, mình, bạn, cậu, anh, chị, em, or ngươi unless that exact term is configured for that direction.`
+      : "",
     `Emit at most 3 new_character_candidates only for notable, reusable NPCs first introduced in this Scene. Never emit a random named mention, an existing name/alias, a database UUID, or address terms. Use temporary_key only for validation; a new canonical UUID is available starting on the next turn.`,
     `boundary_kind must be "ending" ONLY for a genuine, deliberate story conclusion — never because the scene is merely well-paced or you are unsure how to continue. Default to "none".`,
     `Prohibited copy in any language: "to be continued" or any equivalent phrase.`,
@@ -476,6 +479,12 @@ export function buildCharacterChatPrompt(context: CharacterChatContext): { syste
     "Stay in character. Never mention being an AI or claim knowledge absent from the provided Story/Chat context.",
     "Do not advance physical Story events, create Scenes, or imply this side conversation automatically happened in Story canon.",
     "Configured address terms are immutable. Preserve their direction exactly; emotional tone may change but the terms may not.",
+      terms
+        ? `Use only character self=${terms.targetSelfReference} and character addresses player=${terms.targetAddressesSpeakerAs} in the reply. Never substitute another Vietnamese participant pronoun.`
+        : "",
+      context.repairReason
+        ? `This is the only repair attempt. The prior reply failed validation because ${context.repairReason}. Rewrite it from scratch and obey every constraint above.`
+        : "",
     "Propose at most 5 small durable chat_memory_candidates only for facts worth an explicit player promotion. Never include hidden reasoning, a transcript, address-term changes, or invented history. When no candidate cleanly fits the exact schema, return an empty array.",
     "Every fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$.",
     "For every candidate, memory_type MUST be exactly one of: player_fact, character_fact, relationship_fact, shared_event, promise, discovery. Do not invent another memory_type.",

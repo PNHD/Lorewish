@@ -1,0 +1,14 @@
+Supabase advisor snapshot after LW-W3-R1 migration
+
+SECURITY
+- INFO rls_enabled_no_policy: public.alpha_generation_access has RLS and no policy. Intentional deny-all table accessed through server-side authorization.
+- WARN authenticated_security_definer_function_executable: lw_commit_turn, lw_fail_turn, lw_get_run_state, lw_precheck_and_start_turn, lw_replay_from_scene. Existing architecture intentionally grants authenticated execution; functions validate auth.uid/ownership and use empty search_path.
+- No critical security advisory reported.
+
+PERFORMANCE
+- Existing unindexed FK INFO: canon_facts.run_branch_id, canon_facts.source_turn_id, player_runs.active_branch_id, scenes.parent_scene_id, turns.result_scene_id, turns.source_scene_id.
+- New W3 indexes reported unused because DEV has zero story/run/scene/memory rows after rollback-only QA: canon_facts_character_id_idx, canon_facts_supersedes_fact_id_idx, canon_facts_memory_retrieval_idx.
+- W3-added character_id and supersedes_fact_id foreign keys have covering indexes.
+
+Advisor remediation reference:
+https://supabase.com/docs/guides/database/database-linter

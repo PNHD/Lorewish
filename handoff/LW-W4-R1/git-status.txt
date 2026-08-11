@@ -1,0 +1,61 @@
+## feature/lw-w4-guest-beta...origin/main
+ M src/auth/auth-context.tsx
+ M src/components/composer.tsx
+ M src/components/composer.web.tsx
+ M src/components/reading/story-scene-section.tsx
+ M src/i18n/locales/en.json
+ M src/i18n/locales/vi.json
+ M src/lib/character-chat.ts
+ M src/lib/story-engine.ts
+ M src/screens/account/index.tsx
+ M src/screens/home/index.tsx
+ M src/screens/play/character-chat.tsx
+ M src/screens/play/new-story.tsx
+ M src/screens/play/run.tsx
+ M src/types/database.types.ts
+ M supabase/config.toml
+ M supabase/functions/_shared/engine/alpha-access.test.ts
+ M supabase/functions/_shared/engine/alpha-access.ts
+ M supabase/functions/_shared/engine/character-chat.test.ts
+ M supabase/functions/_shared/engine/character-chat.ts
+ M supabase/functions/_shared/engine/generation-validation.test.ts
+ M supabase/functions/_shared/engine/generation-validation.ts
+ M supabase/functions/_shared/engine/providers.ts
+ M supabase/functions/_shared/engine/repository.ts
+ M supabase/functions/_shared/engine/supabase-alpha-access.ts
+ M supabase/functions/_shared/engine/supabase-chat-repository.ts
+ M supabase/functions/_shared/engine/supabase-repository.ts
+ M supabase/functions/_shared/engine/test-support/in-memory-repository.ts
+ M supabase/functions/_shared/engine/turn-pipeline.ts
+ M supabase/functions/_shared/engine/types.ts
+ M supabase/functions/character-chat/index.ts
+ M supabase/functions/submit-turn/index.ts
+ M tests/e2e/roleplay-chat.spec.ts
+ M tests/e2e/story-setup.spec.ts
+?? handoff/LW-M1-R3/
+?? handoff/LW-M2-R1/
+?? handoff/LW-M2-R2/
+?? handoff/LW-M2-R3.zip
+?? handoff/LW-W3-R1/
+?? handoff/LW-W3-R2/
+?? handoff/LW-W4-R1/
+?? handoff/Lorewish_LW-M2-R2_narrative-samples.zip
+?? scripts/w4-live-dev-probe.ts
+?? src/auth/guest-session.test.ts
+?? src/auth/guest-session.ts
+?? src/i18n/guest-beta-copy.test.ts
+?? src/lib/story-engine-response.ts
+?? src/lib/story-engine.test.ts
+?? supabase/functions/_shared/cors.test.ts
+?? supabase/functions/_shared/cors.ts
+?? supabase/functions/_shared/engine/address-terms.test.ts
+?? supabase/functions/_shared/engine/address-terms.ts
+?? supabase/functions/_shared/engine/provider-budget.test.ts
+?? supabase/functions/_shared/engine/provider-budget.ts
+?? supabase/functions/_shared/engine/supabase-provider-budget.ts
+?? supabase/functions/_shared/engine/w4-migration-contract.test.ts
+?? supabase/migrations/20260811093214_lw_w4_guest_beta_safety.sql
+?? supabase/migrations/20260811095106_lw_w4_guard_delete_record_fix.sql
+?? supabase/migrations/20260811095340_lw_w4_capacity_failure_accounting.sql
+?? supabase/migrations/20260811101330_lw_w4_provider_budget_service_role_fix.sql
+?? supabase/tests/lw_w4_guest_beta_contract.sql

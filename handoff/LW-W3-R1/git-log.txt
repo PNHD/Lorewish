@@ -1,0 +1,10 @@
+8fd64fe (HEAD, origin/feature/lw-w3-character-memory) fix: expose setup field ids on web
+81a3a97 ci: enforce web-first validation
+87d98f2 feat: add advanced setup and character memory
+3c73c14 (origin/main) Merge LW-M2-R3 DeepSeek Flash controlled alpha
+
+Range: origin/main...HEAD
+Commits: 3
+Files changed: 41
+Insertions: 2192
+Deletions: 304

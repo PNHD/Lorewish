@@ -354,6 +354,8 @@ export interface CharacterChatContext {
   characterMemories: ContextCharacterMemory[];
   recentChat: ChatMessageContext[];
   playerMessage: string;
+  /** Present only for the single bounded repair attempt after validation fails. */
+  repairReason?: string | null;
 }
 
 export interface CharacterChatProvider {

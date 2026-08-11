@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AlphaAccessForbiddenError,
+  GenerationUnauthenticatedError,
   authorizeAlphaProvider,
   isAlphaGenerationEnabled,
   mapAlphaAccessError,
@@ -13,6 +14,13 @@ describe("server-enforced alpha generation access", () => {
     expect(mapAlphaAccessError(new AlphaAccessForbiddenError())).toEqual({
       status: 403,
       body: { error: "alpha_access_required" },
+    });
+  });
+
+  it("returns 401 for an invalid JWT before provider access", () => {
+    expect(mapAlphaAccessError(new GenerationUnauthenticatedError())).toEqual({
+      status: 401,
+      body: { error: "unauthenticated" },
     });
   });
 
@@ -39,7 +47,7 @@ describe("server-enforced alpha generation access", () => {
     const gate: AlphaAccessGate = {
       assertAllowed: vi.fn(async () => {
         order.push("allowlist");
-        return { userId: "user-1" };
+        return { userId: "user-1", isAnonymous: false };
       }),
     };
     const providerFactory = vi.fn(() => {

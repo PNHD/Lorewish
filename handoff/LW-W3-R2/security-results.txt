@@ -1,0 +1,43 @@
+LW-W3-R2-R1 SECURITY RESULTS
+Project: sfarcofvqfeobtcizxyv (DEV only)
+Checked: 2026-08-11
+
+PASS - linked project and forward migration
+- Linked ref re-verified: sfarcofvqfeobtcizxyv
+- Applied W3-R2 migration was not edited
+- New applied migration: 20260811085819_lw_w3_r2_allowance_double_debit_repair.sql
+- Local and remote migration histories match through 20260811085819
+
+PASS - live function definition and grants
+- lw_commit_turn signature: uuid,text,jsonb,jsonb,jsonb,jsonb,text,jsonb,jsonb,jsonb,integer,text,text,integer,integer,bigint,integer
+- lw_commit_turn: SECURITY DEFINER=true; search_path=""
+- lw_commit_turn: public=false; anon=false; authenticated=false; service_role=true
+- live definition contains no INSERT or UPDATE against public.usage_counters
+- lw_start_chat_generation: SECURITY DEFINER=true; search_path=""
+- lw_start_chat_generation: public=false; anon=false; authenticated=false; service_role=true
+- live definition contains the deterministic idempotency content-mismatch guard
+
+PASS - RLS
+- usage_counters: RLS=true; usage_counters_select_own SELECT policy
+- character_chat_threads: RLS=true; character_chat_threads_select_own SELECT policy
+- character_chat_messages: RLS=true; character_chat_messages_select_own SELECT policy
+- no anonymous/authenticated canonical commit or Chat-generation write access was added
+
+PASS - rollback-only live contract
+- N=7; successful precheck=8; successful commit=8; duplicate commit=8
+- failed-turn precheck=9; lw_fail_turn=8
+- allowance cap=30; exhausted result leaves 30 and creates no Turn
+- Character Chat start+commit leaves Story counter at 8
+- same message ID/content accepted; same ID/different content rejected with SQLSTATE 22023
+- result: ALLOWANCE_REGRESSION_ROLLBACK_ONLY_PASS
+- after rollback: usage_counters rows=0; total generation_count=0; probe users=0
+
+PASS - secret handling
+- No provider call was required
+- No credential values were printed or added to source/evidence
+- Final handoff and ZIP exact-value/pattern scans: PASS (see final task report for ZIP hash)
+
+ADVISORS
+- No lw_commit_turn or lw_start_chat_generation authenticated-executable warning
+- Remaining warnings are unchanged ownership-checked authenticated capabilities plus pre-existing lw_fail_turn
+- Existing informational RLS/no-policy, unindexed-FK, and unused-index findings are documented in supabase-advisors.txt

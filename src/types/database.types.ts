@@ -387,18 +387,21 @@ export type Database = {
       }
       usage_counters: {
         Row: {
+          chat_generation_count: number
           generation_count: number
           updated_at: string
           usage_date: string
           user_id: string
         }
         Insert: {
+          chat_generation_count?: number
           generation_count?: number
           updated_at?: string
           usage_date?: string
           user_id: string
         }
         Update: {
+          chat_generation_count?: number
           generation_count?: number
           updated_at?: string
           usage_date?: string

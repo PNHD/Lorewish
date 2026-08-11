@@ -1,0 +1,2433 @@
+diff --git a/CURRENT_WORK.md b/CURRENT_WORK.md
+index ffe0ff5..b194a4e 100644
+--- a/CURRENT_WORK.md
++++ b/CURRENT_WORK.md
+@@ -1,5 +1,292 @@
+ # Current Work
+ 
++**Task**: LW-M2-R2 — Real Narrative Provider Bakeoff + Production Model Selection Evidence
++**Status**: **PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_PARTIALLY_COMPLETE. MODEL_SELECTION_REVIEW_REQUIRED.**
++**Updated mid-task**: this section originally recorded `LIVE_BAKEOFF_NOT_RUN` (no provider
++credential existed in this environment at the time — see the "No-credential phase" content below,
++kept intact). The owner then supplied `GEMINI_API_KEY`/`DEEPSEEK_API_KEY` in a local, gitignored
++`.env.local` and asked for the bakeoff to actually run. It did — see "Live bakeoff phase" below,
++inserted just above the verdict, for the real results, three bugs found and fixed mid-campaign, and
++what remains incomplete (`gemini-3.6-flash`'s daily quota).
++
++## No-credential phase (original record, kept intact)
++
++Continues from LW-M2-R1's `REAL_NARRATIVE_PROVIDER_PENDING` verdict. No provider credential
++(`GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`) existed in this
++environment at the time — checked as variable names only, values never printed — so no live
++bakeoff, no real narrative-quality comparison, and no narrative samples were produced for any
++candidate model, exactly as this task's credential-safety rules require. What this task *could* do
++without a credential was done and verified: a real Gemini adapter, two live-verified bug fixes, an
++allowance race fix, 19 new tests, and full model-discovery documentation. See
++[docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md) §0a/§7–§10 for the
++provider-evaluation half of this record; the rest of this section covers the engine-layer work from
++that phase.
++
++## Baseline (verified, not trusted from the task brief)
++
++- `origin/main`: unchanged since LW-M2-R1 (this task did not touch `main`).
++- Branch: continued on **`feature/lw-m2-story-engine-v1`** (the task brief's own instruction:
++  "continue from the current M2 branch"), not a new branch — this task is a direct continuation of
++  LW-M2-R1's unfinished provider work, not a new vertical slice.
++- Starting HEAD: `68469d6` (`docs: LW-M2-R1 CURRENT_WORK.md record`) — confirmed via `git log`
++  before any change, matching the task brief's stated recent-commits list.
++- `handoff/LW-M1-R3/` and `handoff/LW-M2-R1/` were already untracked at task start (established
++  project pattern — handoff directories are packaging output, not source); left untouched.
++- Linked Supabase project reconfirmed unchanged: `lorewish-dev` / `sfarcofvqfeobtcizxyv` /
++  `ap-southeast-1`, via `npx supabase projects list` before any migration was pushed.
++- Read in full before any change, per the task brief's "do not trust prior summaries" instruction:
++  this file (then ending at LW-M2-R1's verdict), `docs/NARRATIVE_MODEL_EVALUATION.md`,
++  `docs/NARRATIVE_QUALITY_CONTRACT.md`, `docs/CONTINUOUS_PLAY_CONTRACT.md`, and every file under
++  `supabase/functions/_shared/engine/` plus both Edge Function entrypoints.
++
++## Credential check (names only, never printed, never searched for in history)
++
++`GEMINI_API_KEY`: absent. `GOOGLE_AI_API_KEY`: absent. `DEEPSEEK_API_KEY`: absent.
++`ANTHROPIC_API_KEY`: absent (also absent in LW-M2-R1; unchanged). `.env.local` contains only the two
++`EXPO_PUBLIC_SUPABASE_*` values, as in LW-M2-R1.
++
++Per the task brief: **`GEMINI_API_KEY_REQUIRED`** — Gemini live evaluation stopped before any network
++call. **`DEEPSEEK_API_KEY_REQUIRED`** — DeepSeek adapter work did not proceed past model-id
++documentation (see NARRATIVE_MODEL_EVALUATION.md §8); Gemini adapter work continued as instructed
++for a missing-DeepSeek-only case, and turned out to be blocked by the same missing-Gemini-key rule
++in the end, so the net live-bakeoff outcome is "not run for any provider," recorded honestly rather
++than as a partial/misleading result.
++
++## Gemini Adapter — Implemented, Never Called Live
++
++`GeminiNarrativeProvider` (`supabase/functions/_shared/engine/providers.ts`) replaces the LW-M2-R1
++typed stub with a real adapter against `generateContent`
++(`https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`), doc-verified
++2026-08-10 (full source list and findings: NARRATIVE_MODEL_EVALUATION.md §7):
++
++- Structured output via `generationConfig.responseSchema` / `responseMimeType: "application/json"`,
++  reusing the same JSON schema object the Anthropic adapter already uses for its tool definition —
++  one schema, two providers, no duplicated business logic in either adapter.
++- API key sent via the `x-goog-api-key` **header**, deliberately not the legacy `?key=` query
++  parameter, so it never appears in a URL or server access log.
++- Bounded 30s timeout via `AbortController`; HTTP 5xx/429 and a genuine timeout both normalize to
++  `ProviderTransportError` (triggers the pipeline's existing one-shot transport retry); any other
++  non-2xx, or a response with no usable candidate text, or candidate text that isn't valid JSON,
++  throws a plain `Error` — never the raw response body concatenated with the API key, since the key
++  is never part of any request/response body to begin with.
++- Real token usage (`usageMetadata.promptTokenCount` / `candidatesTokenCount`) and cost computed
++  from the exact per-model pricing table in NARRATIVE_MODEL_EVALUATION.md §7 — an unrecognized model
++  id fails at construction time rather than silently billing against the wrong tier.
++- `selectProvider()` now accepts `LOREWISH_NARRATIVE_PROVIDER=gemini` with
++  `GEMINI_API_KEY`/`GOOGLE_AI_API_KEY` and `LOREWISH_NARRATIVE_MODEL` (defaults to
++  `gemini-3.6-flash`); a `DeepSeekNarrativeProvider` typed stub was added for registry symmetry
++  (matches the OpenAI stub's existing shape) but is not wired to any credential-checked path since
++  none exists.
++- **Never exercised against a live network call** — no `GEMINI_API_KEY` in this environment. 12 new
++  unit tests (`providers.test.ts`) mock `fetch` to verify parsing, cost accounting, the
++  `x-goog-api-key`-not-query-string behavior, and every error-normalization branch (5xx, 429,
++  network failure, timeout, missing candidates, invalid JSON candidate text) — this is a test of the
++  adapter's own contract, not a narrative-quality claim.
++
++## Two Known M2-R1 Polish Issues — Fixed and Verified Live
++
++Both issues from LW-M2-R1's "Known Issues" section (cross-user turn submission and an invalid
++`selected_choice_id` both returning generic HTTP 500 instead of a clean 4xx) are fixed:
++
++- **Migration**: `supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql`,
++  applied to `lorewish-dev` via `supabase db push --linked` (confirmed via `migration list --linked`:
++  local and remote both list `20260810220000`). `lw_precheck_and_start_turn` now raises with an
++  explicit SQLSTATE for these two specific, already-existing exception sites — `42501`
++  (insufficient_privilege) for "run not found or not owned by caller" and for the idempotent-turn-id
++  ownership check, `22023` (invalid_parameter_value) for an invalid `selected_choice_id` and for a
++  `turn_id` reused across a different run. No other exception sites were touched — a deliberately
++  bounded change, not a general audit of every `raise exception` in the file.
++- **TypeScript boundary**: `repository.ts` gains `RepositoryForbiddenError`,
++  `RepositoryValidationError`, and a pure `mapRepositoryErrorToHttpStatus()` function — factored out
++  of the Deno-only `submit-turn/index.ts` specifically so this fix is unit-testable under
++  vitest/Node (4 new tests in `repository.test.ts`). `supabase-repository.ts` inspects
++  `PostgrestError.code` (the SQLSTATE PostgREST echoes back) and throws the typed error instead of a
++  generic `Error`; every other RPC error still falls through to a generic `Error` unchanged.
++  `submit-turn/index.ts`'s catch-all now calls `mapRepositoryErrorToHttpStatus()` instead of always
++  answering 500. `InMemoryTurnRepository` (the test double) throws the same typed errors for its
++  closest analogous conditions, so `turn-pipeline.test.ts` gained 2 new tests asserting the specific
++  error type, not just that *some* error was thrown.
++- **Live verification, not just source reading**: `submit-turn` was redeployed to `lorewish-dev`
++  (`supabase functions deploy submit-turn --import-map supabase/functions/deno.json` — the CLI's
++  auto-detection of `deno.json` did not fire without the explicit flag in this environment, a CLI
++  quirk unrelated to the fix itself) and a 7-probe live script — two ephemeral test accounts created
++  and deleted via the Auth Admin API, cleanup re-verified by re-query (0 remaining) — confirmed **all
++  7/7 pass**: cross-user submission → `403 {"error":"forbidden"}`; invalid choice id →
++  `400 {"error":"invalid_request"}`; the owner's own normal turn still succeeds (no regression); and
++  the daily `usage_counters` count for the owner ends at exactly 2 (start + the one real turn),
++  proving the two rejected attempts consumed no allowance. The probe script and its
++  service-role-key-bearing key file lived only in the session scratchpad, outside the repository, and
++  were deleted after use — not included in this task's handoff, matching LW-M2-R1's established
++  practice for this exact category of artifact.
++
++## Concurrent Allowance Overrun — Fixed (Option A, cheap reservation)
++
++LW-M2-R1's recorded known issue ("usage_counters may allow approximate overrun when the same user
++generates concurrently across different runs") is fixed in the same migration, not deferred to
++Option B (document-only):
++
++- The daily-cap check and the allowance reservation now happen **atomically in the same transaction**
++  as part of `lw_precheck_and_start_turn`: the existing `usage_counters` upsert already takes a row
++  lock on the caller's row, held for the rest of that transaction; the reservation increment was
++  moved to happen inside that same lock window (previously it happened only at `lw_commit_turn`, a
++  separate, later transaction after the network-bound provider call — the actual race window).
++  Concurrent precheck calls for the same user across *any* of their runs now serialize on this row,
++  closing the check-then-later-increment gap the old design had, not just the same-run case the
++  existing "one in-flight turn per run" guard already covered.
++- `lw_commit_turn` no longer increments `usage_counters` (already reserved at precheck).
++  `lw_fail_turn` releases the reservation (`generation_count - 1`, floored at 0, scoped to the
++  current UTC day) since a failed turn must not count against the cap — verified live by the same
++  probe run above (2 rejected/failed attempts, final count still exactly 2, not 4).
++- **Documented residual risk, not fixed further** (per the task brief's "do not overbuild a credit
++  ledger" instruction): if the Edge Function process is killed between the reservation and either
++  commit or fail (a platform execution-timeout kill, not a normal transport/quality-gate failure —
++  those already resolve via the existing retry/fail paths inside the same call), one allowance unit
++  leaks for that user until the next UTC day's reset. Judged acceptable for closed M2 testing; full
++  reservation-expiry/GC would start to resemble the M4 credit ledger this task is explicitly not
++  scoped to build.
++
++## Tests / CI
++
++- **54 tests, 5 files, all passing** (`npm test`, vitest) — was 35 in LW-M2-R1. New: 12
++  `providers.test.ts` (Gemini adapter parsing/cost/error-normalization/timeout/malformed-response),
++  4 `repository.test.ts` (the 403/400/500 HTTP-mapping cases), 3 new `turn-pipeline.test.ts` cases
++  (the two typed-error assertions above, plus a provider-agnostic proof that schema-valid-but-
++  quality-gate-failing output from *any* `NarrativeProvider` implementation — not only the fake
++  provider's own test hooks — is never committed as canon).
++- `tsc --noEmit`, `expo lint`, `npm run export:web` all re-run clean after this task's changes.
++- **CI**: unchanged from LW-M2-R1's shape. No provider keys, no paid/live model calls anywhere in
++  `.github/workflows/ci.yml` — the new `providers.test.ts` suite mocks `fetch` throughout, matching
++  the existing "deterministic, no network" rule for routine CI. Not yet re-verified on GitHub
++  Actions for this task's commits at the time this section was written; see the handoff's
++  `ci-results.txt` for whether a push happened before the handoff was finalized.
++
++## Security
++
++No new tables, RLS policies, or grants in this task's migration — only `create or replace` on three
++already-existing, already-least-privilege `SECURITY DEFINER` functions (same signatures, same
++`revoke ... from public, anon, authenticated` then explicit `grant ... to authenticated` pattern
++re-applied for auditability, per this project's standing rule that a function's grant is never
++assumed to persist correctly without being explicit in the migration that touches it).
++`supabase db advisors --linked`: **5 expected WARN** (unchanged — one per intentionally
++client-callable `lw_*` function, same as LW-M2-R1), **0 performance findings**. The live 7-probe
++verification above is itself a security regression check for the two functions this migration
++changed.
++
++## `PRODUCTION_POLICY_CONSTRAINT`
++
++Recorded in full in NARRATIVE_MODEL_EVALUATION.md §9, not repeated here in full: both Gemini's and
++DeepSeek's current API terms restrict the calling service to an 18+ audience, while Lorewish is an
++explicitly 13+, not-18+ product. **Lorewish's age policy was not changed** — this is flagged for
++owner/legal review before either provider is treated as production-eligible, per the task brief's
++explicit instruction not to resolve this automatically.
++
++## Known Issues / Unresolved (LW-M2-R2)
++
++- No real narrative-quality evidence exists for any provider — the entire point of this task's
++  brief — because no provider credential exists in this environment. This is not a partial result to
++  round up; `MODEL_SELECTION_REVIEW_REQUIRED` stands until an owner supplies a credential and a real
++  `npm run bakeoff` run happens.
++- The §9 policy constraint is a real, unresolved product/legal question, not a formality — it may
++  independently rule out Gemini and/or DeepSeek regardless of narrative quality.
++- DeepSeek's `response_format: json_object` does not enforce a response *shape* the way Gemini's
++  `responseSchema` or Anthropic's tool-forced schema do (NARRATIVE_MODEL_EVALUATION.md §8) — a real
++  capability gap a future DeepSeek adapter would need to design around (embedding the schema into
++  the prompt itself), not just a smaller implementation task than the other two adapters.
++- The crash-window allowance-leak tradeoff above (one unit, until next UTC day, only on a process
++  kill between reservation and commit/fail) is accepted, not eliminated.
++
++## Live bakeoff phase (owner-supplied credentials, mid-task)
++
++The owner created `.env.local` (local, gitignored, containing `GEMINI_API_KEY` and
++`DEEPSEEK_API_KEY`) and asked for the bakeoff to actually run, the DeepSeek adapter to be built for
++real, and a real comparison package produced. Loaded explicitly via `node --env-file=.env.local`
++for `npm run bakeoff` — never inherited by this process's ambient environment, never committed,
++never logged, never exposed via `EXPO_PUBLIC_*` (both key names lack that prefix, so Expo's
++bundler never inlines them into any client bundle — confirmed, not assumed), never set as a
++Supabase Edge Function secret (the deployed `submit-turn` function is untouched by this work and
++still has no real provider configured — no anonymous or authenticated production traffic was ever
++routed to a real provider).
++
++**Real `DeepSeekNarrativeProvider` implemented** (`supabase/functions/_shared/engine/providers.ts`,
++commit `f6a6266`): OpenAI-compatible `/chat/completions`, `Authorization: Bearer`, the target JSON
++shape spelled out in the prompt since `response_format:json_object` doesn't enforce one, cache-aware
++cost accounting. 13 new unit tests.
++
++**Real bakeoff run**: 6 Golden Set cases × 2 passes, against `gemini-3.6-flash`,
++`gemini-3.5-flash-lite`, `deepseek-v4-pro`, `deepseek-v4-flash`. Full results:
++[docs/NARRATIVE_MODEL_EVALUATION.md](docs/NARRATIVE_MODEL_EVALUATION.md) §11 and
++`handoff/LW-M2-R2/narrative-samples/COMPARISON.md`. Headline numbers: `gemini-3.5-flash-lite`
++12/12 (100%, 0 repairs), `deepseek-v4-pro` 12/12 post-fix, `deepseek-v4-flash` 11/12 post-fix;
++`gemini-3.6-flash` **partial** — its free-tier daily quota (20 requests/day/project/model,
++confirmed from the API's own error body) was exhausted mid-campaign, EN results reliable, VI
++results and cost figures from that run are not. No quota circumvention was attempted (no retry
++past the limit, no key/account rotation) — `SECOND_RUN_PENDING_RATE_LIMIT`.
++
++**Three real bugs found and fixed because they were corrupting this task's own evidence** (full
++detail: `handoff/LW-M2-R2/narrative-samples/notable-findings/`, each with direct API-response
++evidence, not inference):
++
++1. **`quality-gate.ts`'s `language_mixing` check false-positived on Vietnamese diacritics**
++   (commit `9ab8f25`) — JS's ASCII-only `\b` treated a diacritic letter as a word boundary,
++   fragmenting a correct word like "mắt" into a piece ("m") that could chain into a false 4-word
++   "English run," flagging entirely correct Vietnamese prose. This is why `gemini-3.6-flash`'s VI
++   verdicts from its first two passes are not used as evidence. 3 regression tests added.
++2. **`GeminiNarrativeProvider` undercounted output tokens** (commit `82c90e9`) —
++   `usageMetadata.thoughtsTokenCount` (Gemini's billed "thinking" tokens) was not summed into cost.
++   A trivial prompt showed 9 visible tokens vs. 104 thinking tokens. Fixed; 1 regression test.
++3. **`DeepSeekNarrativeProvider` left thinking mode at its default** (commit `9e76978`) — DeepSeek
++   V4's reasoning tokens draw from the same `max_tokens` budget as the visible answer; for some
++   prompts (Vietnamese narrative generation especially) reasoning alone consumed the entire
++   2048-token budget, producing empty, unparseable output — the dominant cause of DeepSeek's
++   initial 10/12 and 11/12 pre-fix pass rates. Fixed with `thinking:{type:"disabled"}`, which also
++   cut cost ~55% and latency ~37% on the same prompts. 1 regression test.
++
++A fourth, related **production** robustness gap was found and fixed alongside these (commit
++`56e6006`): `attemptGeneration()` in `turn-pipeline.ts` only caught `ProviderTransportError` from a
++provider's `generateTurn()` call; any other throw (as DeepSeek produced before fix #3) propagated
++uncaught, which would have crashed a real `submitTurn` call instead of resolving
++`GENERATION_FAILED` — not a bakeoff-only issue. Now treated as the existing `unusable_output`
++class, same as a schema-validation failure. `bakeoff.ts`'s `runCase` got the equivalent fix so one
++flaky case no longer aborts the whole harness run. 1 regression test.
++
++**Continuity (3-turn EN + VI)**, run through the real `submitTurn`/`InMemoryTurnRepository`
++pipeline (not the bakeoff harness's isolated context): only possible for DeepSeek's quality tier
++this task (Gemini blocked by quota). EN passed cleanly. VI passed with one nuance flagged for
++human/native-speaker review (a brief "em"→"tôi" self-reference shift during an emotional beat —
++may be natural register variation, may be drift). A separate architecture finding surfaced here,
++affecting every provider identically: the real `StorySetup` payload has no field for pre-authored
++character identity, so every model invents its own NPC names/genders rather than matching the
++Golden Set's designed characters — not a provider defect, recorded in
++`notable-findings/character-identity-architecture-gap.md`.
++
++**73/73 tests pass** (was 54 at the end of the no-credential phase; +19 from the DeepSeek adapter
++and the four bug-fix regression tests).
++
++## M2-R2 Verdict
++
++**PROVIDER_ADAPTER_EXTENDED. LIVE_BAKEOFF_PARTIALLY_COMPLETE. MODEL_SELECTION_REVIEW_REQUIRED.**
++
++What is claimed: real, live-tested Gemini and DeepSeek adapters (Gemini's quality tier partially —
++see above); two known M2-R1 defects fixed and verified live; the concurrent-allowance race closed;
++a real bakeoff ran against 4 of the 5 model/tier combinations with genuine EN/VI samples and a real
++comparison package; three evidence-corrupting bugs found and fixed mid-campaign rather than
++reported around; 73/73 tests pass; a real product/legal policy conflict recorded, not glossed over.
++
++What is **not** claimed: a complete, clean `gemini-3.6-flash` dataset (quota-blocked, partial);
++any narrative-quality *verdict* — the samples exist for human/native-speaker review, but this task
++does not itself judge naturalness; a resolved model-selection decision; GitHub Actions CI results
++for every commit in this phase (the code-fix commits' own CI runs were not individually awaited
++given the volume of commits this live phase produced — see the handoff's `ci-results.txt` for what
++was and wasn't verified).
++
++**Recommended next task**: re-run `gemini-3.6-flash`'s bakeoff once its daily quota resets, for a
++directly comparable quality-tier dataset against `deepseek-v4-pro`. Have a human — ideally a native
++Vietnamese speaker — review `handoff/LW-M2-R2/narrative-samples/`, particularly the forms-of-address
++nuance in the VI continuity transcript. Resolve the §9 `PRODUCTION_POLICY_CONSTRAINT` question
++independently. Only then make a model-selection decision.
++
++---
++
+ **Task**: LW-M2-R1 — Real Interactive Story Engine Vertical Slice
+ **Status**: **ENGINE_IMPLEMENTATION_PASS. REAL_NARRATIVE_PROVIDER_PENDING.** Every layer of the
+ vertical slice is implemented, live-deployed to `lorewish-dev`, and verified against real HTTP
+diff --git a/docs/NARRATIVE_MODEL_EVALUATION.md b/docs/NARRATIVE_MODEL_EVALUATION.md
+index 0de7759..5714b4e 100644
+--- a/docs/NARRATIVE_MODEL_EVALUATION.md
++++ b/docs/NARRATIVE_MODEL_EVALUATION.md
+@@ -1,10 +1,79 @@
+ # Narrative Model Evaluation
+ 
+-Status: LW-M2-R1. Records the model-evaluation architecture and current findings for the
+-M2 story engine's `NarrativeProvider` boundary
++Status: **LW-M2-R2. MODEL_SELECTION_REVIEW_REQUIRED.** Records the model-evaluation architecture
++and current findings for the M2 story engine's `NarrativeProvider` boundary
+ ([TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) §5). This is an evaluation *starting
+ point*, not a settled model choice — see §5 below for what would need to happen before treating
+-any ranking here as final.
++any ranking here as final. §7–§10 below are new in LW-M2-R2; §1–§6 are LW-M2-R1's original content,
++left in place rather than rewritten, per this project's established practice of recording
++supersession instead of silently editing history.
++
++## 0. LW-M2-R2 summary (read this first)
++
++**This section was updated mid-task.** The first half of LW-M2-R2 ran with no provider credential
++in this environment (the original text below this note is preserved as §0a for the record). The
++owner then supplied `GEMINI_API_KEY` and `DEEPSEEK_API_KEY` in a local, gitignored `.env.local` for
++an owner-initiated local bakeoff, which **did run for real** — see §11 for the complete results.
++This section now summarizes the final state; §0a is kept for how the task started.
++
++- **A real, live bakeoff ran** against `gemini-3.5-flash-lite` (fully clean, 12/12), `deepseek-v4-pro`
++  (fully clean post-fix, 12/12), and `deepseek-v4-flash` (fully clean post-fix, 11/12).
++  `gemini-3.6-flash` is **partial** — its free-tier daily quota (20 requests/day/project/model,
++  confirmed from the API's own error body) was exhausted mid-campaign; EN results are reliable, VI
++  results and cost figures from that run are not (see §11). `SECOND_RUN_PENDING_RATE_LIMIT` for
++  `gemini-3.6-flash`.
++- **`DeepSeekNarrativeProvider` was implemented for real** during this task (it had been a stub —
++  see §0a) and live-tested against both tiers.
++- **Real EN/VI narrative samples exist** for every model actually run — see
++  `handoff/LW-M2-R2/narrative-samples/`. No samples were fabricated for `gemini-3.6-flash`'s
++  incomplete portion.
++- **Three real bugs were found and fixed mid-bakeoff** because they were corrupting the evidence
++  this task exists to produce: a Vietnamese-language false positive in Lorewish's own quality gate,
++  a Gemini cost-accounting gap (thinking tokens excluded), and a DeepSeek adapter misconfiguration
++  (thinking mode left enabled, which could silently zero out narrative output). Full detail in §11
++  and `handoff/LW-M2-R2/narrative-samples/notable-findings/`.
++- **The `PRODUCTION_POLICY_CONSTRAINT` finding stands** (§9): both Gemini's and DeepSeek's current
++  API terms restrict the calling service to an 18+ audience; Lorewish is 13+. Not acted on
++  automatically.
++- Two known M2-R1 polish issues (cross-user turn submission, invalid `selected_choice_id` both
++  returning generic HTTP 500) were fixed and **verified live** against `lorewish-dev` earlier in
++  this task — see CURRENT_WORK.md's LW-M2-R2 section, not this document.
++- **Verdict remains `MODEL_SELECTION_REVIEW_REQUIRED`.** No production model is selected by this
++  task even with real data in hand — human/native-speaker review of the samples in
++  `narrative-samples/` is still required first, per the task brief. See §10 and §11.
++
++## 0a. Original LW-M2-R2 summary (no-credential phase — superseded by §0/§11, kept for the record)
++
++This task's brief called for a real Gemini/DeepSeek provider bakeoff. **No live bakeoff was run
++against any real provider in this task** — `GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, `DEEPSEEK_API_KEY`,
++and `ANTHROPIC_API_KEY` are all absent from this environment (checked as variable names only, never
++printed). Per the task brief's explicit credential-safety rule ("if the Gemini key is missing, stop
++Gemini live evaluation and report `GEMINI_API_KEY_REQUIRED`"), work proceeded exactly as far as it
++could without a credential:
++
++- **`GeminiNarrativeProvider` was implemented for real** (`supabase/functions/_shared/engine/providers.ts`)
++  against the current official `generateContent` API, model ids re-verified against current docs
++  (§7), and covered by 12 unit tests against a mocked `fetch` (parsing, cost accounting, error
++  normalization, timeout, malformed-response handling) — but **never called against the live
++  network**. `GEMINI_API_KEY_REQUIRED`.
++- **`DeepSeekNarrativeProvider` was intentionally left a typed stub.** The task brief's rule for a
++  missing DeepSeek key is "continue Gemini work, report `DEEPSEEK_API_KEY_REQUIRED`" — not "build the
++  adapter blind with no way to verify it." Current DeepSeek model ids are recorded in §8 for the task
++  that has a credential. `DEEPSEEK_API_KEY_REQUIRED`.
++- **No narrative samples were produced for any candidate model.** Per the task brief's explicit
++  instruction, a model that was not run gets no fabricated sample — `narrative-samples/` in this
++  task's handoff documents this rather than inventing content.
++- **A material policy finding, not previously recorded**: both Gemini's and DeepSeek's current API
++  terms restrict the calling service to users 18+ (§9) — Lorewish is a 13+ mainstream product
++  ([PRODUCT_VISION.md](PRODUCT_VISION.md)). This is recorded as `PRODUCTION_POLICY_CONSTRAINT` and
++  was **not** used to change Lorewish's age policy or provider eligibility, per the task brief's
++  explicit instruction not to make that call automatically.
++- Two known M2-R1 polish issues (cross-user turn submission, invalid `selected_choice_id` both
++  returning generic HTTP 500) were fixed and **verified live** against `lorewish-dev` — see
++  CURRENT_WORK.md's LW-M2-R2 section, not this document, for that work (it is provider-adjacent but
++  not a model-evaluation finding).
++- **Recommended verdict: `MODEL_SELECTION_REVIEW_REQUIRED`.** No production model is selected by
++  this task. See §10.
+ 
+ ## 1. Architecture: provider-agnostic by construction
+ 
+@@ -117,7 +186,7 @@ Not performed in this task (no credential):
+ 5. Only after (1)–(4): a narrative-quality ranking claim would be evidence-backed rather than a
+    price comparison mistaken for one.
+ 
+-## 6. Verdict for this task
++## 6. Verdict for LW-M2-R1 (superseded by §0/§10 — kept as historical record)
+ 
+ **ENGINE_IMPLEMENTATION_PASS. REAL_NARRATIVE_PROVIDER_PENDING.**
+ 
+@@ -125,3 +194,200 @@ The provider abstraction, one real (unverified-against-network) adapter, two typ
+ Golden Set, and the bakeoff harness are all implemented and exercised end-to-end against the fake
+ provider. No real generation evidence exists, and none is claimed. See `CURRENT_WORK.md` for how
+ this composes with the rest of the M2-R1 verdict.
++
++---
++
++## 7. LW-M2-R2 model discovery — Gemini (verified 2026-08-10)
++
++Verified against `https://ai.google.dev/gemini-api/docs/models`, `https://ai.google.dev/gemini-api/docs/pricing`,
++`https://ai.google.dev/api/generate-content`, and `https://ai.google.dev/gemini-api/docs/structured-output`
++(WebFetch against the live official docs, not training-data recall — the task brief's explicit
++instruction). Third-party pricing aggregators were used only to cross-check, never as the primary
++source.
++
++| Candidate | Exact API model id | Context window | Pricing (per 1M tokens, input/output) | Structured output |
++|---|---|---|---|---|
++| Quality tier ("Gemini 3.6 Flash") | `gemini-3.6-flash` | 1,000,000 tokens (documented uniformly across the current Gemini model family) | $1.50 / $7.50 | Yes — `generationConfig.responseSchema` + `responseMimeType: "application/json"` |
++| Cheap/high-volume tier ("Gemini 3.5 Flash Lite") | `gemini-3.5-flash-lite` | 1,000,000 tokens | $0.30 / $2.50 | Yes — same mechanism |
++
++Request shape implemented in `GeminiNarrativeProvider` (`supabase/functions/_shared/engine/providers.ts`):
++`POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, API key via
++the `x-goog-api-key` **header** (the current documented alternative to the legacy `?key=` query
++parameter — deliberately not used, since a query-string key ends up in URLs and server access logs,
++which the task brief's "no secret in logs" requirement rules out). Token usage is read from
++`usageMetadata.promptTokenCount` / `usageMetadata.candidatesTokenCount`.
++
++**Not independently re-verified in this task**: exact free/paid-tier RPM/TPM/RPD rate limits — the
++official rate-limits page states these are usage-tier-dependent and viewable only in a signed-in AI
++Studio console (`https://aistudio.google.com/rate-limit`), which requires the owner's own account
++and was not something this task could or should access. The task brief's rate-limit-respecting rule
++(no quota circumvention, no account rotation) is honored by not running any live call at all, not by
++having verified the exact numeric limits.
++
++**Google's own docs currently describe a newer "Interactions API" as the recommended path for the
++latest features**, while `generateContent` is still fully documented, active, and explicitly
++supported for structured JSON output. This adapter deliberately targets the better-documented,
++longer-established `generateContent` endpoint rather than adopting the newer API sight-unseen for a
++capability (structured output) it cannot verify against a live response either way in this task —
++recorded here so a future task with a credential can deliberately evaluate migrating, rather than
++this choice looking like an oversight.
++
++## 8. LW-M2-R2 model discovery — DeepSeek (verified 2026-08-10, no adapter built)
++
++Verified against `https://api-docs.deepseek.com/quick_start/pricing` and
++`https://api-docs.deepseek.com/api/create-chat-completion`, cross-checked against independent web
++search. **No `DEEPSEEK_API_KEY` exists in this environment, so no adapter was implemented** — this
++section exists only so a future task with a credential does not have to re-derive current model ids
++from scratch, per the task brief's "verify current docs before hardcoding any model id" instruction,
++which does not gate on having a credential yet.
++
++- **Legacy names retired**: `deepseek-chat` and `deepseek-reasoner` were retired 2026-07-24; both are
++  now aliases that must migrate to the current model ids below (thinking mode is a request
++  parameter, not a separate model id, under the new naming).
++- **Recommended/strongest general-text candidate**: `deepseek-v4-pro` — $0.435/1M input, $0.87/1M
++  output (after a documented permanent 75% price cut from its prior rate).
++- **Cheapest/fastest candidate**: `deepseek-v4-flash` — $0.14/1M input (cache miss; cache-hit input
++  is $0.0028/1M, a 98% discount), $0.28/1M output, 1,000,000 token context window, up to 384K output
++  tokens, supports both non-thinking and thinking modes under the same model id.
++- **Structured output**: `response_format: { type: "json_object" }` guarantees syntactically valid
++  JSON but, unlike Gemini's `responseSchema` or Anthropic's tool-forced schema, does **not** enforce
++  a specific shape — the docs explicitly warn the caller must additionally instruct the model to
++  produce the desired JSON shape via the system/user message, or generation can run to the token
++  limit as whitespace. A future DeepSeek adapter would need to embed
++  `StructuredGenerationResultSchema`'s shape into the prompt text itself, not just set
++  `response_format`, and would likely see a higher schema-validation-failure rate than Gemini/Anthropic
++  as a result — this is a real capability gap, not just a minor implementation detail, and should
++  weigh into the eventual owner/reviewer model-selection decision (§10).
++- **Token usage** appears in `usage.prompt_tokens` / `usage.completion_tokens` (plus
++  `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` for cache-aware cost accounting a future
++  adapter should use, given the 98% cache-hit discount).
++
++Neither candidate is a reasoning-only model in the sense the task brief warns against — both are
++general chat/completion models with an optional thinking mode, not a model that can only be used in
++a reasoning-only configuration.
++
++## 9. `PRODUCTION_POLICY_CONSTRAINT` — provider terms vs. Lorewish's age policy
++
++**Recorded, not acted on.** The task brief is explicit: record a provider terms/age conflict, do not
++change Lorewish's content rating or user eligibility automatically. Lorewish is **13+ mainstream**,
++explicitly **not an 18+ platform** ([PRODUCT_VISION.md](PRODUCT_VISION.md) — "Not an 18+ platform",
++[MVP_SPEC.md](MVP_SPEC.md) — "a 13+ product").
++
++- **Gemini API Additional Terms of Service** (`https://ai.google.dev/gemini-api/terms`, verified via
++  web search 2026-08-10): the developer must be 18+, and — materially for Lorewish — the terms state
++  the API must not be used "as part of a website, application, or other service that is directed
++  towards or is likely to be accessed by individuals under the age of 18." This reads as a
++  service-level restriction on the *audience*, not only the API caller's own age.
++- **DeepSeek API terms of service**: the API specifically requires the caller/operator to be 18+
++  (distinct from DeepSeek's consumer chat product, which has separate minor-with-guardian-consent
++  provisions that do not appear to extend to the API).
++- **Anthropic**, for comparison (already has an implemented, unverified-live adapter from LW-M2-R1):
++  the Commercial API Terms also require an 18+ *account holder*, but Anthropic separately publishes
++  "Responsible Use of Anthropic's Models: Guidelines for Organizations Serving Minors," which reads
++  as permitting an 18+-operated service to serve a minor end-user audience under additional
++  compliance obligations (age verification, monitoring, content moderation, child-privacy-law
++  compliance) — a materially different posture from Gemini's blanket "not directed towards / likely
++  accessed by under-18s" language.
++
++**This is prose analysis of public terms pages by an engineering task, not a legal opinion.** The
++exact wording, current effective date, and applicability to Lorewish's specific product shape need
++owner/legal review before any provider decision treats this as settled. It is flagged here precisely
++so that review can happen deliberately rather than the constraint being discovered later, after a
++provider is already in production.
++
++## 10. Model Selection Policy — recorded, not applied
++
++Per the task brief's decision rule (recorded verbatim so it is legible to a reviewer without
++re-reading the task brief): prefer the cheaper model when narrative quality/continuity are materially
++indistinguishable; choose the premium model when it is clearly better on Vietnamese naturalness,
++character voice, forms of address, or continuity. **This rule cannot be applied yet — it requires the
++real, human-reviewed bakeoff outputs this task could not produce (§0).**
++
++What exists today, for a future task to act on directly:
++- A real, doc-verified Gemini adapter (quality + cheap tier), never exercised live.
++- A real, doc-verified Anthropic adapter (from LW-M2-R1), never exercised live.
++- DeepSeek model ids recorded, no adapter (no credential, and a real structured-output capability
++  gap noted in §8 that should factor into whether DeepSeek is even a fair contender).
++- The §9 policy constraint, which may independently rule out one or more candidates regardless of
++  narrative quality, and should be resolved before — not after — a quality-based ranking is trusted.
++
++**Verdict: `MODEL_SELECTION_REVIEW_REQUIRED`.** No production narrative model is selected by this
++task. `LOREWISH_NARRATIVE_PROVIDER` remains configurable and defaults to the fake provider in this
++environment, unchanged from LW-M2-R1. §11 below updates this with real data — the verdict itself
++does not change.
++
++---
++
++## 11. LW-M2-R2 real live bakeoff results (owner-supplied credentials, mid-task)
++
++The owner created a local, gitignored `.env.local` containing `GEMINI_API_KEY` and
++`DEEPSEEK_API_KEY` partway through this task and asked for the bakeoff to actually run. Both keys
++were loaded explicitly via `node --env-file=.env.local` for the `npm run bakeoff` CLI — never
++inherited from this process's ambient environment, never committed, never logged, never set as a
++Supabase Edge Function secret. Full results, samples, and raw data:
++`handoff/LW-M2-R2/narrative-samples/COMPARISON.md` and `handoff/LW-M2-R2/bakeoff-raw/*.json` — this
++section is the condensed version.
++
++### 11.1 Results table
++
++| Model | Tier | Pass rate (12 gens, 2 passes) | Repairs | Total cost | Median latency |
++|---|---|---|---|---|---|
++| `gemini-3.6-flash` | Quality | **Partial** — EN 6/6 reliable; VI unreliable (bug-contaminated) | n/a | undercounted (bug) | 9.5s (pre-fix) |
++| `gemini-3.5-flash-lite` | Cheap | **12/12 (100%)** | 0 | $0.011981 | 2.24s |
++| `deepseek-v4-pro` | Quality | **12/12 (100%)**, post-fix | 0 | $0.010052 | 12.42s |
++| `deepseek-v4-flash` | Cheap | **11/12 (91.7%)**, post-fix | 4 | $0.002426 | 6.81s |
++
++### 11.2 Three bugs found and fixed because they were corrupting this evidence
++
++1. **`language_mixing` false positive on Vietnamese diacritics** (`quality-gate.ts`) — JS's
++   ASCII-only `\b`/`\w` treated a diacritic letter as a word boundary, silently fragmenting a
++   correct Vietnamese word (e.g. "mắt" → "m") into pieces that could chain into a false 4-word
++   "English run." Flagged entirely correct Vietnamese prose. Fixed to operate on whole
++   whitespace-delimited words instead of sub-word regex matches. This is why `gemini-3.6-flash`'s
++   VI verdicts from its first two bakeoff passes are not trusted as evidence.
++2. **Gemini adapter undercounted output tokens** (`providers.ts`) — `usageMetadata.thoughtsTokenCount`
++   (Gemini's "thinking" tokens, billed the same as visible output per the pricing page) was not
++   being read. A trivial prompt showed 9 visible tokens vs. 104 thinking tokens. Fixed to sum both.
++3. **DeepSeek thinking mode left at its default** (`providers.ts`) — DeepSeek V4's reasoning tokens
++   are drawn from the same `max_tokens` budget as the visible answer. For some prompts (Vietnamese
++   narrative generation especially), reasoning alone consumed the entire 2048-token budget,
++   producing empty, unparseable content — the dominant cause of DeepSeek's initial structural
++   failures (10/12, 11/12 before the fix). Fixed by setting `thinking:{type:"disabled"}`, which
++   also improved cost (~55% cheaper) and latency (~37% faster) on the same prompts.
++
++A fourth, related **engine** robustness gap was found and fixed: `attemptGeneration()` in
++`turn-pipeline.ts` only caught `ProviderTransportError`; any other adapter throw (as DeepSeek
++produced before fix #3) propagated uncaught and would have crashed a real `submitTurn` call instead
++of resolving `GENERATION_FAILED`. Now treated as the existing `unusable_output` class. This is a
++genuine production fix, not a bakeoff-only one — see CURRENT_WORK.md.
++
++### 11.3 `gemini-3.6-flash` — the incomplete result
++
++Confirmed directly from the Gemini API's own 429 error body: the free tier allows **20 requests per
++day, per project, per model**. This task's debugging calls plus two bakeoff passes exhausted it
++before a clean, both-fixes-applied second pass could run. Per the task brief's explicit instruction,
++no retry-past-limit, key rotation, or account rotation was attempted.
++**`SECOND_RUN_PENDING_RATE_LIMIT`** — recommended: re-run once the quota resets (next UTC/Pacific
++day boundary, per Google's standard free-tier reset).
++
++### 11.4 Continuity (3-turn EN + VI)
++
++Run through the real `submitTurn`/`InMemoryTurnRepository` pipeline (not the bakeoff harness's
++isolated one-shot context), so scene history and canon facts genuinely carried forward exactly as
++in production. Only possible for DeepSeek's quality tier this task (Gemini blocked by quota):
++
++- **EN (`en-fantasy-01`, `deepseek-v4-pro`): PASS.** The curse mechanic established in turns 1–2
++  was referenced accurately in turn 3 without being restated.
++- **VI (`vi-romance-01`, `deepseek-v4-pro`): PASS, with one nuance flagged for human review**, not
++  resolved automatically — a brief self-reference shift ("em"→"tôi") during an emotional beat that
++  may be natural register variation or may be drift; native-speaker judgment needed.
++- A separate, real architecture finding surfaced here: the production `StorySetup` payload has no
++  field for pre-authored character identity, so every model (not just DeepSeek) invents its own
++  character names/genders rather than matching the Golden Set's designed NPCs. Not a provider
++  defect — see `handoff/LW-M2-R2/narrative-samples/notable-findings/character-identity-architecture-gap.md`.
++
++### 11.5 What this does not do
++
++Does not select a production model. `gemini-3.6-flash` needs a clean re-run before Gemini's two
++tiers can be compared on equal footing. The `PRODUCTION_POLICY_CONSTRAINT` (§9) is unresolved and
++may independently exclude a candidate. **Verdict remains `MODEL_SELECTION_REVIEW_REQUIRED`.**
+diff --git a/supabase/functions/_shared/engine/golden-set/bakeoff.ts b/supabase/functions/_shared/engine/golden-set/bakeoff.ts
+index 2455bb5..5e39d53 100644
+--- a/supabase/functions/_shared/engine/golden-set/bakeoff.ts
++++ b/supabase/functions/_shared/engine/golden-set/bakeoff.ts
+@@ -44,6 +44,8 @@ interface CaseResult {
+   repairRequired: boolean;
+   finalPass: boolean;
+   narrativeSample: string;
++  /** Set when the provider itself threw (e.g. an unparseable response) rather than returning a schema-invalid result — LW-M2-R2, found live via DeepSeek. */
++  providerErrorNote: string | null;
+ }
+ 
+ function toContext(c: GoldenCase): NarrativeContext {
+@@ -80,37 +82,58 @@ function toContext(c: GoldenCase): NarrativeContext {
+   };
+ }
+ 
++/**
++ * Wraps one provider.generateTurn call so a thrown, non-transport adapter
++ * error (e.g. DeepSeek's response_format=json_object occasionally producing
++ * text that isn't valid JSON — found live) is treated as "no usable result",
++ * the harness-level equivalent of turn-pipeline.ts's attemptGeneration fix
++ * (see turn-pipeline.ts), instead of crashing the whole bakeoff run.
++ */
++async function attemptOnce(
++  provider: ReturnType<typeof selectProvider>,
++  context: NarrativeContext
++): Promise<{ raw: Awaited<ReturnType<typeof provider.generateTurn>> | null; errorNote: string | null }> {
++  try {
++    return { raw: await provider.generateTurn(context), errorNote: null };
++  } catch (err) {
++    return { raw: null, errorNote: (err as Error).message };
++  }
++}
++
+ async function runCase(provider: ReturnType<typeof selectProvider>, goldenCase: GoldenCase): Promise<CaseResult> {
+   const context = toContext(goldenCase);
+   let repairRequired = false;
+ 
+-  let raw = await provider.generateTurn(context);
+-  let parsed = StructuredGenerationResultSchema.safeParse(raw.result);
+-  let gate = parsed.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
++  let attempt = await attemptOnce(provider, context);
++  let parsed = attempt.raw ? StructuredGenerationResultSchema.safeParse(attempt.raw.result) : null;
++  let gate = parsed?.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
+ 
+-  if (!parsed.success || !gate.passed) {
++  if (!parsed?.success || !gate.passed) {
+     repairRequired = true;
+-    raw = await provider.generateTurn({ ...context, repairReason: parsed.success ? gate.failures.join(",") : "malformed_output" });
+-    parsed = StructuredGenerationResultSchema.safeParse(raw.result);
+-    gate = parsed.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
++    const repairReason = attempt.errorNote ?? (parsed?.success ? gate.failures.join(",") : "malformed_output");
++    attempt = await attemptOnce(provider, { ...context, repairReason });
++    parsed = attempt.raw ? StructuredGenerationResultSchema.safeParse(attempt.raw.result) : null;
++    gate = parsed?.success ? runQualityGate(parsed.data, goldenCase.language) : { passed: false, failures: ["malformed_choices" as const] };
+   }
+ 
++  const raw = attempt.raw;
+   return {
+     caseId: goldenCase.id,
+     language: goldenCase.language,
+     genre: goldenCase.genre,
+-    provider: raw.metadata.provider,
+-    model: raw.metadata.model,
+-    inputTokens: raw.metadata.inputTokens,
+-    outputTokens: raw.metadata.outputTokens,
+-    latencyMs: raw.metadata.latencyMs,
+-    estimatedCostMicros: raw.metadata.costMicros,
+-    schemaValid: parsed.success,
++    provider: raw?.metadata.provider ?? provider.id,
++    model: raw?.metadata.model ?? "unknown",
++    inputTokens: raw?.metadata.inputTokens ?? 0,
++    outputTokens: raw?.metadata.outputTokens ?? 0,
++    latencyMs: raw?.metadata.latencyMs ?? 0,
++    estimatedCostMicros: raw?.metadata.costMicros ?? 0,
++    schemaValid: parsed?.success ?? false,
+     qualityGatePassed: gate.passed,
+     qualityFailures: gate.failures,
+     repairRequired,
+-    finalPass: parsed.success && gate.passed,
+-    narrativeSample: parsed.success ? parsed.data.narrative.slice(0, 400) : "(schema validation failed — no narrative to sample)",
++    finalPass: (parsed?.success ?? false) && gate.passed,
++    narrativeSample: parsed?.success ? parsed.data.narrative.slice(0, 400) : "(no usable narrative — see providerErrorNote/qualityFailures)",
++    providerErrorNote: attempt.errorNote,
+   };
+ }
+ 
+diff --git a/supabase/functions/_shared/engine/providers.test.ts b/supabase/functions/_shared/engine/providers.test.ts
+new file mode 100644
+index 0000000..08655dd
+--- /dev/null
++++ b/supabase/functions/_shared/engine/providers.test.ts
+@@ -0,0 +1,352 @@
++/**
++ * Gemini + DeepSeek adapter unit tests (LW-M2-R2). No live network call in
++ * this suite — global.fetch is mocked throughout, so this suite runs the
++ * same in CI (no credentials) as it does locally with a real
++ * GEMINI_API_KEY/DEEPSEEK_API_KEY loaded (docs/NARRATIVE_MODEL_EVALUATION.md).
++ * These tests verify each adapter's own parsing/error-normalization
++ * contract, not real narrative quality — real-quality evidence comes only
++ * from the owner-initiated `npm run bakeoff` runs recorded in
++ * handoff/LW-M2-R2/ and narrative-samples/.
++ */
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { DeepSeekNarrativeProvider, GeminiNarrativeProvider } from "./providers.ts";
++import { ProviderTransportError } from "./types.ts";
++import type { NarrativeContext } from "./types.ts";
++
++function baseContext(): NarrativeContext {
++  return {
++    contentLanguage: "en",
++    genre: "fantasy",
++    storyMode: "narrative",
++    premise: "A test premise.",
++    worldSetting: null,
++    playerRole: null,
++    tone: null,
++    narrativePov: "second_person",
++    characters: [],
++    recentScenes: [],
++    olderHistorySummary: null,
++    canonFacts: [],
++    actionType: "custom_action",
++    playerAction: "push the door",
++    selectedChoiceLabel: null,
++    repairReason: null,
++  };
++}
++
++function jsonResponse(status: number, body: unknown): Response {
++  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
++}
++
++const VALID_RESULT = {
++  narrative: "The door creaks open into a dim hallway.",
++  dialogue: [],
++  state_changes: [],
++  canon_candidates: [],
++  next_choices: [{ id: "a", label: "Step inside" }],
++  boundary_kind: "none",
++  structured_outcome: {},
++};
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++});
++
++describe("GeminiNarrativeProvider — construction", () => {
++  it("fails fast on an unrecognized model id (no network call attempted)", () => {
++    const fetchSpy = vi.fn();
++    vi.stubGlobal("fetch", fetchSpy);
++    expect(() => new GeminiNarrativeProvider("fake-key", "gemini-not-a-real-model")).toThrow(/unrecognized model/i);
++    expect(fetchSpy).not.toHaveBeenCalled();
++  });
++});
++
++describe("GeminiNarrativeProvider — successful parse + accounting", () => {
++  it("extracts the structured result, token usage, and computes cost from the documented pricing table", async () => {
++    const fetchSpy = vi.fn().mockResolvedValue(
++      jsonResponse(200, {
++        candidates: [{ content: { parts: [{ text: JSON.stringify(VALID_RESULT) }] } }],
++        usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 200 },
++      })
++    );
++    vi.stubGlobal("fetch", fetchSpy);
++
++    const provider = new GeminiNarrativeProvider("fake-key", "gemini-3.6-flash");
++    const { result, metadata } = await provider.generateTurn(baseContext());
++
++    expect(result).toEqual(VALID_RESULT);
++    expect(metadata.provider).toBe("gemini");
++    expect(metadata.model).toBe("gemini-3.6-flash");
++    expect(metadata.inputTokens).toBe(1000);
++    expect(metadata.outputTokens).toBe(200);
++    // gemini-3.6-flash: $1.50/1M input, $7.50/1M output (docs/NARRATIVE_MODEL_EVALUATION.md).
++    expect(metadata.costMicros).toBe(Math.round(1000 * 1.5 + 200 * 7.5));
++    expect(metadata.latencyMs).toBeGreaterThanOrEqual(0);
++  });
++
++  it("computes cost from the cheap-tier pricing when constructed with gemini-3.5-flash-lite", async () => {
++    const fetchSpy = vi.fn().mockResolvedValue(
++      jsonResponse(200, {
++        candidates: [{ content: { parts: [{ text: JSON.stringify(VALID_RESULT) }] } }],
++        usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 200 },
++      })
++    );
++    vi.stubGlobal("fetch", fetchSpy);
++
++    const provider = new GeminiNarrativeProvider("fake-key", "gemini-3.5-flash-lite");
++    const { metadata } = await provider.generateTurn(baseContext());
++    expect(metadata.costMicros).toBe(Math.round(1000 * 0.3 + 200 * 2.5));
++  });
++
++  it("LW-M2-R2: bills thoughtsTokenCount (thinking tokens) as output — found live, a trivial prompt returned 9 visible tokens but 104 thinking tokens", async () => {
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue(
++        jsonResponse(200, {
++          candidates: [{ content: { parts: [{ text: JSON.stringify(VALID_RESULT) }] } }],
++          usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 9, thoughtsTokenCount: 104, totalTokenCount: 116 },
++        })
++      )
++    );
++    const provider = new GeminiNarrativeProvider("fake-key", "gemini-3.6-flash");
++    const { metadata } = await provider.generateTurn(baseContext());
++    expect(metadata.outputTokens).toBe(9 + 104);
++    expect(metadata.costMicros).toBe(Math.round(3 * 1.5 + (9 + 104) * 7.5));
++  });
++
++  it("sends the API key via the x-goog-api-key header, never in the URL query string", async () => {
++    const fetchSpy = vi.fn().mockResolvedValue(
++      jsonResponse(200, {
++        candidates: [{ content: { parts: [{ text: JSON.stringify(VALID_RESULT) }] } }],
++        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
++      })
++    );
++    vi.stubGlobal("fetch", fetchSpy);
++
++    const provider = new GeminiNarrativeProvider("super-secret-key", "gemini-3.6-flash");
++    await provider.generateTurn(baseContext());
++
++    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
++    expect(url).not.toContain("super-secret-key");
++    expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("super-secret-key");
++  });
++});
++
++describe("GeminiNarrativeProvider — error normalization", () => {
++  it("normalizes HTTP 500 as a transport error", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("server exploded", { status: 500 })));
++    const provider = new GeminiNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toBeInstanceOf(ProviderTransportError);
++  });
++
++  it("normalizes HTTP 429 as a transport error", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("rate limited", { status: 429 })));
++    const provider = new GeminiNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toBeInstanceOf(ProviderTransportError);
++  });
++
++  it("normalizes a network-level fetch failure as a transport error", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("getaddrinfo ENOTFOUND")));
++    const provider = new GeminiNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(ProviderTransportError);
++  });
++
++  it("normalizes a request timeout (AbortError) as a transport error, not a silent hang", async () => {
++    // Simulates the internal AbortController firing without waiting out the
++    // real 30s bound — exercises the exact AbortError branch the adapter
++    // checks, independent of real timing.
++    const abortError = Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
++    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
++    const provider = new GeminiNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(ProviderTransportError);
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/timed out/i);
++  });
++
++  it("a non-ok, non-transport status (e.g. 400) throws a normal Error carrying the provider's own body, never the API key", async () => {
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue(new Response("invalid request: bad schema", { status: 400 }))
++    );
++    const provider = new GeminiNarrativeProvider("super-secret-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/HTTP 400/);
++    try {
++      await provider.generateTurn(baseContext());
++      throw new Error("expected generateTurn to throw");
++    } catch (err) {
++      expect((err as Error).message).not.toContain("super-secret-key");
++    }
++  });
++});
++
++describe("GeminiNarrativeProvider — malformed structured provider response", () => {
++  it("throws a clean error when the response has no candidates", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { candidates: [] })));
++    const provider = new GeminiNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/no usable candidate text/i);
++  });
++
++  it("throws a clean error when the candidate text is not valid JSON", async () => {
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue(
++        jsonResponse(200, { candidates: [{ content: { parts: [{ text: "not { valid json" }] } }] })
++      )
++    );
++    const provider = new GeminiNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/not valid JSON/i);
++  });
++
++  it("a malformed response is a normal Error, not a ProviderTransportError — it must not trigger the transport auto-retry", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { candidates: [] })));
++    const provider = new GeminiNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.not.toBeInstanceOf(ProviderTransportError);
++  });
++});
++
++function deepSeekResponse(status: number, content: string, usage: Record<string, number> = {}): Response {
++  return jsonResponse(status, {
++    id: "test",
++    object: "chat.completion",
++    choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }],
++    usage: { prompt_tokens: 100, completion_tokens: 50, ...usage },
++  });
++}
++
++describe("DeepSeekNarrativeProvider — construction", () => {
++  it("fails fast on an unrecognized model id (no network call attempted)", () => {
++    const fetchSpy = vi.fn();
++    vi.stubGlobal("fetch", fetchSpy);
++    expect(() => new DeepSeekNarrativeProvider("fake-key", "deepseek-not-a-real-model")).toThrow(/unrecognized model/i);
++    expect(fetchSpy).not.toHaveBeenCalled();
++  });
++});
++
++describe("DeepSeekNarrativeProvider — successful parse + accounting", () => {
++  it("extracts the structured result and computes cost with no cache split reported (full prompt treated as cache-miss)", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT))));
++    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-pro");
++    const { result, metadata } = await provider.generateTurn(baseContext());
++
++    expect(result).toEqual(VALID_RESULT);
++    expect(metadata.provider).toBe("deepseek");
++    expect(metadata.model).toBe("deepseek-v4-pro");
++    expect(metadata.inputTokens).toBe(100);
++    expect(metadata.outputTokens).toBe(50);
++    // deepseek-v4-pro: $0.435/1M input (no separate cache-hit rate documented), $0.87/1M output.
++    expect(metadata.costMicros).toBe(Math.round(100 * 0.435 + 50 * 0.87));
++  });
++
++  it("uses the discounted cache-hit rate for deepseek-v4-flash when the API reports a cache split", async () => {
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue(
++        deepSeekResponse(200, JSON.stringify(VALID_RESULT), {
++          prompt_tokens: 1000,
++          prompt_cache_hit_tokens: 800,
++          prompt_cache_miss_tokens: 200,
++        })
++      )
++    );
++    const provider = new DeepSeekNarrativeProvider("fake-key", "deepseek-v4-flash");
++    const { metadata } = await provider.generateTurn(baseContext());
++    // 800 cache-hit @ $0.0028/1M + 200 cache-miss @ $0.14/1M + 50 output @ $0.28/1M.
++    expect(metadata.costMicros).toBe(Math.round(800 * 0.0028 + 200 * 0.14 + 50 * 0.28));
++  });
++
++  it("sends the API key via the Authorization: Bearer header, never in the request URL", async () => {
++    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
++    vi.stubGlobal("fetch", fetchSpy);
++
++    const provider = new DeepSeekNarrativeProvider("super-secret-key");
++    await provider.generateTurn(baseContext());
++
++    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
++    expect(url).not.toContain("super-secret-key");
++    expect((init.headers as Record<string, string>).authorization).toBe("Bearer super-secret-key");
++  });
++
++  it("instructs the target JSON shape in the prompt, since response_format=json_object does not enforce one", async () => {
++    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
++    vi.stubGlobal("fetch", fetchSpy);
++
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await provider.generateTurn(baseContext());
++
++    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
++    const requestBody = JSON.parse(init.body as string);
++    expect(requestBody.response_format).toEqual({ type: "json_object" });
++    expect(requestBody.messages[0].content).toMatch(/narrative/);
++    expect(requestBody.messages[0].content).toMatch(/boundary_kind/);
++  });
++
++  it("LW-M2-R2: disables thinking mode — found live, default thinking can consume the entire max_tokens budget on reasoning and return empty content", async () => {
++    const fetchSpy = vi.fn().mockResolvedValue(deepSeekResponse(200, JSON.stringify(VALID_RESULT)));
++    vi.stubGlobal("fetch", fetchSpy);
++
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await provider.generateTurn(baseContext());
++
++    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
++    const requestBody = JSON.parse(init.body as string);
++    expect(requestBody.thinking).toEqual({ type: "disabled" });
++  });
++});
++
++describe("DeepSeekNarrativeProvider — error normalization", () => {
++  it("normalizes HTTP 500 as a transport error", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("server exploded", { status: 500 })));
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toBeInstanceOf(ProviderTransportError);
++  });
++
++  it("normalizes HTTP 429 as a transport error", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("rate limited", { status: 429 })));
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toBeInstanceOf(ProviderTransportError);
++  });
++
++  it("normalizes a network-level fetch failure as a transport error", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("getaddrinfo ENOTFOUND")));
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(ProviderTransportError);
++  });
++
++  it("normalizes a request timeout (AbortError) as a transport error", async () => {
++    const abortError = Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
++    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(abortError));
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/timed out/i);
++  });
++
++  it("a non-ok, non-transport status throws a normal Error carrying the provider's own body, never the API key", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid request", { status: 400 })));
++    const provider = new DeepSeekNarrativeProvider("super-secret-key");
++    try {
++      await provider.generateTurn(baseContext());
++      throw new Error("expected generateTurn to throw");
++    } catch (err) {
++      expect((err as Error).message).toMatch(/HTTP 400/);
++      expect((err as Error).message).not.toContain("super-secret-key");
++    }
++  });
++});
++
++describe("DeepSeekNarrativeProvider — malformed structured provider response", () => {
++  it("throws a clean error when the response has no choices", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { choices: [] })));
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/no usable message content/i);
++  });
++
++  it("throws a clean error when the message content is not valid JSON (the exact failure mode DeepSeek's own docs warn about)", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(deepSeekResponse(200, "not { valid json")));
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.toThrow(/not valid JSON/i);
++  });
++
++  it("a malformed response is a normal Error, not a ProviderTransportError", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { choices: [] })));
++    const provider = new DeepSeekNarrativeProvider("fake-key");
++    await expect(provider.generateTurn(baseContext())).rejects.not.toBeInstanceOf(ProviderTransportError);
++  });
++});
+diff --git a/supabase/functions/_shared/engine/providers.ts b/supabase/functions/_shared/engine/providers.ts
+index 7c3e933..376f056 100644
+--- a/supabase/functions/_shared/engine/providers.ts
++++ b/supabase/functions/_shared/engine/providers.ts
+@@ -4,10 +4,16 @@
+  * change to turn-pipeline.ts, quality-gate.ts, or context-assembler.ts,
+  * which is the whole point of the NarrativeProvider interface.
+  *
+- * IMPORTANT — none of these real adapters has been exercised against a live
+- * API in this task: no OpenAI/Anthropic/Gemini credential is configured in
+- * this environment (checked via `env`, not printed — see
+- * docs/NARRATIVE_MODEL_EVALUATION.md, NARRATIVE_PROVIDER_CREDENTIAL_REQUIRED).
++ * IMPORTANT — credential status as of the LW-M2-R2 owner-initiated local
++ * bakeoff: `GEMINI_API_KEY` and `DEEPSEEK_API_KEY` were supplied by the owner
++ * in a local, gitignored `.env.local`, loaded only via an explicit env-file
++ * mechanism (`node --env-file=.env.local`) for the `npm run bakeoff` CLI —
++ * never inherited by this process's ambient environment, never committed,
++ * never logged, never present in CI, and never set as a Supabase Edge
++ * Function secret (the deployed `submit-turn` function is untouched by this
++ * bakeoff and still has no real provider configured). `OPENAI_API_KEY` and
++ * `ANTHROPIC_API_KEY` remain absent everywhere. See
++ * docs/NARRATIVE_MODEL_EVALUATION.md for the full credential/result record.
+  * The Anthropic adapter's request shape was verified against
+  * https://platform.claude.com/docs/en/api/messages on 2026-08-10 (endpoint,
+  * headers, tool-forced structured output via tool_choice, and the
+@@ -15,6 +21,33 @@
+  * a 400 error — so this adapter deliberately never sets them). It is
+  * believed correct against current public docs, not proven against a real
+  * response.
++ *
++ * The Gemini adapter's request shape was verified against
++ * https://ai.google.dev/api/generate-content and
++ * https://ai.google.dev/gemini-api/docs/structured-output on 2026-08-10
++ * (endpoint, `x-goog-api-key` header — the current documented alternative to
++ * the legacy `?key=` query parameter, which would otherwise put the secret in
++ * server access logs — and `generationConfig.responseSchema` for
++ * schema-validated structured output). LOREWISH_NARRATIVE_MODEL selects
++ * between the two model ids recorded in docs/NARRATIVE_MODEL_EVALUATION.md
++ * (`gemini-3.6-flash` quality tier, `gemini-3.5-flash-lite` cheap tier);
++ * an unrecognized model id fails fast at construction rather than silently
++ * mis-costing generations against the wrong price table. Like the Anthropic
++ * adapter, this is believed correct against current public docs, never
++ * exercised against a real response — no GEMINI_API_KEY exists in this
++ * environment.
++ *
++ * The DeepSeek adapter's request shape was verified against
++ * https://api-docs.deepseek.com/api/create-chat-completion on 2026-08-10
++ * (OpenAI-compatible `/chat/completions` endpoint, `Authorization: Bearer`
++ * header, `response_format: {type: "json_object"}`). DeepSeek's JSON mode
++ * does not enforce a response *shape* the way Gemini/Anthropic's schema-based
++ * approaches do, so the target shape is additionally spelled out in the
++ * prompt itself (DEEPSEEK_SCHEMA_INSTRUCTION) — an adaptation at the provider
++ * boundary, not a change to the canonical StructuredGenerationResultSchema.
++ * DEEPSEEK_API_KEY was supplied by the owner in a local, gitignored
++ * `.env.local` for an owner-initiated bakeoff — never committed, never
++ * logged, loaded only via an explicit env-file mechanism.
+  */
+ 
+ import type { NarrativeContext, NarrativeProvider, ProviderCallResult } from "./types.ts";
+@@ -196,13 +229,301 @@ export class OpenAiNarrativeProvider implements NarrativeProvider {
+   }
+ }
+ 
+-/** Not implemented in this task — same reasoning as OpenAiNarrativeProvider. */
++/**
++ * Pricing per 1M tokens — re-verified against https://api-docs.deepseek.com/quick_start/pricing
++ * on 2026-08-10 (docs/NARRATIVE_MODEL_EVALUATION.md §8). `inputCacheHit` is DeepSeek's documented
++ * 98%-discounted rate for prompt tokens served from their prompt cache; only `deepseek-v4-flash`
++ * has that discount independently documented — `deepseek-v4-pro`'s cache-hit rate is not
++ * separately published, so it is conservatively treated as equal to its cache-miss rate rather
++ * than assumed to also get a discount that was never confirmed.
++ */
++const DEEPSEEK_PRICING_USD_PER_1M: Record<string, { inputCacheMiss: number; inputCacheHit: number; output: number }> = {
++  "deepseek-v4-flash": { inputCacheMiss: 0.14, inputCacheHit: 0.0028, output: 0.28 },
++  "deepseek-v4-pro": { inputCacheMiss: 0.435, inputCacheHit: 0.435, output: 0.87 },
++};
++
++/**
++ * DeepSeek's `response_format: {type: "json_object"}` guarantees syntactically valid JSON but,
++ * unlike Gemini's `responseSchema` or Anthropic's tool-forced schema, does NOT enforce a specific
++ * shape (https://api-docs.deepseek.com/api/create-chat-completion, verified 2026-08-10) — the docs
++ * explicitly warn the caller must additionally instruct the desired shape via the prompt itself, or
++ * generation can run to the token limit as whitespace. This is the provider-boundary adaptation the
++ * task brief calls for ("If provider structured output behavior differs: adapt at the provider
++ * boundary. Do NOT weaken the Lorewish canonical schema to fit one provider.") — the canonical
++ * StructuredGenerationResultSchema is unchanged; this is an extra prompt instruction, appended only
++ * for this adapter, describing that same shape in plain JSON-Schema-shaped text.
++ */
++const DEEPSEEK_SCHEMA_INSTRUCTION = `Respond with ONLY a single JSON object — no markdown code fences, no commentary before or after — matching exactly this shape:
++{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
++"narrative" and "boundary_kind" are required. Every other field must still be present — use an empty array/object when there is nothing to report, never omit the key.`;
++
++/**
++ * Real server-side adapter against DeepSeek's OpenAI-compatible chat completions endpoint
++ * (https://api-docs.deepseek.com/api/create-chat-completion, verified 2026-08-10).
++ * LOREWISH_NARRATIVE_MODEL selects between the two model ids recorded in
++ * docs/NARRATIVE_MODEL_EVALUATION.md §8 (`deepseek-v4-pro` quality tier, `deepseek-v4-flash` cheap
++ * tier); an unrecognized model id fails fast at construction, same as GeminiNarrativeProvider.
++ */
++export class DeepSeekNarrativeProvider implements NarrativeProvider {
++  readonly id = "deepseek";
++  private readonly apiKey: string;
++  private readonly model: string;
++  private readonly pricing: { inputCacheMiss: number; inputCacheHit: number; output: number };
++  private readonly timeoutMs = 30_000;
++
++  constructor(apiKey: string, model = "deepseek-v4-pro") {
++    const pricing = DEEPSEEK_PRICING_USD_PER_1M[model];
++    if (!pricing) {
++      throw new Error(
++        `DeepSeekNarrativeProvider: unrecognized model "${model}" — no pricing entry exists, so cost accounting would be silently wrong. ` +
++          `Known models: ${Object.keys(DEEPSEEK_PRICING_USD_PER_1M).join(", ")}. See docs/NARRATIVE_MODEL_EVALUATION.md.`
++      );
++    }
++    this.apiKey = apiKey;
++    this.model = model;
++    this.pricing = pricing;
++  }
++
++  async generateTurn(context: NarrativeContext): Promise<ProviderCallResult> {
++    const { system, user } = buildPrompt(context);
++    const started = performance.now();
++
++    const controller = new AbortController();
++    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
++
++    let response: Response;
++    try {
++      response = await fetch("https://api.deepseek.com/chat/completions", {
++        method: "POST",
++        headers: {
++          "content-type": "application/json",
++          authorization: `Bearer ${this.apiKey}`,
++        },
++        signal: controller.signal,
++        body: JSON.stringify({
++          model: this.model,
++          messages: [
++            { role: "system", content: `${system}\n\n${DEEPSEEK_SCHEMA_INSTRUCTION}` },
++            { role: "user", content: user },
++          ],
++          max_tokens: 2048,
++          response_format: { type: "json_object" },
++          // LW-M2-R2 fix, found live: DeepSeek's V4 models default to a
++          // "thinking" mode whose reasoning tokens are drawn from the same
++          // max_tokens budget as the visible answer (confirmed via
++          // usage.completion_tokens_details.reasoning_tokens). For some
++          // prompts — Vietnamese narrative generation in particular —
++          // reasoning alone consumed the entire 2048-token budget, leaving
++          // ZERO tokens for the actual JSON content and producing an empty,
++          // unparseable response on every such call. Narrative generation
++          // has no use for chain-of-thought reasoning exposed to the
++          // player (the Anthropic adapter similarly never opts into
++          // extended thinking) — disabling it removes the failure mode
++          // entirely and is materially cheaper (verified live: 957 total
++          // tokens with thinking disabled vs. 2048 reasoning tokens and
++          // zero usable output with it left at its default).
++          thinking: { type: "disabled" },
++        }),
++      });
++    } catch (err) {
++      if ((err as Error).name === "AbortError") {
++        throw new ProviderTransportError(`deepseek request timed out after ${this.timeoutMs}ms`);
++      }
++      throw new ProviderTransportError(`deepseek fetch failed: ${(err as Error).message}`);
++    } finally {
++      clearTimeout(timeout);
++    }
++
++    if (response.status >= 500 || response.status === 429) {
++      throw new ProviderTransportError(`deepseek transport error: HTTP ${response.status}`);
++    }
++    if (!response.ok) {
++      // Provider error body only — never the key, which is never included in
++      // any request/response body to begin with.
++      throw new Error(`deepseek API error: HTTP ${response.status} ${await response.text()}`);
++    }
++
++    const body = await response.json();
++    const content = body?.choices?.[0]?.message?.content;
++    if (typeof content !== "string") {
++      throw new Error("deepseek response contained no usable message content");
++    }
++
++    let parsedResult: unknown;
++    try {
++      parsedResult = JSON.parse(content);
++    } catch {
++      throw new Error("deepseek response content was not valid JSON");
++    }
++
++    const latencyMs = Math.round(performance.now() - started);
++    const usage = body?.usage ?? {};
++    const cacheHitTokens = usage.prompt_cache_hit_tokens ?? 0;
++    // If the API does not report a cache split, treat the full prompt as a
++    // cache miss — the conservative default, never assuming an unconfirmed
++    // discount.
++    const cacheMissTokens = usage.prompt_cache_miss_tokens ?? (usage.prompt_tokens ?? 0) - cacheHitTokens;
++    const inputTokens = usage.prompt_tokens ?? cacheHitTokens + cacheMissTokens;
++    const outputTokens = usage.completion_tokens ?? 0;
++    const costMicros = Math.round(
++      cacheHitTokens * this.pricing.inputCacheHit +
++        cacheMissTokens * this.pricing.inputCacheMiss +
++        outputTokens * this.pricing.output
++    );
++
++    return {
++      result: parsedResult,
++      metadata: {
++        provider: this.id,
++        model: this.model,
++        inputTokens,
++        outputTokens,
++        costMicros,
++        latencyMs,
++      },
++    };
++  }
++}
++
++/**
++ * Pricing per 1M tokens, in whole US dollars (converted to per-token
++ * micro-dollars below) — re-verified against https://ai.google.dev/gemini-api/docs/pricing
++ * on 2026-08-10. Configuration, not a standing architectural fact (same
++ * status as the Anthropic pricing comment below), and deliberately keyed by
++ * exact API model id so an unrecognized id fails fast instead of silently
++ * billing against the wrong tier.
++ */
++const GEMINI_PRICING_USD_PER_1M: Record<string, { input: number; output: number }> = {
++  "gemini-3.6-flash": { input: 1.5, output: 7.5 },
++  "gemini-3.5-flash-lite": { input: 0.3, output: 2.5 },
++};
++
++const GEMINI_RESULT_SCHEMA = RESULT_TOOL_SCHEMA;
++
++/**
++ * Real server-side adapter against the Gemini API's generateContent endpoint
++ * (https://ai.google.dev/api/generate-content, verified 2026-08-10).
++ * Structured output is enforced by the provider itself via
++ * generationConfig.responseSchema/responseMimeType — the same
++ * StructuredGenerationResultSchema the fake and Anthropic providers produce
++ * is still re-validated by turn-pipeline.ts after this returns, so a
++ * schema-conformant-but-wrong-shaped Gemini response is caught the same way
++ * a malformed Anthropic or fake response would be (never a provider-specific
++ * bypass of the quality gate).
++ *
++ * NEVER exercised against a live network call in this task — no
++ * GEMINI_API_KEY exists in this environment. See
++ * docs/NARRATIVE_MODEL_EVALUATION.md, GEMINI_API_KEY_REQUIRED.
++ */
+ export class GeminiNarrativeProvider implements NarrativeProvider {
+   readonly id = "gemini";
+-  generateTurn(_context: NarrativeContext): Promise<ProviderCallResult> {
+-    throw new Error(
+-      "GeminiNarrativeProvider is not implemented — no GEMINI_API_KEY was available to build or verify this adapter. See docs/NARRATIVE_MODEL_EVALUATION.md."
+-    );
++  private readonly apiKey: string;
++  private readonly model: string;
++  private readonly pricing: { input: number; output: number };
++  /** Bounded generation timeout — no request is allowed to hang indefinitely. */
++  private readonly timeoutMs = 30_000;
++
++  constructor(apiKey: string, model = "gemini-3.6-flash") {
++    const pricing = GEMINI_PRICING_USD_PER_1M[model];
++    if (!pricing) {
++      throw new Error(
++        `GeminiNarrativeProvider: unrecognized model "${model}" — no pricing entry exists, so cost accounting would be silently wrong. ` +
++          `Known models: ${Object.keys(GEMINI_PRICING_USD_PER_1M).join(", ")}. See docs/NARRATIVE_MODEL_EVALUATION.md.`
++      );
++    }
++    this.apiKey = apiKey;
++    this.model = model;
++    this.pricing = pricing;
++  }
++
++  async generateTurn(context: NarrativeContext): Promise<ProviderCallResult> {
++    const { system, user } = buildPrompt(context);
++    const started = performance.now();
++
++    const controller = new AbortController();
++    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
++
++    let response: Response;
++    try {
++      response = await fetch(
++        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
++        {
++          method: "POST",
++          headers: {
++            "content-type": "application/json",
++            // Header form, not `?key=` — the documented alternative that
++            // keeps the secret out of URLs, server access logs, and any
++            // intermediary tooling that logs request URLs but not headers.
++            "x-goog-api-key": this.apiKey,
++          },
++          signal: controller.signal,
++          body: JSON.stringify({
++            systemInstruction: { parts: [{ text: system }] },
++            contents: [{ role: "user", parts: [{ text: user }] }],
++            generationConfig: {
++              responseMimeType: "application/json",
++              responseSchema: GEMINI_RESULT_SCHEMA,
++              maxOutputTokens: 2048,
++            },
++          }),
++        }
++      );
++    } catch (err) {
++      if ((err as Error).name === "AbortError") {
++        throw new ProviderTransportError(`gemini request timed out after ${this.timeoutMs}ms`);
++      }
++      throw new ProviderTransportError(`gemini fetch failed: ${(err as Error).message}`);
++    } finally {
++      clearTimeout(timeout);
++    }
++
++    if (response.status >= 500 || response.status === 429) {
++      throw new ProviderTransportError(`gemini transport error: HTTP ${response.status}`);
++    }
++    if (!response.ok) {
++      // Provider error body only — never the key, which is never included in
++      // any request/response body to begin with.
++      throw new Error(`gemini API error: HTTP ${response.status} ${await response.text()}`);
++    }
++
++    const body = await response.json();
++    const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
++    if (typeof text !== "string") {
++      throw new Error("gemini response contained no usable candidate text");
++    }
++
++    let parsedResult: unknown;
++    try {
++      parsedResult = JSON.parse(text);
++    } catch {
++      throw new Error("gemini response candidate text was not valid JSON");
++    }
++
++    const latencyMs = Math.round(performance.now() - started);
++    const usage = body?.usageMetadata ?? {};
++    const inputTokens = usage.promptTokenCount ?? 0;
++    // Gemini's current model family bills "thinking" tokens
++    // (usageMetadata.thoughtsTokenCount) at the same output rate as visible
++    // candidate text (docs/NARRATIVE_MODEL_EVALUATION.md §7's pricing is
++    // explicitly "per 1M output tokens, including thinking tokens") — found
++    // live: a trivial prompt returned candidatesTokenCount=9 but
++    // thoughtsTokenCount=104, over 10x the visible output, which
++    // candidatesTokenCount alone would have silently left out of cost
++    // accounting entirely.
++    const outputTokens = (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0);
++    const costMicros = Math.round(inputTokens * this.pricing.input + outputTokens * this.pricing.output);
++
++    return {
++      result: parsedResult,
++      metadata: {
++        provider: this.id,
++        model: this.model,
++        inputTokens,
++        outputTokens,
++        costMicros,
++        latencyMs,
++      },
++    };
+   }
+ }
+ 
+@@ -220,7 +541,16 @@ export function selectProvider(env: { get(key: string): string | undefined }): N
+     return new AnthropicNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "claude-sonnet-5");
+   }
+   if (configured === "openai") return new OpenAiNarrativeProvider();
+-  if (configured === "gemini") return new GeminiNarrativeProvider();
++  if (configured === "gemini") {
++    const key = env.get("GEMINI_API_KEY") ?? env.get("GOOGLE_AI_API_KEY");
++    if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=gemini but neither GEMINI_API_KEY nor GOOGLE_AI_API_KEY is set");
++    return new GeminiNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "gemini-3.6-flash");
++  }
++  if (configured === "deepseek") {
++    const key = env.get("DEEPSEEK_API_KEY");
++    if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=deepseek but DEEPSEEK_API_KEY is not set");
++    return new DeepSeekNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-pro");
++  }
+ 
+   console.warn(
+     "[lorewish] LOREWISH_NARRATIVE_PROVIDER is not set to a real provider — using FakeNarrativeProvider. " +
+diff --git a/supabase/functions/_shared/engine/quality-gate.test.ts b/supabase/functions/_shared/engine/quality-gate.test.ts
+index b8d3712..0800551 100644
+--- a/supabase/functions/_shared/engine/quality-gate.test.ts
++++ b/supabase/functions/_shared/engine/quality-gate.test.ts
+@@ -126,6 +126,53 @@ describe("quality gate — QUALITY test category", () => {
+     expect(gate.failures).toContain("meta_ai_language");
+   });
+ 
++  it("LW-M2-R2: does not flag correct Vietnamese prose as language_mixing (regression — real repro from the live Gemini bakeoff)", () => {
++    // Real narrative captured from a live gemini-3.6-flash bakeoff run. The
++    // pre-fix detectLanguageMixing regex (`\b[a-zA-Z]+(?:\s+[a-zA-Z]+){3,}\b`)
++    // treated JS's ASCII-only `\b`/`\w` boundary next to a diacritic letter as
++    // splitting "mắt" into the ASCII fragment "m", which chained with
++    // "nghi"/"trong" into a false 4-word "English run" ("nghi trong m") —
++    // entirely correct Vietnamese prose, wrongly failed on every affected
++    // case. See quality-gate.ts's detectLanguageMixing for the fix.
++    const result = baseResult({
++      narrative:
++        "Dưới ánh đuốc chập chờn của trạm gác đèo Sương Thần, vị tướng già nheo mắt nhìn kỹ con dấu sáp đỏ trên tờ chiếu chỉ. " +
++        "Gió lạnh từ phương bắc rít qua từng khe đá, mang theo mùi khét nhạt nhòa của ma thuật tàn tích. " +
++        "Ông ta chậm rãi cuộn tờ giấy lại, ngón tay gõ nhịp đều đặn lên chuôi kiếm chằng chịt vết sẹo. " +
++        "Sự hoài nghi trong mắt vị tướng vẫn chưa hề tan biến khi ánh nhìn của ông ta dừng lại ở chiếc hộp phong ấn trên lưng bạn.",
++    });
++    const gate = runQualityGate(result, "vi");
++    expect(gate.failures).not.toContain("language_mixing");
++    expect(gate.passed).toBe(true);
++  });
++
++  it("still detects a genuine 4+-word English sentence fragment embedded in Vietnamese prose", () => {
++    const result = baseResult({
++      narrative:
++        "Ánh đèn lồng chao đảo khi bạn bước vào hành lang tối. " +
++        "She looked at him and smiled warmly before turning away. " +
++        "Đâu đó phía trước, một cánh cửa tự đóng sầm lại.",
++    });
++    const gate = runQualityGate(result, "vi");
++    expect(gate.failures).toContain("language_mixing");
++  });
++
++  it("does not flag a short (<=3 word) English proper-noun-shaped fragment as mixing", () => {
++    // "chữ" and "được" both carry diacritics, so they correctly bound the
++    // English run to exactly 3 words (Grand, Hotel, Lobby) — below the >= 4
++    // threshold. (An earlier draft of this test used an accent-free
++    // Vietnamese word directly adjacent to the English fragment, which
++    // legitimately extends the counted run — a real, pre-existing limitation
++    // of an accent-presence heuristic, not something this fix changes.)
++    const result = baseResult({
++      narrative:
++        "Ánh đèn lồng chao đảo khi bạn bước vào hành lang tối, nơi tấm biển đề chữ Grand Hotel Lobby được treo lệch. " +
++        "Đâu đó phía trước, một cánh cửa tự đóng sầm lại.",
++    });
++    const gate = runQualityGate(result, "vi");
++    expect(gate.failures).not.toContain("language_mixing");
++  });
++
+   it("flags cosmetic-paraphrase choices as malformed", () => {
+     const result = baseResult({
+       next_choices: [
+diff --git a/supabase/functions/_shared/engine/quality-gate.ts b/supabase/functions/_shared/engine/quality-gate.ts
+index a562930..1d6a993 100644
+--- a/supabase/functions/_shared/engine/quality-gate.ts
++++ b/supabase/functions/_shared/engine/quality-gate.ts
+@@ -108,14 +108,41 @@ function detectLanguageMismatch(
+   return { wrongLanguage, drift };
+ }
+ 
++/**
++ * A narrow, deliberately conservative check: a long run (>= 4 consecutive
++ * words) of plain-ASCII-only alphabetic words embedded inside otherwise
++ * clearly Vietnamese prose, excluding short/likely-proper-noun runs.
++ *
++ * LW-M2-R2 fix: the original implementation used `\b[a-zA-Z]+(?:\s+[a-zA-Z]+){3,}\b`,
++ * which JS's ASCII-only `\b`/`\w` treats as a word boundary right next to any
++ * Vietnamese diacritic letter (which is not in `\w`). That silently splits a
++ * single correct Vietnamese word like "mắt" into ASCII fragments ("m" before
++ * the diacritic "ắt"), which can then chain together with genuinely separate
++ * words into a false 4-token "English run" — found live via the Gemini
++ * bakeoff on entirely correct Vietnamese prose ("... trong mắt ..." flagged
++ * from the fragment "nghi trong m"). Operating on whole whitespace-delimited
++ * words instead of sub-word regex matches — and requiring the WHOLE word
++ * (after stripping surrounding punctuation) to be pure a-zA-Z — makes this
++ * impossible: a word containing any Vietnamese diacritic can never itself
++ * count as an "ASCII word", so it can never be silently fragmented into one.
++ */
+ function detectLanguageMixing(text: string, expected: ContentLanguage): boolean {
+-  // A narrow, deliberately conservative check: a long run (>= 4 consecutive
+-  // words) of plain-ASCII-only alphabetic words embedded inside otherwise
+-  // clearly Vietnamese prose, excluding short/likely-proper-noun runs.
+   if (!expected.startsWith("vi")) return false;
+   if (!VIETNAMESE_DIACRITIC_RE.test(text)) return false; // nothing to mix into
+-  const asciiRun = /\b[a-zA-Z]+(?:\s+[a-zA-Z]+){3,}\b/;
+-  return asciiRun.test(text);
++
++  const words = text.split(/\s+/).filter(Boolean);
++  let run = 0;
++  for (const raw of words) {
++    const core = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""); // strip surrounding punctuation
++    const isPureAsciiWord = core.length > 0 && /^[a-zA-Z]+$/.test(core);
++    if (isPureAsciiWord) {
++      run += 1;
++      if (run >= 4) return true;
++    } else {
++      run = 0;
++    }
++  }
++  return false;
+ }
+ 
+ function detectDuplicateSentences(text: string): boolean {
+diff --git a/supabase/functions/_shared/engine/repository.test.ts b/supabase/functions/_shared/engine/repository.test.ts
+new file mode 100644
+index 0000000..2838d40
+--- /dev/null
++++ b/supabase/functions/_shared/engine/repository.test.ts
+@@ -0,0 +1,48 @@
++/**
++ * Unit tests for the LW-M2-R2 fix to two known M2-R1 polish issues: cross-user
++ * turn submission and an invalid selected_choice_id both used to fall through
++ * to a generic HTTP 500 from submit-turn/index.ts. mapRepositoryErrorToHttpStatus
++ * is the pure function that fix lives in (factored out specifically so it is
++ * testable under vitest/Node without a Deno runtime) — see
++ * supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql
++ * for the SQL half of this fix.
++ */
++import { describe, expect, it } from "vitest";
++import {
++  RepositoryForbiddenError,
++  RepositoryValidationError,
++  mapRepositoryErrorToHttpStatus,
++} from "./repository.ts";
++
++describe("mapRepositoryErrorToHttpStatus", () => {
++  it("maps a cross-user / not-owned authorization failure to a clean 403", () => {
++    const { status, body } = mapRepositoryErrorToHttpStatus(
++      new RepositoryForbiddenError("lw_precheck_and_start_turn: not authorized")
++    );
++    expect(status).toBe(403);
++    expect(body).toEqual({ error: "forbidden" });
++  });
++
++  it("maps an invalid selected_choice_id (or other input-validation) failure to a clean 400", () => {
++    const { status, body } = mapRepositoryErrorToHttpStatus(
++      new RepositoryValidationError("lw_precheck_and_start_turn: invalid request")
++    );
++    expect(status).toBe(400);
++    expect(body).toEqual({ error: "invalid_request" });
++  });
++
++  it("falls back to a generic 500 for an unexpected server-side error, never leaking its message", () => {
++    const { status, body } = mapRepositoryErrorToHttpStatus(
++      new Error("connection to database lost: fatal internal detail nobody should see")
++    );
++    expect(status).toBe(500);
++    expect(body).toEqual({ error: "internal_error" });
++    expect(JSON.stringify(body)).not.toContain("fatal internal detail");
++  });
++
++  it("falls back to a generic 500 for a thrown non-Error value", () => {
++    const { status, body } = mapRepositoryErrorToHttpStatus("a raw string throw, not an Error instance");
++    expect(status).toBe(500);
++    expect(body).toEqual({ error: "internal_error" });
++  });
++});
+diff --git a/supabase/functions/_shared/engine/repository.ts b/supabase/functions/_shared/engine/repository.ts
+index a4d52dd..c3e5029 100644
+--- a/supabase/functions/_shared/engine/repository.ts
++++ b/supabase/functions/_shared/engine/repository.ts
+@@ -67,6 +67,53 @@ export interface ContextInputs {
+   allCanonFacts: ContextCanonFact[];
+ }
+ 
++/**
++ * Raised by a TurnRepository implementation for a client-triggerable
++ * authorization failure (e.g. submitting a turn against a run the caller
++ * does not own) — distinct from an unexpected server fault, so the Edge
++ * Function boundary (see mapRepositoryErrorToHttpStatus below) can answer
++ * with a clean 403 instead of a generic 500. LW-M2-R2 fix for a known M2-R1
++ * polish issue; see the migration comment in
++ * supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql.
++ */
++export class RepositoryForbiddenError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "RepositoryForbiddenError";
++  }
++}
++
++/**
++ * Raised by a TurnRepository implementation for a client-triggerable
++ * input-validation failure (e.g. an invalid/stale selected_choice_id) —
++ * mapped to a clean 400 rather than a generic 500. Same fix as
++ * RepositoryForbiddenError above.
++ */
++export class RepositoryValidationError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "RepositoryValidationError";
++  }
++}
++
++/**
++ * Pure, runtime-agnostic mapping from a TurnRepository error to the HTTP
++ * response an Edge Function should send. Factored out of submit-turn/index.ts
++ * (a Deno-only entrypoint that can't be exercised by vitest under Node) so
++ * this specific behavior — the actual fix for the two known M2-R1 issues —
++ * is unit-testable. Never leaks the underlying error's message/stack to the
++ * client; callers should still log the original error server-side.
++ */
++export function mapRepositoryErrorToHttpStatus(err: unknown): { status: number; body: { error: string } } {
++  if (err instanceof RepositoryForbiddenError) {
++    return { status: 403, body: { error: "forbidden" } };
++  }
++  if (err instanceof RepositoryValidationError) {
++    return { status: 400, body: { error: "invalid_request" } };
++  }
++  return { status: 500, body: { error: "internal_error" } };
++}
++
+ export interface TurnRepository {
+   precheckAndStartTurn(args: {
+     turnId: string;
+diff --git a/supabase/functions/_shared/engine/supabase-repository.ts b/supabase/functions/_shared/engine/supabase-repository.ts
+index 2505b33..055e81e 100644
+--- a/supabase/functions/_shared/engine/supabase-repository.ts
++++ b/supabase/functions/_shared/engine/supabase-repository.ts
+@@ -22,6 +22,28 @@
+ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+ import type { ActionType, BoundaryKind, ContextCanonFact, ContextCharacter, ContextScene, StructuredGenerationResult } from "./types.ts";
+ import type { CommitOutcome, ContextInputs, FailOutcome, PrecheckOutcome, SceneRow, StorySetup, TurnRepository } from "./repository.ts";
++import { RepositoryForbiddenError, RepositoryValidationError } from "./repository.ts";
++
++/**
++ * SQLSTATEs the LW-M2-R2 corrective migration
++ * (20260810220000_m2_error_mapping_and_allowance_fix.sql) raises for the two
++ * known client-triggerable failures. supabase-js's PostgrestError exposes
++ * the raised SQLSTATE as `.code` — translating it here, once, keeps every
++ * other RPC error path (a genuine unexpected server fault) falling through
++ * to the generic Error branch unchanged.
++ */
++const SQLSTATE_INSUFFICIENT_PRIVILEGE = "42501";
++const SQLSTATE_INVALID_PARAMETER_VALUE = "22023";
++
++function throwTypedRpcError(rpcName: string, error: { code?: string; message: string }): never {
++  if (error.code === SQLSTATE_INSUFFICIENT_PRIVILEGE) {
++    throw new RepositoryForbiddenError(`${rpcName}: not authorized`);
++  }
++  if (error.code === SQLSTATE_INVALID_PARAMETER_VALUE) {
++    throw new RepositoryValidationError(`${rpcName}: invalid request`);
++  }
++  throw new Error(`${rpcName} failed: ${error.message}`);
++}
+ 
+ function toSceneRow(row: Record<string, unknown>): SceneRow {
+   return {
+@@ -82,7 +104,7 @@ export class SupabaseTurnRepository implements TurnRepository {
+           }
+         : null,
+     });
+-    if (error) throw new Error(`lw_precheck_and_start_turn failed: ${error.message}`);
++    if (error) throwTypedRpcError("lw_precheck_and_start_turn", error);
+ 
+     const status = data.status as string;
+     if (status === "proceed") {
+@@ -250,7 +272,7 @@ export class SupabaseTurnRepository implements TurnRepository {
+       p_provider_cost_micros: args.costMicros,
+       p_latency_ms: args.latencyMs,
+     });
+-    if (error) throw new Error(`lw_commit_turn failed: ${error.message}`);
++    if (error) throwTypedRpcError("lw_commit_turn", error);
+     return { status: data.status, scene: toSceneRow(data.scene), turnId: data.turn_id };
+   }
+ 
+@@ -266,7 +288,7 @@ export class SupabaseTurnRepository implements TurnRepository {
+       p_generation_attempt_count: args.generationAttemptCount,
+       p_provider_cost_micros: args.costMicros,
+     });
+-    if (error) throw new Error(`lw_fail_turn failed: ${error.message}`);
++    if (error) throwTypedRpcError("lw_fail_turn", error);
+     return { status: "GENERATION_FAILED", turnId: data.turn_id, errorClass: data.error_class };
+   }
+ }
+diff --git a/supabase/functions/_shared/engine/test-support/in-memory-repository.ts b/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
+index 945163c..5f1ec09 100644
+--- a/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
++++ b/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
+@@ -21,6 +21,7 @@ import type {
+   StorySetup,
+   TurnRepository,
+ } from "../repository.ts";
++import { RepositoryForbiddenError, RepositoryValidationError } from "../repository.ts";
+ 
+ interface Run {
+   id: string;
+@@ -154,7 +155,13 @@ export class InMemoryTurnRepository implements TurnRepository {
+       this.runs.set(runId, { id: runId, activeBranchId: branchId, status: "active", storySetup: args.storySetup });
+     } else {
+       const run = this.runs.get(runId);
+-      if (!run) throw new Error("run not found");
++      // Mirrors lw_precheck_and_start_turn's "run not found or not owned by
++      // caller" branch (supabase-repository.ts / the LW-M2-R2 migration) —
++      // this fake has no separate caller-identity concept, so "run does not
++      // exist in this repository" is the reachable analog of "not this
++      // caller's run". Real cross-user ownership is exercised live (see
++      // handoff/LW-M2-R1/rls-test-results.txt), not by this in-memory double.
++      if (!run) throw new RepositoryForbiddenError("run not found or not owned by caller");
+       branchId = run.activeBranchId;
+       const inFlight = [...this.turns.values()].some(
+         (t) => t.branchId === branchId && t.status === "generating"
+@@ -168,7 +175,9 @@ export class InMemoryTurnRepository implements TurnRepository {
+     if (args.actionType === "choice" && sourceSceneId) {
+       const scene = this.scenes.get(sourceSceneId)!;
+       const valid = scene.nextChoices.some((c) => c.id === args.selectedChoiceId);
+-      if (!valid) throw new Error(`selected_choice_id ${args.selectedChoiceId} is not a current choice`);
++      if (!valid) {
++        throw new RepositoryValidationError(`selected_choice_id ${args.selectedChoiceId} is not a current choice`);
++      }
+     }
+ 
+     if (this.forceAllowanceExhausted || this.generationCount >= this.dailyCap) {
+diff --git a/supabase/functions/_shared/engine/turn-pipeline.test.ts b/supabase/functions/_shared/engine/turn-pipeline.test.ts
+index 3a32846..81aaa74 100644
+--- a/supabase/functions/_shared/engine/turn-pipeline.test.ts
++++ b/supabase/functions/_shared/engine/turn-pipeline.test.ts
+@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
+ import { submitTurn } from "./turn-pipeline.ts";
+ import { FakeNarrativeProvider } from "./fake-provider.ts";
+ import { InMemoryTurnRepository } from "./test-support/in-memory-repository.ts";
++import { RepositoryForbiddenError, RepositoryValidationError } from "./repository.ts";
++import type { NarrativeContext, NarrativeProvider, ProviderCallResult } from "./types.ts";
+ 
+ function startArgs(overrides: Partial<Parameters<typeof submitTurn>[2]> = {}) {
+   return {
+@@ -52,6 +54,31 @@ describe("turn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)",
+     expect(repo.scenes.size).toBe(1);
+   });
+ 
++  it("LW-M2-R2: an invalid selected_choice_id is a RepositoryValidationError (maps to HTTP 400, not 500 — see repository.test.ts)", async () => {
++    const repo = new InMemoryTurnRepository();
++    const { run } = await startRun(repo);
++    await expect(
++      submitTurn(repo, new FakeNarrativeProvider(), {
++        turnId: randomUUID(),
++        playerRunId: run.id,
++        actionType: "choice",
++        selectedChoiceId: "not_a_real_choice_id",
++      })
++    ).rejects.toBeInstanceOf(RepositoryValidationError);
++  });
++
++  it("LW-M2-R2: submitting a turn against a run that is not found/owned is a RepositoryForbiddenError (maps to HTTP 403, not 500 — see repository.test.ts)", async () => {
++    const repo = new InMemoryTurnRepository();
++    await expect(
++      submitTurn(repo, new FakeNarrativeProvider(), {
++        turnId: randomUUID(),
++        playerRunId: randomUUID(), // no such run exists in this repository
++        actionType: "custom_action",
++        rawAction: "try to act on someone else's run",
++      })
++    ).rejects.toBeInstanceOf(RepositoryForbiddenError);
++  });
++
+   it("resubmitting the same turn_id is idempotent: exactly one Scene, same result returned", async () => {
+     const repo = new InMemoryTurnRepository();
+     const provider = new FakeNarrativeProvider();
+@@ -265,6 +292,75 @@ describe("turn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)",
+     expect(repo.scenes.size).toBe(sceneCountBefore);
+   });
+ 
++  it("LW-M2-R2: schema-valid output from a real-shaped provider that fails the quality gate on both attempts is never committed as canon", async () => {
++    // Stands in for "a real model" (Gemini, Anthropic, or any future
++    // provider) — implements NarrativeProvider directly, not via
++    // FakeNarrativeProvider's test hooks, and always returns schema-valid
++    // JSON containing a forbidden meta-AI phrase (quality-gate.ts's
++    // meta_ai_language check). This proves the quality gate runs against
++    // provider-shaped output generically, not only against the fake
++    // provider's own test-trigger machinery — no provider gets a bypass.
++    class AlwaysMetaAiProvider implements NarrativeProvider {
++      readonly id = "always-meta-ai";
++      async generateTurn(_context: NarrativeContext): Promise<ProviderCallResult> {
++        return {
++          result: {
++            narrative: "As an AI, I cannot continue this story further.",
++            dialogue: [],
++            state_changes: [],
++            canon_candidates: [],
++            next_choices: [{ id: "a", label: "Try something else" }],
++            boundary_kind: "none",
++            structured_outcome: {},
++          },
++          metadata: { provider: this.id, model: "test", inputTokens: 10, outputTokens: 10, costMicros: 0, latencyMs: 1 },
++        };
++      }
++    }
++
++    const repo = new InMemoryTurnRepository();
++    const { run } = await startRun(repo);
++    const sceneCountBefore = repo.scenes.size;
++
++    const result = await submitTurn(repo, new AlwaysMetaAiProvider(), {
++      turnId: randomUUID(),
++      playerRunId: run.id,
++      actionType: "custom_action",
++      rawAction: "push the door",
++    });
++
++    expect(result.status).toBe("GENERATION_FAILED");
++    expect(repo.scenes.size).toBe(sceneCountBefore); // no scene committed — the gate was never bypassed
++  });
++
++  it("LW-M2-R2: a provider throwing a non-transport Error (e.g. unparseable response) resolves GENERATION_FAILED, never crashes submitTurn", async () => {
++    // Real repro shape: DeepSeekNarrativeProvider throws a plain Error (not
++    // ProviderTransportError) when response_format=json_object produces text
++    // that isn't valid JSON — found live via the DeepSeek bakeoff, which
++    // this test guards against regressing back to an uncaught crash instead
++    // of the existing GENERATION_FAILED/repair path.
++    class ThrowsUnparseableProvider implements NarrativeProvider {
++      readonly id = "throws-unparseable";
++      async generateTurn(_context: NarrativeContext): Promise<ProviderCallResult> {
++        throw new Error("provider response content was not valid JSON");
++      }
++    }
++
++    const repo = new InMemoryTurnRepository();
++    const { run } = await startRun(repo);
++    const sceneCountBefore = repo.scenes.size;
++
++    const result = await submitTurn(repo, new ThrowsUnparseableProvider(), {
++      turnId: randomUUID(),
++      playerRunId: run.id,
++      actionType: "custom_action",
++      rawAction: "push the door",
++    });
++
++    expect(result.status).toBe("GENERATION_FAILED");
++    expect(repo.scenes.size).toBe(sceneCountBefore); // no scene committed, no crash
++  });
++
+   it("a forked branch inherits the parent's history up to (and including) the fork point", async () => {
+     const repo = new InMemoryTurnRepository();
+     const { run, firstSceneId } = await startRun(repo);
+diff --git a/supabase/functions/_shared/engine/turn-pipeline.ts b/supabase/functions/_shared/engine/turn-pipeline.ts
+index 8ff6f7c..8816663 100644
+--- a/supabase/functions/_shared/engine/turn-pipeline.ts
++++ b/supabase/functions/_shared/engine/turn-pipeline.ts
+@@ -59,7 +59,19 @@ async function attemptGeneration(
+     if (err instanceof ProviderTransportError) {
+       return { ok: false, errorClass: "transport_failure", costMicros: 0 };
+     }
+-    throw err;
++    // LW-M2-R2 fix: any other adapter-level throw (a provider returning a
++    // response that could not even be parsed into a candidate `result` —
++    // e.g. DeepSeek's response_format=json_object occasionally producing
++    // text that isn't valid JSON, found live via the DeepSeek bakeoff) is
++    // this provider's own equivalent of "the output was unusable", exactly
++    // like a StructuredGenerationResultSchema validation failure below. It
++    // must resolve through the same one-repair-then-GENERATION_FAILED path,
++    // never propagate uncaught — an uncaught throw here would crash
++    // submitTurn entirely instead of resolving to one of
++    // CONTINUOUS_PLAY_CONTRACT.md §2's five defined play states. No cost is
++    // attributed: the adapter never returned a ProviderCallResult to read a
++    // cost from.
++    return { ok: false, errorClass: "unusable_output", costMicros: 0 };
+   }
+ 
+   const parsed = StructuredGenerationResultSchema.safeParse(raw.result);
+diff --git a/supabase/functions/submit-turn/index.ts b/supabase/functions/submit-turn/index.ts
+index 044d163..b0c980d 100644
+--- a/supabase/functions/submit-turn/index.ts
++++ b/supabase/functions/submit-turn/index.ts
+@@ -18,6 +18,7 @@
+ import { submitTurn } from "../_shared/engine/turn-pipeline.ts";
+ import { SupabaseTurnRepository } from "../_shared/engine/supabase-repository.ts";
+ import { selectProvider } from "../_shared/engine/providers.ts";
++import { mapRepositoryErrorToHttpStatus } from "../_shared/engine/repository.ts";
+ 
+ const CORS_HEADERS = {
+   "Access-Control-Allow-Origin": "*",
+@@ -93,10 +94,16 @@ Deno.serve(async (req) => {
+     // Full error detail is deliberately never returned to the caller here —
+     // internal retry/provider/stack detail must not reach a normal user
+     // (task brief, GENERATION UX section). Server-side console.error is the
+-    // only diagnostic surface.
+-    console.error("[submit-turn] unhandled error", err);
+-    return new Response(JSON.stringify({ error: "internal_error" }), {
+-      status: 500,
++    // only diagnostic surface. The two known, client-triggerable failures
++    // (cross-user submission, invalid selected_choice_id) are typed errors
++    // from the repository layer and map to a clean 403/400 here instead of
++    // falling through to the generic 500 below — see
++    // supabase/functions/_shared/engine/repository.ts,
++    // mapRepositoryErrorToHttpStatus.
++    console.error("[submit-turn] error", err);
++    const { status, body } = mapRepositoryErrorToHttpStatus(err);
++    return new Response(JSON.stringify(body), {
++      status,
+       headers: { ...CORS_HEADERS, "content-type": "application/json" },
+     });
+   }
+diff --git a/supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql b/supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql
+new file mode 100644
+index 0000000..8444389
+--- /dev/null
++++ b/supabase/migrations/20260810220000_m2_error_mapping_and_allowance_fix.sql
+@@ -0,0 +1,505 @@
++-- LW-M2-R2 — corrective migration for two M2-R1 known issues. Per the
++-- project's established pattern (see the M1-R3 corrective migration's own
++-- header), an already-applied migration is never rewritten; this is a new
++-- migration that `create or replace`s the three affected functions.
++--
++-- FIX 1 — clean HTTP status for two client-triggerable failures
++-- ----------------------------------------------------------------
++-- lw_precheck_and_start_turn previously raised a plain `raise exception
++-- 'text'` (SQLSTATE P0001) for both (a) a caller submitting a turn against a
++-- run they don't own and (b) an invalid selected_choice_id. supabase-js's
++-- PostgrestError carries the SQLSTATE as `.code`, but supabase-repository.ts
++-- discarded it and wrapped every RPC error in a generic `Error`, which
++-- submit-turn/index.ts's catch-all then always answered with HTTP 500 —
++-- correct in that the action was blocked, wrong in that a legitimate client
++-- validation/authorization failure looked identical to a real server fault.
++-- The two exceptions below now raise with an explicit, meaningful SQLSTATE
++-- (42501 insufficient_privilege; 22023 invalid_parameter_value — the same
++-- convention this project already uses for RLS/grant reasoning, not an
++-- invented code) so the TypeScript layer can distinguish them without
++-- parsing message text. See supabase-repository.ts and
++-- supabase/functions/_shared/engine/repository.ts
++-- (RepositoryForbiddenError / RepositoryValidationError /
++-- mapRepositoryErrorToHttpStatus) and submit-turn/index.ts for the other
++-- half of this fix.
++--
++-- FIX 2 — concurrent-run allowance overrun (usage_counters)
++-- ----------------------------------------------------------------
++-- Documented in CURRENT_WORK.md's M2-R1 Known Issues: the daily cap was
++-- checked at precheck time but only INCREMENTED at commit time, which is a
++-- separate transaction after the (network-bound) provider call. Two
++-- concurrent turns on two DIFFERENT runs owned by the same user could both
++-- read generation_count=29 (cap 30) before either committed, both proceed,
++-- and both later commit — 31 total for the day, one over cap. The
++-- player_runs row lock only serializes concurrent turns on the SAME run; it
++-- does nothing for two different runs owned by the same user.
++--
++-- Fix: reserve the allowance unit at PRECHECK time, inside the same
++-- transaction as the cap check, by incrementing usage_counters.generation_count
++-- immediately after the check passes (not at commit). The upsert already
++-- takes a row lock on that user's usage_counters row, held for the rest of
++-- this transaction; moving the increment inside that same transaction closes
++-- the check-then-increment race for any two runs owned by the same user, not
++-- just two turns on the same run. lw_commit_turn no longer increments (the
++-- reservation already happened). lw_fail_turn now releases the reservation
++-- (decrements by 1, floored at 0, only for the current UTC day) since a
++-- failed turn must not count against the cap, per
++-- NARRATIVE_QUALITY_CONTRACT.md §D's billing rule extended to the daily
++-- counter, not just the per-turn audit column.
++--
++-- Residual, accepted risk (recorded per the task's "do not silently ignore
++-- it" instruction, not fixed further): if the Edge Function process is
++-- killed between precheck reserving the unit and either commit or fail ever
++-- running (e.g. a platform-level execution-timeout kill, not a normal
++-- provider/transport failure — those already retry/fail inside the same
++-- call), the reservation is never released and one allowance unit leaks for
++-- that user for the rest of that UTC day. This is strictly narrower than the
++-- race being fixed (requires a mid-flight process kill, not just concurrent
++-- requests), self-heals at the next UTC day boundary, and is judged
++-- acceptable for closed M2 testing rather than building reservation
++-- expiry/GC, which would start to look like the M4 credit ledger this task
++-- is explicitly not scoped to build.
++
++create or replace function public.lw_precheck_and_start_turn(
++  p_turn_id uuid,
++  p_player_run_id uuid,
++  p_action_type text,
++  p_selected_choice_id text default null,
++  p_raw_action text default null,
++  p_story_setup jsonb default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = ''
++as $$
++declare
++  v_caller uuid := (select auth.uid());
++  v_player_run_id uuid := p_player_run_id;
++  v_run_branch_id uuid;
++  v_source_scene_id uuid;
++  v_story_id uuid;
++  v_existing_turn public.turns%rowtype;
++  v_today date := (timezone('utc', now()))::date;
++  v_daily_cap constant integer := 30; -- MVP UsageCounter cap; see DOMAIN_MODEL.md §3.
++  v_generation_count integer;
++  v_valid_choice boolean;
++  v_blocked boolean;
++  v_scene_json jsonb;
++begin
++  if v_caller is null then
++    raise exception 'lw_precheck_and_start_turn: no authenticated caller';
++  end if;
++
++  if p_action_type not in ('start', 'choice', 'custom_action') then
++    raise exception 'lw_precheck_and_start_turn: invalid action_type %', p_action_type;
++  end if;
++
++  -- ---- Idempotency: a turn with this id already exists -------------------
++  select * into v_existing_turn from public.turns where id = p_turn_id;
++  if found then
++    if v_existing_turn.player_run_id != v_player_run_id and p_player_run_id is not null then
++      raise exception 'lw_precheck_and_start_turn: turn_id % already belongs to a different run', p_turn_id
++        using errcode = '22023';
++    end if;
++    if not exists (
++      select 1 from public.player_runs pr
++      where pr.id = v_existing_turn.player_run_id and pr.owner_user_id = v_caller
++    ) then
++      raise exception 'lw_precheck_and_start_turn: not authorized'
++        using errcode = '42501';
++    end if;
++    if v_existing_turn.status = 'committed' then
++      select to_jsonb(s.*) into v_scene_json
++      from public.scenes s where s.id = v_existing_turn.result_scene_id;
++      return jsonb_build_object(
++        'status', 'committed',
++        'turn_id', v_existing_turn.id,
++        'scene', v_scene_json
++      );
++    elsif v_existing_turn.status = 'failed' then
++      return jsonb_build_object(
++        'status', 'GENERATION_FAILED',
++        'turn_id', v_existing_turn.id,
++        'error_class', v_existing_turn.error_class
++      );
++    else
++      return jsonb_build_object('status', 'in_flight', 'turn_id', v_existing_turn.id);
++    end if;
++  end if;
++
++  -- ---- Bootstrap a brand-new run, or resolve + lock the existing one -----
++  if v_player_run_id is null then
++    if p_action_type != 'start' or p_story_setup is null then
++      raise exception 'lw_precheck_and_start_turn: p_story_setup is required to start a new run';
++    end if;
++
++    insert into public.stories (owner_user_id, title, premise, content_language, genre, story_mode)
++    values (
++      v_caller,
++      left(coalesce(nullif(p_story_setup ->> 'premise', ''), 'Untitled story'), 200),
++      p_story_setup ->> 'premise',
++      p_story_setup ->> 'content_language',
++      coalesce(p_story_setup ->> 'genre', 'adventure'),
++      coalesce(p_story_setup ->> 'story_mode', 'narrative')
++    )
++    returning id into v_story_id;
++
++    insert into public.story_configurations (story_id, starting_situation)
++    values (v_story_id, p_story_setup ->> 'premise');
++
++    insert into public.player_runs (owner_user_id, story_id)
++    values (v_caller, v_story_id)
++    returning id into v_player_run_id;
++
++    insert into public.run_branches (player_run_id, parent_branch_id, fork_scene_id, branch_seq)
++    values (v_player_run_id, null, null, 0)
++    returning id into v_run_branch_id;
++
++    update public.player_runs set active_branch_id = v_run_branch_id where id = v_player_run_id;
++  else
++    select pr.active_branch_id into v_run_branch_id
++    from public.player_runs pr
++    where pr.id = v_player_run_id and pr.owner_user_id = v_caller
++    for update;
++
++    if not found then
++      -- The caller-triggerable case this migration's FIX 1 addresses:
++      -- either the run genuinely does not exist, or it exists but is owned
++      -- by someone else — both are an authorization failure from this
++      -- caller's point of view, never distinguished to avoid confirming run
++      -- existence to a non-owner.
++      raise exception 'lw_precheck_and_start_turn: run not found or not owned by caller'
++        using errcode = '42501';
++    end if;
++
++    -- One in-flight turn per run: reject a second concurrent submission
++    -- rather than silently starting a competing generation.
++    if exists (
++      select 1 from public.turns
++      where run_branch_id = v_run_branch_id and status in ('pending', 'generating')
++    ) then
++      raise exception 'lw_precheck_and_start_turn: a turn is already in flight on this run';
++    end if;
++
++    -- Current scene = tip of this branch's resolved history. `with
++    -- ordinality` pins the row we take as the last one lw_branch_scene_ids
++    -- actually produced, rather than relying on plan-dependent row order
++    -- surviving an unordered OFFSET.
++    select scene_id into v_source_scene_id
++    from public.lw_branch_scene_ids(v_run_branch_id) with ordinality as t(scene_id, ord)
++    order by ord desc
++    limit 1;
++
++    if p_action_type = 'choice' then
++      select exists (
++        select 1
++        from public.scenes s, jsonb_array_elements(s.next_choices) c
++        where s.id = v_source_scene_id and c ->> 'id' = p_selected_choice_id
++      ) into v_valid_choice;
++      if not v_valid_choice then
++        -- The other caller-triggerable case FIX 1 addresses: a stale or
++        -- forged choice id is a client input-validation problem, not a
++        -- server fault.
++        raise exception 'lw_precheck_and_start_turn: selected_choice_id % is not a current choice', p_selected_choice_id
++          using errcode = '22023';
++      end if;
++    end if;
++  end if;
++
++  -- ---- Allowance check + reservation (FIX 2) ------------------------------
++  -- This upsert takes a row lock on the caller's usage_counters row, held
++  -- for the rest of this transaction. The cap check and the reservation
++  -- increment below both happen inside that same lock window, so a second
++  -- concurrent precheck for the same user (on any run) blocks here until
++  -- this transaction commits and sees the post-reservation count — not the
++  -- stale pre-reservation count a separate later commit-time increment would
++  -- have raced against. See the migration header for the full analysis and
++  -- accepted residual risk.
++  insert into public.usage_counters (user_id, usage_date, generation_count)
++  values (v_caller, v_today, 0)
++  on conflict (user_id) do update
++    set generation_count = case
++      when public.usage_counters.usage_date = v_today then public.usage_counters.generation_count
++      else 0
++    end,
++    usage_date = v_today
++  returning generation_count into v_generation_count;
++
++  if v_generation_count >= v_daily_cap then
++    return jsonb_build_object(
++      'status', 'ALLOWANCE_EXHAUSTED',
++      'reset_at', (v_today + 1)::timestamptz
++    );
++  end if;
++
++  -- ---- Deterministic input moderation placeholder -------------------------
++  -- No moderation provider is configured in this milestone (no AI provider
++  -- credential exists locally — see docs/NARRATIVE_MODEL_EVALUATION.md). This
++  -- is a documented, minimal stand-in (fixed phrase blocklist) so the
++  -- PRECHECK -> moderate -> GENERATION_FAILED(input_rejected) path in
++  -- CONTINUOUS_PLAY_CONTRACT.md §3 is real and testable, not a TODO. It must
++  -- be replaced by a real moderateContent call before any public traffic.
++  v_blocked := p_raw_action is not null and (
++    lower(p_raw_action) ~ '\y(csam|child sexual|bestiality)\y'
++  );
++
++  if v_blocked then
++    -- Not reserved above the cap check, and not consumed here either: input
++    -- rejected at precheck never reaches a provider call, so it must not
++    -- count against the daily allowance (CONTINUOUS_PLAY_CONTRACT.md §8).
++    insert into public.turns (
++      id, player_run_id, run_branch_id, source_scene_id, action_type,
++      raw_player_action, selected_choice_id, status, error_class
++    ) values (
++      p_turn_id, v_player_run_id, v_run_branch_id, v_source_scene_id, p_action_type,
++      p_raw_action, p_selected_choice_id, 'failed', 'input_rejected'
++    );
++    return jsonb_build_object(
++      'status', 'GENERATION_FAILED',
++      'turn_id', p_turn_id,
++      'error_class', 'input_rejected'
++    );
++  end if;
++
++  -- ---- Reserve the allowance unit now that this turn will actually
++  -- attempt a provider call. lw_commit_turn no longer increments; lw_fail_turn
++  -- releases this reservation if the turn does not commit.
++  update public.usage_counters
++  set generation_count = generation_count + 1
++  where user_id = v_caller;
++
++  -- ---- Proceed: create the turn row and hand off to the caller -----------
++  insert into public.turns (
++    id, player_run_id, run_branch_id, source_scene_id, action_type,
++    raw_player_action, selected_choice_id, status
++  ) values (
++    p_turn_id, v_player_run_id, v_run_branch_id, v_source_scene_id, p_action_type,
++    p_raw_action, p_selected_choice_id, 'generating'
++  );
++
++  return jsonb_build_object(
++    'status', 'proceed',
++    'turn_id', p_turn_id,
++    'player_run_id', v_player_run_id,
++    'run_branch_id', v_run_branch_id,
++    'source_scene_id', v_source_scene_id
++  );
++end;
++$$;
++
++revoke execute on function public.lw_precheck_and_start_turn(
++  uuid, uuid, text, text, text, jsonb
++) from public, anon, authenticated;
++grant execute on function public.lw_precheck_and_start_turn(
++  uuid, uuid, text, text, text, jsonb
++) to authenticated;
++
++-- ---------------------------------------------------------------------------
++-- lw_commit_turn — FIX 2: no longer increments usage_counters. The unit was
++-- already reserved by lw_precheck_and_start_turn; committing must not spend
++-- a second one for the same turn.
++-- ---------------------------------------------------------------------------
++
++create or replace function public.lw_commit_turn(
++  p_turn_id uuid,
++  p_narrative text,
++  p_dialogue jsonb,
++  p_state_change_summary jsonb,
++  p_structured_outcome jsonb,
++  p_next_choices jsonb,
++  p_boundary_kind text,
++  p_canon_candidates jsonb,
++  p_generation_attempt_count integer,
++  p_provider text,
++  p_model text,
++  p_input_tokens integer,
++  p_output_tokens integer,
++  p_provider_cost_micros bigint,
++  p_latency_ms integer
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = ''
++as $$
++declare
++  v_caller uuid := (select auth.uid());
++  v_turn public.turns%rowtype;
++  v_scene_id uuid;
++  v_next_seq integer;
++  v_fact jsonb;
++  v_existing_scene public.scenes%rowtype;
++begin
++  if p_boundary_kind not in ('none', 'checkpoint', 'ending') then
++    raise exception 'lw_commit_turn: invalid boundary_kind %', p_boundary_kind;
++  end if;
++
++  select t.* into v_turn
++  from public.turns t
++  join public.player_runs pr on pr.id = t.player_run_id
++  where t.id = p_turn_id and pr.owner_user_id = v_caller
++  for update of t;
++
++  if not found then
++    raise exception 'lw_commit_turn: turn not found or not owned by caller';
++  end if;
++
++  if v_turn.status = 'committed' then
++    -- Already committed (a duplicate commit call for the same key): no-op,
++    -- return the existing Scene rather than creating a second one.
++    select * into v_existing_scene from public.scenes where id = v_turn.result_scene_id;
++    return jsonb_build_object(
++      'status', case
++        when v_existing_scene.boundary_kind = 'ending' then 'TERMINAL_ENDING'
++        when v_existing_scene.boundary_kind = 'checkpoint' then 'EXPLICIT_CHECKPOINT'
++        else 'CONTINUE_READY'
++      end,
++      'scene', to_jsonb(v_existing_scene.*),
++      'turn_id', v_turn.id
++    );
++  end if;
++
++  if v_turn.status != 'generating' then
++    raise exception 'lw_commit_turn: turn % is not in a committable state (status=%)', p_turn_id, v_turn.status;
++  end if;
++
++  select coalesce(max(seq_in_branch), -1) + 1 into v_next_seq
++  from public.scenes where run_branch_id = v_turn.run_branch_id;
++
++  insert into public.scenes (
++    run_branch_id, seq_in_branch, parent_scene_id, boundary_kind, narrative,
++    dialogue, state_change_summary, structured_outcome, next_choices,
++    generation_turn_id
++  ) values (
++    v_turn.run_branch_id, v_next_seq, v_turn.source_scene_id, p_boundary_kind, p_narrative,
++    coalesce(p_dialogue, '[]'::jsonb), coalesce(p_state_change_summary, '[]'::jsonb),
++    coalesce(p_structured_outcome, '{}'::jsonb), coalesce(p_next_choices, '[]'::jsonb),
++    v_turn.id
++  )
++  returning id into v_scene_id;
++
++  for v_fact in select * from jsonb_array_elements(coalesce(p_canon_candidates, '[]'::jsonb))
++  loop
++    insert into public.canon_facts (
++      player_run_id, scope, run_branch_id, origin, fact_key, fact_text,
++      source_turn_id, source_scene_id
++    ) values (
++      v_turn.player_run_id,
++      coalesce(v_fact ->> 'scope', 'branch'),
++      case when coalesce(v_fact ->> 'scope', 'branch') = 'branch' then v_turn.run_branch_id else null end,
++      'story_scene',
++      v_fact ->> 'fact_key',
++      v_fact ->> 'fact_text',
++      v_turn.id,
++      v_scene_id
++    );
++  end loop;
++
++  update public.turns set
++    status = 'committed',
++    result_scene_id = v_scene_id,
++    generation_attempt_count = p_generation_attempt_count,
++    provider = p_provider,
++    model = p_model,
++    input_tokens = p_input_tokens,
++    output_tokens = p_output_tokens,
++    provider_cost_micros = p_provider_cost_micros,
++    latency_ms = p_latency_ms,
++    user_allowance_debited = true
++  where id = p_turn_id;
++
++  update public.player_runs set
++    status = case when p_boundary_kind = 'ending' then 'completed' else status end
++  where id = v_turn.player_run_id;
++
++  -- FIX 2: usage_counters.generation_count is NOT incremented here anymore —
++  -- lw_precheck_and_start_turn already reserved this turn's unit atomically
++  -- with the cap check. Incrementing again here would double-count.
++
++  return jsonb_build_object(
++    'status', case
++      when p_boundary_kind = 'ending' then 'TERMINAL_ENDING'
++      when p_boundary_kind = 'checkpoint' then 'EXPLICIT_CHECKPOINT'
++      else 'CONTINUE_READY'
++    end,
++    'scene', (select to_jsonb(s.*) from public.scenes s where s.id = v_scene_id),
++    'turn_id', p_turn_id
++  );
++end;
++$$;
++
++revoke execute on function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, integer, text, text,
++  integer, integer, bigint, integer
++) from public, anon, authenticated;
++grant execute on function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, integer, text, text,
++  integer, integer, bigint, integer
++) to authenticated;
++
++-- ---------------------------------------------------------------------------
++-- lw_fail_turn — FIX 2: releases the allowance reservation
++-- lw_precheck_and_start_turn made, since a failed turn commits no Scene and
++-- must not count against the daily cap. Floored at 0 and scoped to "still
++-- the same UTC day" so a release racing a midnight date-rollover cannot
++-- corrupt the next day's fresh counter.
++-- ---------------------------------------------------------------------------
++
++create or replace function public.lw_fail_turn(
++  p_turn_id uuid,
++  p_error_class text,
++  p_generation_attempt_count integer,
++  p_provider_cost_micros bigint default null
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = ''
++as $$
++declare
++  v_caller uuid := (select auth.uid());
++  v_turn public.turns%rowtype;
++begin
++  if p_error_class not in ('input_rejected', 'output_blocked', 'unusable_output', 'transport_failure') then
++    raise exception 'lw_fail_turn: invalid error_class %', p_error_class;
++  end if;
++
++  select t.* into v_turn
++  from public.turns t
++  join public.player_runs pr on pr.id = t.player_run_id
++  where t.id = p_turn_id and pr.owner_user_id = v_caller
++  for update of t;
++
++  if not found then
++    raise exception 'lw_fail_turn: turn not found or not owned by caller';
++  end if;
++
++  if v_turn.status = 'committed' then
++    raise exception 'lw_fail_turn: turn % already committed, cannot fail it', p_turn_id;
++  end if;
++
++  update public.turns set
++    status = 'failed',
++    error_class = p_error_class,
++    generation_attempt_count = p_generation_attempt_count,
++    provider_cost_micros = p_provider_cost_micros
++  where id = p_turn_id;
++
++  -- Release the reservation lw_precheck_and_start_turn made for this turn.
++  -- Every path that reaches "proceed" (and therefore a possible fail) went
++  -- through exactly one reservation increment, so exactly one release here
++  -- is correct regardless of whether a repair attempt ran inside
++  -- turn-pipeline.ts (that loop is internal to one precheck/commit-or-fail
++  -- pair, per NARRATIVE_QUALITY_CONTRACT.md §D).
++  update public.usage_counters
++  set generation_count = greatest(generation_count - 1, 0)
++  where user_id = v_caller and usage_date = (timezone('utc', now()))::date;
++
++  return jsonb_build_object('status', 'GENERATION_FAILED', 'turn_id', p_turn_id, 'error_class', p_error_class);
++end;
++$$;
++
++revoke execute on function public.lw_fail_turn(uuid, text, integer, bigint)
++  from public, anon, authenticated;
++grant execute on function public.lw_fail_turn(uuid, text, integer, bigint) to authenticated;

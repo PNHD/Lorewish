@@ -1,0 +1,30 @@
+=== LW-M2-R1 adversarial security + contract probe transcript (live, lorewish-dev) ===
+Script: security/idempotency/RLS probe suite (14 checks)
+Created ephemeral test accounts A=8f01bca8-9b92-44ac-a65c-e17925f3e07d B=d4bb11f9-5365-421f-96ec-37eb0feebf78
+PASS — unauthenticated cannot call submit-turn :: HTTP 401
+PASS — anon cannot execute lw_precheck_and_start_turn via PostgREST :: HTTP 401
+PASS — authenticated start-turn produces a committed scene :: status=200 playState=CONTINUE_READY
+PASS — resolved player_run_id for the new run :: e5d9ab26-e9ac-4a1c-be62-b6e1b7014630
+PASS — duplicate turn_id submission is idempotent (same scene id) :: 7139b956-24d5-4451-9030-50f2ec3fa199 vs 7139b956-24d5-4451-9030-50f2ec3fa199
+PASS — exactly 2 scenes exist after start + one idempotent-retried turn :: count=2
+PASS — User B's read of User A's run is empty (RLS) :: status=200 rows=0
+PASS — User B cannot submit a turn on User A's run :: HTTP 500
+PASS — owning user A cannot INSERT into scenes directly (no client mutation path) :: HTTP 403
+PASS — anon cannot INSERT into scenes at all :: HTTP 401
+PASS — anon cannot SELECT player_runs at all (object-level, not just RLS) :: HTTP 401
+PASS — replay-branch creates a new branch id :: new=edd06bd9-f9ac-4210-bf70-eab399a39332
+PASS — both branches (original + replayed) are retained, not deleted :: count=2
+PASS — submitting a nonexistent choice_id is rejected :: HTTP 500
+Cleanup verified: 0 remaining accounts matching test email (expect 0)
+
+14/14 PASS
+
+Script: Continuous Play Contract failure-path probe (6 checks)
+PASS — start turn commits a scene :: status=CONTINUE_READY
+PASS — forced quality-gate failure resolves GENERATION_FAILED :: {"status":"GENERATION_FAILED","turnId":"53111e00-c32e-4afd-8c6b-a77475c32ac0","errorClass":"unusable_output"}
+PASS — no new scene was committed by the failed turn (still 1 scene) :: count=1
+PASS — failed turn used exactly 2 generation attempts (initial + one repair) :: {"generation_attempt_count":2,"user_allowance_debited":false,"error_class":"unusable_output"}
+PASS — failed turn did not debit the user's allowance :: {"generation_attempt_count":2,"user_allowance_debited":false,"error_class":"unusable_output"}
+PASS — run state after the failure still resolves to CONTINUE_READY at the last durable scene :: "CONTINUE_READY"
+
+6/6 PASS

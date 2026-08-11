@@ -48,7 +48,7 @@ function ChoicePill({ selected, label, onPress }: { selected: boolean; label: st
 export function NewStoryScreen() {
   const { t, locale } = useTranslation();
   const { colors } = useAppTheme();
-  const { status } = useAuth();
+  const { status, ensureProductSession } = useAuth();
   const { draft, setDraft, clearDraft } = useStorySetupDraft(locale);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,15 +63,10 @@ export function NewStoryScreen() {
     const nextErrors = validateDraft(draft);
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0 || submitting) return;
-    if (status !== "signed_in") {
-      setError(t("setup.signInToStart"));
-      router.push("/account");
-      return;
-    }
-
     setSubmitting(true);
     setError(null);
     try {
+      await ensureProductSession();
       const result = await submitTurn({
         turnId: newTurnId(),
         playerRunId: null,
@@ -84,11 +79,14 @@ export function NewStoryScreen() {
         router.replace({ pathname: "/play/[runId]", params: { runId: playerRunId } });
       } else if (result.status === "ALLOWANCE_EXHAUSTED") {
         setError(t("play.allowanceExhaustedHeading"));
+      } else if (result.status === "BETA_CAPACITY_REACHED") {
+        setError(t("play.betaCapacityHeading"));
       } else {
         setError(t("play.failedHeading"));
       }
     } catch (caught) {
-      setError((caught as Error).message === "alpha_access_required" ? t("play.alphaAccessRequired") : t("play.failedHeading"));
+      const code = (caught as Error).message;
+      setError(code === "beta_capacity_reached" ? t("play.betaCapacityHeading") : t("play.failedHeading"));
     } finally {
       setSubmitting(false);
     }
@@ -166,11 +164,12 @@ export function NewStoryScreen() {
             onPress={handleStart}
             style={{ backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center", opacity: submitting ? 0.5 : 1 }}
           >
-            <ThemedText variant="label" color="onAccent">{submitting ? t("play.generatingScene") : status === "signed_in" ? t("play.startButton") : t("setup.signInButton")}</ThemedText>
+            <ThemedText variant="label" color="onAccent">{submitting || status === "guest_creating" ? t("play.creatingStory") : t("play.startButton")}</ThemedText>
           </Pressable>
 
           {submitting ? <ActivityIndicator /> : null}
           {error ? <ThemedText variant="caption" color="danger" accessibilityLiveRegion="polite">{error}</ThemedText> : null}
+          <ThemedText variant="caption" color="secondary">{t("setup.guestPersistenceNote")}</ThemedText>
         </View>
       </ScrollView>
     </SafeAreaView>

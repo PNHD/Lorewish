@@ -1,0 +1,1 @@
+{"status":"W4_LIVE_GUEST_ISOLATION_PASS","anonymousSessions":2,"profileNullPii":true,"crossGuestStoryRead":false,"crossGuestStoryWrite":false,"crossGuestChildAttach":false,"noJwtStatus":401,"invalidJwtStatus":401,"serviceTelemetryClientAccess":false,"probeRun":"lw-w4-isolation-1786447836676"}

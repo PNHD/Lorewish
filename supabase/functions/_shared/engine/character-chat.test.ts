@@ -71,4 +71,30 @@ describe("branch-bound non-canonical Character Chat", () => {
     expect(prompt.system).toContain("Vietnamese");
     expect(prompt.user).toContain(`Player self=${playerSelf}; player addresses character=${playerAddresses}; character self=${characterSelf}; character addresses player=${characterAddresses}`);
   });
+
+  it("rejects a VI Character Chat reply that substitutes a configured pronoun", async () => {
+    const { repo, precheck, characterId } = await storyWithMira({
+      speakerSelfReference: "em", speakerAddressesTargetAs: "chị",
+      targetSelfReference: "chị", targetAddressesSpeakerAs: "em",
+    });
+    const inputs = await repo.loadContextInputs(precheck.playerRunId, precheck.runBranchId);
+    const context = assembleCharacterChatContext({ inputs, characterId, recentChat: [], playerMessage: "Chị có nhớ em không?" });
+    const result = validateCharacterChatResult({
+      result: { reply: "Ta vẫn nhớ em.", chat_memory_candidates: [] },
+      metadata: { provider: "fake", model: "chat", inputTokens: 1, outputTokens: 1, costMicros: 0, latencyMs: 1 },
+    }, context);
+    expect(result).toMatchObject({ ok: false, errorClass: "validation_error" });
+  });
+
+  it("makes the single repair instruction explicit at the provider boundary", async () => {
+    const { repo, precheck, characterId } = await storyWithMira({
+      speakerSelfReference: "em", speakerAddressesTargetAs: "chị",
+      targetSelfReference: "chị", targetAddressesSpeakerAs: "em",
+    });
+    const inputs = await repo.loadContextInputs(precheck.playerRunId, precheck.runBranchId);
+    const context = assembleCharacterChatContext({ inputs, characterId, recentChat: [], playerMessage: "Chị có nhớ em không?" });
+    const prompt = buildCharacterChatPrompt({ ...context, repairReason: "address terms drifted" });
+    expect(prompt.system).toContain("only repair attempt");
+    expect(prompt.system).toContain("address terms drifted");
+  });
 });

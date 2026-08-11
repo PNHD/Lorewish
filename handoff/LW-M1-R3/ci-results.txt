@@ -1,0 +1,294 @@
+LW-M1-R3 — CI EVIDENCE
+======================
+Three defects were corrected in this task's CI work:
+  (a) documentation-only pushes launched the full native matrix
+  (b) one commit ran TWO full native matrices (push + pull_request)
+  (c) a public repository let any fork PR spend the native budget
+
+Repository is now PUBLIC (owner decision, after a clean full-history secret
+audit) because the private Actions quota hit 2,000/2,000 minutes. Standard
+hosted runners are free for public repositories.
+
+===============================================================================
+PART 1 — paths-ignore: PREDICTION vs OBSERVED REALITY
+===============================================================================
+
+paths-ignore on push and pull_request:  docs/**, handoff/**, *.md
+
+GitHub skips a run only when EVERY changed file matches. One source file in a
+mixed commit forces a full run. Under GitHub glob semantics `*` does not cross a
+`/`, so `*.md` covers ROOT-level markdown only — a .md nested under src/ would
+still build. Deliberately conservative.
+
+PREDICTION (replaying each commit's real file list through the globs) vs what
+GitHub actually did:
+
+  commit    predicted push CI   observed push run   match
+  -------   -----------------   -----------------   -----
+  f97dd28   SKIPPED             ran (pre-fix)       n/a - fix did not exist yet
+  6716f64   RUNS                31348869607         yes
+  5fd64d4   RUNS                31354813415         yes
+  e4749e6   RUNS                31364937721         yes
+  6820de9   RUNS                31368186633         yes
+  3661d0a   RUNS                31369932367         yes
+  e689178   SKIPPED             NONE CREATED        yes  <-- live proof
+  ec45f66   SKIPPED             NONE CREATED        yes  <-- live proof
+
+f97dd28 is the commit that motivated this fix: docs+handoff only, it burned
+~37 minutes of native runner time. All 16 of its files match the ignore list, so
+under the corrected workflow its push run would not have been created at all.
+
+HONEST LIMITATION — pull_request semantics differ:
+  The two documentation-only commits DID still produce a pull_request run
+  (31372540845 for e689178, 31372647888 for ec45f66). GitHub evaluates
+  paths-ignore for pull_request against the ENTIRE PR DIFF (base...head), not
+  the newest commit, and this PR's cumulative diff contains ci.yml and the
+  migration. That is expected GitHub behaviour, not a misconfiguration.
+  An earlier revision of CURRENT_WORK.md claimed a docs commit "triggers no
+  workflow run at all"; that overclaim was corrected in commit ec45f66 rather
+  than quietly dropped.
+  What Step 10 asked for still holds: a docs-only push to a branch WITHOUT an
+  open PR -- the f97dd28 case -- is skipped entirely. Per-PR cost is bounded to
+  a single matrix by Part 2.
+
+Full per-file replay follows.
+
+================================================================================
+COMMIT  f97dd28  docs: LW-M1-R2 CURRENT_WORK.md and handoff package
+CONTEXT R2 final, docs+handoff only - DID burn ~37min of native runner time
+--------------------------------------------------------------------------------
+  IGNORED  CURRENT_WORK.md                                            (matched: *.md)
+  IGNORED  handoff/LW-M1-R2/HANDOFF.md                                (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/android-build.log                         (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/files-changed.txt                         (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/git-diff.patch                            (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/git-log.txt                               (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/git-status.txt                            (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/ios-build.log                             (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/native-builds.txt                         (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/rls-test-results.txt                      (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/screenshots/ios-simulator-home-en.png     (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/supabase-advisors.txt                     (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/supabase-migrations.txt                   (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/test-results.txt                          (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/tree.txt                                  (matched: handoff/**)
+  IGNORED  handoff/LW-M1-R2/web-build.txt                             (matched: handoff/**)
+  => VERDICT: push CI SKIPPED. All 16 file(s) match paths-ignore.
+
+================================================================================
+COMMIT  6716f64  feat: add auth and native build foundation
+CONTEXT R2 auth+native foundation - large source change
+--------------------------------------------------------------------------------
+  BUILDS   .env.example                                               (no match)
+  BUILDS   .github/workflows/ci.yml                                   (no match)
+  BUILDS   .gitignore                                                 (no match)
+  IGNORED  docs/DEV_ENVIRONMENT.md                                    (matched: docs/**)
+  BUILDS   eas.json                                                   (no match)
+  BUILDS   package-lock.json                                          (no match)
+  BUILDS   package.json                                               (no match)
+  BUILDS   src/app/_layout.tsx                                        (no match)
+  BUILDS   src/app/account.tsx                                        (no match)
+  BUILDS   src/auth/auth-context.tsx                                  (no match)
+  BUILDS   src/i18n/locales/en.json                                   (no match)
+  BUILDS   src/i18n/locales/vi.json                                   (no match)
+  BUILDS   src/lib/supabase.ts                                        (no match)
+  BUILDS   src/screens/account/index.tsx                              (no match)
+  BUILDS   src/screens/home/index.tsx                                 (no match)
+  => VERDICT: push CI RUNS IN FULL. 14 of 15 file(s) build-relevant.
+
+================================================================================
+COMMIT  5fd64d4  fix: build release-configured native artifacts, not debug ones
+CONTEXT R2 workflow fix
+--------------------------------------------------------------------------------
+  BUILDS   .github/workflows/ci.yml                                   (no match)
+  => VERDICT: push CI RUNS IN FULL. 1 of 1 file(s) build-relevant.
+
+================================================================================
+COMMIT  e4749e6  fix: narrow M1 table privileges to least privilege
+CONTEXT R3 privilege migration + first docs + paths-ignore
+--------------------------------------------------------------------------------
+  BUILDS   .github/workflows/ci.yml                                   (no match)
+  IGNORED  CURRENT_WORK.md                                            (matched: *.md)
+  IGNORED  docs/AGENT_TOOLING.md                                      (matched: docs/**)
+  IGNORED  docs/DEV_ENVIRONMENT.md                                    (matched: docs/**)
+  IGNORED  docs/TECHNICAL_ARCHITECTURE.md                             (matched: docs/**)
+  BUILDS   supabase/migrations/20260810065727_m1_least_privilege_hardening.sql (no match)
+  => VERDICT: push CI RUNS IN FULL. 2 of 6 file(s) build-relevant.
+
+================================================================================
+COMMIT  6820de9  fix: extend least-privilege rule to functions, dedupe CI runs
+CONTEXT R3 function rule + concurrency key
+--------------------------------------------------------------------------------
+  BUILDS   .github/workflows/ci.yml                                   (no match)
+  IGNORED  CURRENT_WORK.md                                            (matched: *.md)
+  IGNORED  docs/AGENT_TOOLING.md                                      (matched: docs/**)
+  IGNORED  docs/DEV_ENVIRONMENT.md                                    (matched: docs/**)
+  IGNORED  docs/TECHNICAL_ARCHITECTURE.md                             (matched: docs/**)
+  => VERDICT: push CI RUNS IN FULL. 1 of 5 file(s) build-relevant.
+
+================================================================================
+COMMIT  3661d0a  ci: harden workflow for public repository, record visibility decision
+CONTEXT R3 public-repo CI hardening
+--------------------------------------------------------------------------------
+  BUILDS   .github/workflows/ci.yml                                   (no match)
+  IGNORED  CURRENT_WORK.md                                            (matched: *.md)
+  => VERDICT: push CI RUNS IN FULL. 1 of 2 file(s) build-relevant.
+
+================================================================================
+COMMIT  e689178  docs: record public CI results and final M1 verdict
+CONTEXT R3 docs-only - public CI results
+--------------------------------------------------------------------------------
+  IGNORED  CURRENT_WORK.md                                            (matched: *.md)
+  => VERDICT: push CI SKIPPED. All 1 file(s) match paths-ignore.
+
+================================================================================
+COMMIT  ec45f66  docs: correct paths-ignore claim for pull_request events
+CONTEXT R3 docs-only - paths-ignore correction
+--------------------------------------------------------------------------------
+  IGNORED  CURRENT_WORK.md                                            (matched: *.md)
+  => VERDICT: push CI SKIPPED. All 1 file(s) match paths-ignore.
+
+GUARDED PATHS — never ignorable, always trigger a full run
+  src/**  package.json  package-lock.json  app.json  eas.json  assets/**
+  tsconfig.json  eslint.config.js  supabase/**  .github/**
+
+===============================================================================
+PART 2 — duplicate runs of one commit (concurrency)
+===============================================================================
+
+BEFORE: group = ${{ github.workflow }}-${{ github.ref }}
+  github.ref differs between the two events raised by one push to a branch with
+  an open PR:  refs/heads/<branch>  vs  refs/pull/1/merge
+  => separate groups => neither cancels the other => TWO full native matrices.
+
+This was not merely wasteful. On commit e4749e6 the two matrices contended for
+runners and each pushed the other past a timeout, in OPPOSITE jobs:
+
+  job              push 31364937721            pull_request 31364972116
+  ---------------  --------------------------  --------------------------
+  Web / JS checks  success  1m51s              success  1m51s
+  iOS Simulator    SUCCESS  25m21s             cancelled 30m45s (30m cap)
+  Android          cancelled 45m13s (45m cap)  SUCCESS  44m40s
+
+  The two Android jobs finished five seconds apart (07:57:56Z / 07:58:01Z) after
+  both were dragged from a ~35 minute solo baseline to ~45 minutes.
+  EVERY job passed in one run or the other, so the commit was sound; both
+  timeouts were artefacts of the duplication, not defects in the code.
+
+AFTER: group = ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  head_ref is the source branch on pull_request; ref_name is the branch on push.
+  Both events for one branch now share a group, so cancel-in-progress leaves
+  exactly one matrix. Both events describe the same commit -> no coverage lost.
+
+OBSERVED, three independent times:
+
+  1. commit 3661d0a
+     push 31369932367 created 08:24:32Z -> CANCELLED
+       Web and Android cancelled at 08:24:38Z (3s in), iOS at 08:29:36Z
+     pull_request 31369936191 created 08:24:35Z -> SUCCESS (survivor)
+
+  2. commit 6820de9 (private repo, before going public)
+     push 31368186633 created 08:00:26Z -> CANCELLED at 08:00:31Z, ONE SECOND
+       after the sibling pull_request run entered the same group.
+     Billing does not explain that: a billing block yields `failure` (which is
+     exactly what the surviving run's jobs show), not `cancelled`.
+
+  3. superseded head e689178
+     pull_request 31372540845 -> CANCELLED when ec45f66 was pushed into the
+     same group. Superseding a head no longer leaves an orphan matrix running.
+
+Per the owner's instruction, a duplicate event being cancelled by the
+concurrency rule is EXPECTED PASS BEHAVIOUR, not a failure.
+
+===============================================================================
+PART 3 — public-repository fork-PR hardening
+===============================================================================
+
+  permissions: contents: read            (workflow level, least-privilege token)
+
+  android + ios-simulator jobs gated on:
+    github.event_name == 'push' ||
+    github.event.pull_request.head.repo.full_name == github.repository
+
+  => a FORK PR gets the cheap Web / JS job only: no native matrix, no secrets,
+     no privileged behaviour.
+  => OWNER WORK IS UNAFFECTED: every push to main and feature/**, and every
+     same-repo PR, satisfies the condition. This withholds COST, never
+     CORRECTNESS. A maintainer wanting full native coverage for a fork PR
+     pushes the branch into this repo, which satisfies the same condition.
+
+  The workflow uses `pull_request`, NEVER `pull_request_target`, and says so
+  in-file. pull_request runs fork code with a read-only token and no access to
+  repository secrets. Switching to pull_request_target to "make secrets
+  available to PRs" is the classic fork-PR compromise. This workflow needs no
+  secrets at all: the Supabase values are non-functional placeholders and the
+  native builds prove compilation, not backend connectivity.
+
+===============================================================================
+PART 4 — AUTHORITATIVE PUBLIC CI EVIDENCE
+===============================================================================
+
+Private Actions quota was exhausted (2,000/2,000). Every job of run
+31368191079 failed before its first step:
+
+  "The job was not started because recent account payments have failed or your
+   spending limit needs to be increased."
+
+After the owner-approved switch to PUBLIC (gated by the clean full-history
+secret audit), standard hosted runners are free and jobs start normally.
+
+GREEN MATRIX #1 — commit 3661d0a, run 31369936191 [pull_request]: SUCCESS
+    Web / JS checks   success    52s
+    Android (APK)     success    19m20s
+    iOS Simulator     success    27m54s
+  iOS job step outcomes (proving genuine RUNTIME, not just compilation):
+    7.  Boot an available iPhone simulator ............... success
+    8.  Discover workspace/scheme and build ............. success
+    9.  Find built .app bundle .......................... success
+    10. Install, launch, and verify the process is alive . success
+    12. Upload logs, screenshot, and zipped app bundle ... success
+  artifacts retained: lorewish-ios-simulator (27,903,601 bytes),
+                      lorewish-android-preview (48,311,003 bytes)
+
+GREEN MATRIX #2 — FINAL IMPLEMENTATION_HEAD ec45f66,
+                  run 31372647888 [pull_request]: SUCCESS
+    Web / JS checks   success    59s      09:01:23Z -> 09:02:22Z
+    Android (APK)     success    19m33s   09:01:30Z -> 09:21:03Z
+    iOS Simulator     success    23m49s   09:01:23Z -> 09:25:12Z
+  No push run exists for ec45f66 — documentation-only, skipped by paths-ignore.
+
+ALL FIVE REQUIRED PROPERTIES HOLD:
+  1. public standard-runner jobs actually START despite the private quota being
+     exhausted — the same workflow that could not begin a single step at 08:00Z
+     ran the full matrix at 08:24Z.                                     PASS
+  2. duplicate push/PR events do NOT produce two completed native matrices —
+     observed three times, above.                                       PASS
+  3. Web passes.                                                        PASS
+  4. Android build passes.                                              PASS
+  5. iOS Simulator build/install/launch passes.                         PASS
+
+CROSS-CHECK: Android took 19m20s / 19m33s on the public runs versus 44m40s
+under the duplicate-run contention — a 2.3x difference on the same workflow.
+That is independent confirmation of the contention diagnosis in Part 2.
+
+===============================================================================
+COMPLETE RUN INVENTORY FOR feature/lw-m1-foundation-closeout
+===============================================================================
+  07:12:42Z  push          31364937721  e4749e6  -> cancelled (Android timeout)
+  07:13:12Z  pull_request  31364972116  e4749e6  -> cancelled (iOS timeout)
+  08:00:26Z  push          31368186633  6820de9  -> cancelled (concurrency)
+  08:00:30Z  pull_request  31368191079  6820de9  -> failure   (quota exhausted)
+  08:24:32Z  push          31369932367  3661d0a  -> cancelled (concurrency)
+  08:24:35Z  pull_request  31369936191  3661d0a  -> SUCCESS   <== green matrix 1
+  08:59:42Z  pull_request  31372540845  e689178  -> cancelled (concurrency)
+  09:01:01Z  pull_request  31372647888  ec45f66  -> SUCCESS   <== green matrix 2
+  (no push run exists for e689178 or ec45f66 — paths-ignore skipped them)
+
+===============================================================================
+OPEN RECOMMENDATION — NOT APPLIED, DELIBERATELY
+===============================================================================
+iOS ran 27m54s and 23m49s against timeout-minutes: 30. The 27m54s run left only
+~2 minutes of headroom, and a 30-minute cap already caused one spurious failure
+under contention. Raising the iOS cap was kept OUT of the bounded corrections
+this task was scoped to, so it is recorded here as a recommendation for the
+owner rather than silently bundled in. Android is comfortable: 19m33s vs 45m.

@@ -3,11 +3,19 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { assembleCharacterChatContext, CHAT_HISTORY_LIMIT, validateCharacterChatResult } from "./character-chat.ts";
 import { ProviderOutputError, ProviderTransportError, type CharacterChatProvider, type ChatMessageContext } from "./types.ts";
 import { SupabaseTurnRepository } from "./supabase-repository.ts";
+import { BetaCapacityReachedError } from "./provider-budget.ts";
 
 export class ChatGenerationError extends Error {
   constructor(readonly errorClass: "provider_error" | "validation_error" | "transport_error") {
     super(errorClass);
     this.name = "ChatGenerationError";
+  }
+}
+
+export class ChatAllowanceExhaustedError extends Error {
+  constructor(readonly resetAt: string) {
+    super("CHAT_ALLOWANCE_EXHAUSTED");
+    this.name = "ChatAllowanceExhaustedError";
   }
 }
 
@@ -83,13 +91,20 @@ export class SupabaseCharacterChatRepository {
 
   async send(args: { threadId: string; messageId: string; content: string; provider: CharacterChatProvider }) {
     const ownerUserId = await this.ownerUserId();
-    const { data: playerMessage, error: startError } = await this.serviceClient.rpc("lw_start_chat_generation", {
+    const { data: start, error: startError } = await this.serviceClient.rpc("lw_start_chat_generation", {
       p_owner_user_id: ownerUserId,
       p_thread_id: args.threadId,
       p_message_id: args.messageId,
       p_content: args.content,
     });
-    if (startError || !playerMessage) throw new Error(startError?.message ?? "chat_start_failed");
+    if (startError || !start) throw new Error(startError?.message ?? "chat_start_failed");
+    if (start.status === "CHAT_ALLOWANCE_EXHAUSTED") {
+      throw new ChatAllowanceExhaustedError(start.reset_at as string);
+    }
+    if (start.status === "completed" || start.status === "in_flight") {
+      return start;
+    }
+    const playerMessage = start.player_message;
 
     const threadState = await this.loadThread(args.threadId);
     const recentChat: ChatMessageContext[] = threadState.messages
@@ -108,8 +123,16 @@ export class SupabaseCharacterChatRepository {
     });
 
     try {
-      const call = await args.provider.generateChat(context);
-      const validated = validateCharacterChatResult(call);
+      let call = await args.provider.generateChat(context);
+      let validated = validateCharacterChatResult(call, context);
+      if (!validated.ok) {
+        const repairContext = {
+          ...context,
+          repairReason: "the reply was unsafe, malformed, or changed configured Vietnamese address terms",
+        };
+        call = await args.provider.generateChat(repairContext);
+        validated = validateCharacterChatResult(call, repairContext);
+      }
       if (!validated.ok) {
         await this.fail(ownerUserId, args.messageId, validated.errorClass, validated.metadata);
         throw new ChatGenerationError("validation_error");
@@ -131,6 +154,10 @@ export class SupabaseCharacterChatRepository {
       return { player_message: playerMessage, character_message: data };
     } catch (error) {
       if (error instanceof ChatGenerationError) throw error;
+      if (error instanceof BetaCapacityReachedError) {
+        await this.fail(ownerUserId, args.messageId, "capacity_reached");
+        throw error;
+      }
       const metadata = error instanceof ProviderOutputError ? error.metadata : undefined;
       const errorClass = error instanceof ProviderOutputError
         ? "validation_error"
@@ -142,7 +169,7 @@ export class SupabaseCharacterChatRepository {
     }
   }
 
-  private async fail(ownerUserId: string, messageId: string, errorClass: string, metadata?: {
+  private async fail(ownerUserId: string, messageId: string, errorClass: "provider_error" | "validation_error" | "transport_error" | "capacity_reached", metadata?: {
     provider: string; model: string; inputTokens: number; outputTokens: number; costMicros: number; latencyMs: number;
   }) {
     await this.serviceClient.rpc("lw_fail_chat_generation", {

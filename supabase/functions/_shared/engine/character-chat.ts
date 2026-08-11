@@ -1,4 +1,5 @@
 import { moderateOutputText } from "./moderation.ts";
+import { characterReplyHasAddressTermDrift } from "./address-terms.ts";
 import {
   CharacterChatResultSchema,
   type CharacterChatContext,
@@ -39,12 +40,18 @@ export function assembleCharacterChatContext(args: {
   };
 }
 
-export function validateCharacterChatResult(call: ProviderCallResult) {
+export function validateCharacterChatResult(call: ProviderCallResult, context?: CharacterChatContext) {
   const parsed = CharacterChatResultSchema.safeParse(call.result);
   if (!parsed.success) {
     return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
   }
   if (moderateOutputText(parsed.data.reply).blocked) {
+    return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
+  }
+  if (
+    context?.contentLanguage === "vi" &&
+    characterReplyHasAddressTermDrift(parsed.data.reply, context.character)
+  ) {
     return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
   }
   return { ok: true as const, result: parsed.data, metadata: call.metadata };

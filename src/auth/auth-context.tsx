@@ -2,8 +2,9 @@ import type { Session, User } from "@supabase/supabase-js";
 import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
 
 import { getSupabaseClient } from "@/lib/supabase";
+import { ensureGuestSession } from "@/auth/guest-session";
 
-export type AuthStatus = "loading" | "signed_out" | "signed_in";
+export type AuthStatus = "loading" | "signed_out" | "guest_creating" | "signed_in" | "error";
 
 /**
  * Product-facing error categories, mapped from raw Supabase Auth errors so
@@ -54,6 +55,7 @@ type AuthContextValue = {
   signUp: (email: string, password: string) => Promise<AuthActionResult>;
   signIn: (email: string, password: string) => Promise<AuthActionResult>;
   signOut: () => Promise<AuthActionResult>;
+  ensureProductSession: (captchaToken?: string) => Promise<Session>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -88,6 +90,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
       status,
       session,
       user: session?.user ?? null,
+
+      async ensureProductSession(captchaToken) {
+        if (session) return session;
+        setStatus("guest_creating");
+        try {
+          const nextSession = await ensureGuestSession(getSupabaseClient(), captchaToken);
+          setSession(nextSession);
+          setStatus("signed_in");
+          return nextSession;
+        } catch (error) {
+          setStatus("error");
+          throw error;
+        }
+      },
 
       async signUp(email, password) {
         const { data, error } = await getSupabaseClient().auth.signUp({ email, password });

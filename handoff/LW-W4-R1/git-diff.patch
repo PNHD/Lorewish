@@ -1,0 +1,1556 @@
+diff --git a/src/auth/auth-context.tsx b/src/auth/auth-context.tsx
+index 0746f12..5eb5d7c 100644
+--- a/src/auth/auth-context.tsx
++++ b/src/auth/auth-context.tsx
+@@ -2,8 +2,9 @@ import type { Session, User } from "@supabase/supabase-js";
+ import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
+ 
+ import { getSupabaseClient } from "@/lib/supabase";
++import { ensureGuestSession } from "@/auth/guest-session";
+ 
+-export type AuthStatus = "loading" | "signed_out" | "signed_in";
++export type AuthStatus = "loading" | "signed_out" | "guest_creating" | "signed_in" | "error";
+ 
+ /**
+  * Product-facing error categories, mapped from raw Supabase Auth errors so
+@@ -54,6 +55,7 @@ type AuthContextValue = {
+   signUp: (email: string, password: string) => Promise<AuthActionResult>;
+   signIn: (email: string, password: string) => Promise<AuthActionResult>;
+   signOut: () => Promise<AuthActionResult>;
++  ensureProductSession: (captchaToken?: string) => Promise<Session>;
+ };
+ 
+ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+@@ -89,6 +91,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
+       session,
+       user: session?.user ?? null,
+ 
++      async ensureProductSession(captchaToken) {
++        if (session) return session;
++        setStatus("guest_creating");
++        try {
++          const nextSession = await ensureGuestSession(getSupabaseClient(), captchaToken);
++          setSession(nextSession);
++          setStatus("signed_in");
++          return nextSession;
++        } catch (error) {
++          setStatus("error");
++          throw error;
++        }
++      },
++
+       async signUp(email, password) {
+         const { data, error } = await getSupabaseClient().auth.signUp({ email, password });
+         if (error) return { kind: "error", code: toAuthErrorCode(error) };
+diff --git a/src/components/composer.tsx b/src/components/composer.tsx
+index f18a93b..bf563bd 100644
+--- a/src/components/composer.tsx
++++ b/src/components/composer.tsx
+@@ -66,6 +66,7 @@ export function Composer({ value, onChangeText, onSend, placeholder, sendLabel,
+     >
+       <TextInput
+         ref={inputRef}
++        nativeID="lorewish-composer"
+         value={value}
+         onChangeText={onChangeText}
+         placeholder={placeholder}
+diff --git a/src/components/composer.web.tsx b/src/components/composer.web.tsx
+index 5ccc919..028b051 100644
+--- a/src/components/composer.web.tsx
++++ b/src/components/composer.web.tsx
+@@ -88,6 +88,7 @@ export function Composer({ value, onChangeText, onSend, placeholder, sendLabel,
+     >
+       <TextInput
+         ref={inputRef}
++        nativeID="lorewish-composer"
+         value={value}
+         onChangeText={onChangeText}
+         placeholder={placeholder}
+diff --git a/src/components/reading/story-scene-section.tsx b/src/components/reading/story-scene-section.tsx
+index 765d7c3..c0e2136 100644
+--- a/src/components/reading/story-scene-section.tsx
++++ b/src/components/reading/story-scene-section.tsx
+@@ -8,13 +8,13 @@ import type { SceneDto } from "@/lib/story-engine";
+ import { readingWidth, spacing } from "@/theme/tokens";
+ import { useAppTheme } from "@/theme/use-app-theme";
+ 
+-export function StorySceneSection({ scene, whatChanged, isFirst }: { scene: SceneDto; whatChanged: string; isFirst: boolean }) {
++export function StorySceneSection({ scene, whatChanged, sceneLabel, isFirst, sceneNumber }: { scene: SceneDto; whatChanged: string; sceneLabel: string; isFirst: boolean; sceneNumber?: number }) {
+   const { colors } = useAppTheme();
+   return (
+     <View style={{ gap: spacing.lg, paddingTop: isFirst ? 0 : spacing.xxxl, borderTopWidth: isFirst ? 0 : 1, borderTopColor: colors.border }}>
+       {!isFirst && (
+         <View style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center" }}>
+-          <ThemedText variant="caption" color="secondary">{`Scene ${scene.seqInBranch + 1}`}</ThemedText>
++          <ThemedText variant="caption" color="secondary">{`${sceneLabel} ${sceneNumber ?? scene.seqInBranch + 1}`}</ThemedText>
+         </View>
+       )}
+       <NarrativeBlock paragraphs={scene.narrative.split(/\n\n+/)} />
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index 5f20aa4..05dc88b 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -10,10 +10,10 @@
+   "home": {
+     "heading": "Enter a world that remembers you.",
+     "subheading": "Lorewish is a solo interactive roleplay app — make choices, meet characters who remember you, and watch the story change because of what you did.",
+-    "previewCta": "Try the reading preview",
+-    "previewCaption": "A short, offline sample of how Lorewish plays. No account needed.",
+-    "newStoryCta": "Set up a new story",
+-    "newStoryCaption": "Quick Start and Advanced Setup are public to explore. Sign-in is required only when starting real generation.",
++    "previewCta": "Open the offline preview",
++    "previewCaption": "A deterministic sample kept for demos and QA.",
++    "newStoryCta": "START A STORY",
++    "newStoryCaption": "Choose Quick Start or Advanced Setup. Your private Guest session is created only when you begin.",
+     "foundationNote": "Foundation build — Android, iOS and Web from one codebase.",
+     "accountLink": "Account"
+   },
+@@ -23,6 +23,7 @@
+     "fixtureNotice": "Sample scene, not connected to AI generation.",
+     "youLabel": "You",
+     "whatChanged": "What changed",
++    "sceneLabel": "Scene",
+     "choicesHeading": "What do you do?",
+     "composerPlaceholder": "Or write your own action…",
+     "composerSend": "Send",
+@@ -57,15 +58,18 @@
+     "errorWeakPassword": "Please choose a longer password (at least 6 characters).",
+     "errorInvalidEmail": "That email address doesn't look right. Please check it and try again.",
+     "errorUnknown": "Something went wrong. Please try again.",
+-    "guestNotice": "You don't need an account to try the reading preview — it stays open to everyone."
++    "guestNotice": "You can play as a Guest without creating an account.",
++    "guestSession": "Guest session",
++    "guestPersistence": "Your progress currently lives with this browser's Guest session. Keep this browser data to return to it."
+   },
+   "setup": {
+     "subheading": "Choose a fast starter, or shape the world and its first important character.",
+     "quickTab": "Quick Start",
+     "advancedTab": "Advanced Setup",
+     "starterLabel": "Starter",
+-    "signInButton": "Sign in to start",
+-    "signInToStart": "Your setup is saved in this tab. Sign in to start the real story.",
++    "signInButton": "Begin Story",
++    "signInToStart": "A private Guest session will be created when you begin.",
++    "guestPersistenceNote": "Your story will stay with this browser's Guest session.",
+     "storySection": "Story",
+     "premise": "Premise",
+     "premisePlaceholder": "What changes when the player arrives?",
+@@ -111,7 +115,9 @@
+     "genreLabel": "Genre",
+     "languageLabel": "Story language",
+     "startButton": "Start",
++    "creatingStory": "Creating your story…",
+     "generatingScene": "Generating the next scene…",
++    "sceneLabel": "Scene",
+     "youLabel": "You",
+     "whatChanged": "What changed",
+     "choicesHeading": "What do you do?",
+@@ -119,6 +125,7 @@
+     "composerSend": "Send",
+     "continueLabel": "Continue",
+     "replayFromHereLabel": "Replay from here",
++    "replayingLabel": "Opening alternate path…",
+     "checkpointBadge": "Checkpoint reached",
+     "endingBadge": "The story ends here",
+     "endingReplayLabel": "Replay from a checkpoint",
+@@ -128,7 +135,13 @@
+     "retryButton": "Try again",
+     "editActionButton": "Edit my action",
+     "allowanceExhaustedHeading": "You've used today's free generations",
+-    "allowanceExhaustedBody": "Your story stays here exactly as it is. Come back after the reset to continue.",
++    "allowanceExhaustedBody": "Your story stays here exactly as it is. Come back after the UTC reset to continue.",
++    "betaCapacityHeading": "The beta is at capacity for today",
++    "betaCapacityBody": "Your story is safe. Please come back after the next UTC reset.",
++    "networkErrorHeading": "You're offline",
++    "networkErrorBody": "Reconnect and try again. Your last scene and draft are still here.",
++    "safetyRejectedHeading": "That action can't be used",
++    "safetyRejectedBody": "Edit your action and try a different direction. Your story has not changed.",
+     "alphaAccessRequired": "Real AI play is currently limited to approved alpha testers.",
+     "setupLockedNotice": "Story setup is locked after the first scene. Start a new story to change canonical identity or setting.",
+     "backToHome": "Back to Home",
+@@ -159,6 +172,9 @@
+     "validationError": "That reply could not be safely used. Edit your message and try a different direction.",
+     "retry": "Try the reply again",
+     "rememberInStory": "Remember in story",
+-    "remembered": "Remembered in story"
++    "remembered": "Remembered in story",
++    "allowanceExhausted": "You've used today's Character Chat replies. This conversation stays here; try again after the UTC reset.",
++    "betaCapacity": "The beta is at capacity for today. Your conversation is safe; please return after the UTC reset.",
++    "networkError": "You're offline. Reconnect and try again; your message is still here."
+   }
+ }
+diff --git a/src/i18n/locales/vi.json b/src/i18n/locales/vi.json
+index d7ed216..6239938 100644
+--- a/src/i18n/locales/vi.json
++++ b/src/i18n/locales/vi.json
+@@ -10,10 +10,10 @@
+   "home": {
+     "heading": "Bước vào một thế giới nhớ bạn.",
+     "subheading": "Lorewish là ứng dụng nhập vai tương tác dành cho một người chơi — bạn đưa ra lựa chọn, gặp những nhân vật nhớ rõ về bạn, và chứng kiến câu chuyện đổi thay theo chính những gì bạn đã làm.",
+-    "previewCta": "Thử bản xem trước",
+-    "previewCaption": "Một đoạn trích ngắn, chạy ngoại tuyến, cho thấy trải nghiệm đọc trong Lorewish. Không cần tài khoản.",
+-    "newStoryCta": "Thiết lập câu chuyện mới",
+-    "newStoryCaption": "Bạn có thể xem Bắt đầu nhanh và Thiết lập nâng cao mà chưa cần tài khoản. Chỉ cần đăng nhập khi bắt đầu tạo truyện thật.",
++    "previewCta": "Mở bản xem trước ngoại tuyến",
++    "previewCaption": "Một mẫu cố định được giữ lại cho demo và QA.",
++    "newStoryCta": "BẮT ĐẦU CÂU CHUYỆN",
++    "newStoryCaption": "Chọn Bắt đầu nhanh hoặc Thiết lập nâng cao. Phiên Khách riêng tư chỉ được tạo khi bạn bắt đầu.",
+     "foundationNote": "Bản dựng nền tảng — Android, iOS và Web dùng chung một mã nguồn.",
+     "accountLink": "Tài khoản"
+   },
+@@ -23,6 +23,7 @@
+     "fixtureNotice": "Cảnh mẫu, chưa kết nối với AI.",
+     "youLabel": "Bạn",
+     "whatChanged": "Điều vừa thay đổi",
++    "sceneLabel": "Cảnh",
+     "choicesHeading": "Bạn sẽ làm gì?",
+     "composerPlaceholder": "Hoặc tự viết hành động của riêng bạn…",
+     "composerSend": "Gửi",
+@@ -57,15 +58,18 @@
+     "errorWeakPassword": "Vui lòng chọn mật khẩu dài hơn (ít nhất 6 ký tự).",
+     "errorInvalidEmail": "Địa chỉ email đó có vẻ không hợp lệ. Vui lòng kiểm tra lại và thử lại.",
+     "errorUnknown": "Đã có lỗi xảy ra. Vui lòng thử lại.",
+-    "guestNotice": "Bạn không cần tài khoản để thử bản xem trước — mục này luôn mở cho tất cả mọi người."
++    "guestNotice": "Bạn có thể chơi với tư cách Khách mà không cần tạo tài khoản.",
++    "guestSession": "Phiên Khách",
++    "guestPersistence": "Tiến trình hiện được lưu trong phiên Khách của trình duyệt này. Hãy giữ dữ liệu trình duyệt để quay lại."
+   },
+   "setup": {
+     "subheading": "Chọn một mở đầu nhanh, hoặc tự định hình thế giới và nhân vật quan trọng đầu tiên.",
+     "quickTab": "Bắt đầu nhanh",
+     "advancedTab": "Thiết lập nâng cao",
+     "starterLabel": "Mở đầu gợi ý",
+-    "signInButton": "Đăng nhập để bắt đầu",
+-    "signInToStart": "Thiết lập của bạn vẫn được giữ trong thẻ này. Hãy đăng nhập để bắt đầu câu chuyện thật.",
++    "signInButton": "Bắt đầu câu chuyện",
++    "signInToStart": "Một phiên Khách riêng tư sẽ được tạo khi bạn bắt đầu.",
++    "guestPersistenceNote": "Câu chuyện của bạn sẽ được lưu trong phiên Khách của trình duyệt này.",
+     "storySection": "Câu chuyện",
+     "premise": "Tiền đề",
+     "premisePlaceholder": "Điều gì thay đổi khi người chơi xuất hiện?",
+@@ -111,7 +115,9 @@
+     "genreLabel": "Thể loại",
+     "languageLabel": "Ngôn ngữ câu chuyện",
+     "startButton": "Bắt đầu",
++    "creatingStory": "Đang tạo câu chuyện của bạn…",
+     "generatingScene": "Đang tạo cảnh tiếp theo…",
++    "sceneLabel": "Cảnh",
+     "youLabel": "Bạn",
+     "whatChanged": "Điều vừa thay đổi",
+     "choicesHeading": "Bạn sẽ làm gì?",
+@@ -119,6 +125,7 @@
+     "composerSend": "Gửi",
+     "continueLabel": "Tiếp tục",
+     "replayFromHereLabel": "Chơi lại từ đây",
++    "replayingLabel": "Đang mở nhánh khác…",
+     "checkpointBadge": "Đã đến điểm lưu",
+     "endingBadge": "Câu chuyện kết thúc tại đây",
+     "endingReplayLabel": "Chơi lại từ một điểm lưu",
+@@ -128,7 +135,13 @@
+     "retryButton": "Thử lại",
+     "editActionButton": "Sửa hành động của tôi",
+     "allowanceExhaustedHeading": "Bạn đã dùng hết lượt tạo miễn phí hôm nay",
+-    "allowanceExhaustedBody": "Câu chuyện của bạn vẫn được giữ nguyên ở đây. Hãy quay lại sau khi lượt dùng được làm mới để tiếp tục.",
++    "allowanceExhaustedBody": "Câu chuyện của bạn vẫn được giữ nguyên ở đây. Hãy quay lại sau lần làm mới UTC để tiếp tục.",
++    "betaCapacityHeading": "Bản beta đã hết công suất hôm nay",
++    "betaCapacityBody": "Câu chuyện của bạn vẫn an toàn. Hãy quay lại sau lần làm mới UTC tiếp theo.",
++    "networkErrorHeading": "Bạn đang ngoại tuyến",
++    "networkErrorBody": "Hãy kết nối lại và thử tiếp. Cảnh gần nhất và bản nháp vẫn còn nguyên.",
++    "safetyRejectedHeading": "Không thể sử dụng hành động này",
++    "safetyRejectedBody": "Hãy sửa hành động và thử một hướng khác. Câu chuyện của bạn chưa thay đổi.",
+     "alphaAccessRequired": "Chế độ chơi AI thật hiện chỉ dành cho người thử nghiệm alpha đã được phê duyệt.",
+     "setupLockedNotice": "Thiết lập câu chuyện được khóa sau cảnh đầu tiên. Hãy bắt đầu câu chuyện mới để đổi danh tính hoặc bối cảnh chính thức.",
+     "backToHome": "Về trang chủ",
+@@ -159,6 +172,9 @@
+     "validationError": "Hồi đáp chưa thể được sử dụng an toàn. Hãy sửa tin nhắn và thử một hướng khác.",
+     "retry": "Thử nhận hồi đáp lại",
+     "rememberInStory": "Lưu vào chính truyện",
+-    "remembered": "Đã lưu vào chính truyện"
++    "remembered": "Đã lưu vào chính truyện",
++    "allowanceExhausted": "Bạn đã dùng hết lượt hồi đáp Nhân vật hôm nay. Cuộc trò chuyện vẫn được lưu; hãy thử lại sau lần làm mới UTC.",
++    "betaCapacity": "Bản beta đã hết công suất hôm nay. Cuộc trò chuyện vẫn an toàn; hãy quay lại sau lần làm mới UTC.",
++    "networkError": "Bạn đang ngoại tuyến. Hãy kết nối lại và thử tiếp; tin nhắn vẫn còn ở đây."
+   }
+ }
+diff --git a/src/lib/character-chat.ts b/src/lib/character-chat.ts
+index fd72f72..af81ba1 100644
+--- a/src/lib/character-chat.ts
++++ b/src/lib/character-chat.ts
+@@ -37,11 +37,16 @@ async function requireAccessToken() {
+ async function chatRequest(body: Record<string, unknown>) {
+   const base = process.env.EXPO_PUBLIC_SUPABASE_URL;
+   if (!base) throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
+-  const response = await fetch(`${base}/functions/v1/character-chat`, {
+-    method: "POST",
+-    headers: { "content-type": "application/json", authorization: `Bearer ${await requireAccessToken()}` },
+-    body: JSON.stringify(body),
+-  });
++  let response: Response;
++  try {
++    response = await fetch(`${base}/functions/v1/character-chat`, {
++      method: "POST",
++      headers: { "content-type": "application/json", authorization: `Bearer ${await requireAccessToken()}` },
++      body: JSON.stringify(body),
++    });
++  } catch {
++    throw new Error("network_error");
++  }
+   const result = (await response.json()) as Record<string, unknown>;
+   if (!response.ok) {
+     const error = new Error((result.error as string) ?? `character-chat failed with HTTP ${response.status}`);
+diff --git a/src/lib/story-engine.ts b/src/lib/story-engine.ts
+index adbcfbe..0e82b73 100644
+--- a/src/lib/story-engine.ts
++++ b/src/lib/story-engine.ts
+@@ -1,4 +1,7 @@
+ import { getSupabaseClient } from "@/lib/supabase";
++import { toCamelScene } from "./story-engine-response";
++
++export { toCamelScene } from "./story-engine-response";
+ 
+ /**
+  * Client-side wrapper around the M2 story engine's server boundary
+@@ -31,23 +34,9 @@ export type PlayState =
+   | { status: "CONTINUE_READY" | "EXPLICIT_CHECKPOINT" | "TERMINAL_ENDING"; scene: SceneDto; turnId: string }
+   | { status: "GENERATION_FAILED"; turnId: string; errorClass: string }
+   | { status: "ALLOWANCE_EXHAUSTED"; resetAt: string }
++  | { status: "BETA_CAPACITY_REACHED"; resetAt: string }
+   | { status: "in_flight"; turnId: string };
+ 
+-function toCamelScene(raw: Record<string, unknown> | null): SceneDto | null {
+-  if (!raw) return null;
+-  return {
+-    id: raw.id as string,
+-    runBranchId: raw.run_branch_id as string,
+-    seqInBranch: raw.seq_in_branch as number,
+-    boundaryKind: raw.boundary_kind as SceneDto["boundaryKind"],
+-    narrative: raw.narrative as string,
+-    dialogue: (raw.dialogue as SceneDto["dialogue"]) ?? [],
+-    stateChangeSummary: (raw.state_change_summary as string[]) ?? [],
+-    nextChoices: (raw.next_choices as SceneDto["nextChoices"]) ?? [],
+-    structuredOutcome: (raw.structured_outcome as Record<string, unknown>) ?? {},
+-  };
+-}
+-
+ async function functionsUrl(path: string): Promise<string> {
+   const base = process.env.EXPO_PUBLIC_SUPABASE_URL;
+   if (!base) throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
+@@ -96,18 +85,23 @@ export interface SubmitTurnArgs {
+ 
+ export async function submitTurn(args: SubmitTurnArgs): Promise<PlayState & { playerRunId?: string }> {
+   const token = await requireAccessToken();
+-  const response = await fetch(await functionsUrl("submit-turn"), {
+-    method: "POST",
+-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+-    body: JSON.stringify({
+-      turn_id: args.turnId,
+-      player_run_id: args.playerRunId,
+-      action_type: args.actionType,
+-      selected_choice_id: args.selectedChoiceId ?? null,
+-      raw_action: args.rawAction ?? null,
+-      story_setup: args.storySetup ?? null,
+-    }),
+-  });
++  let response: Response;
++  try {
++    response = await fetch(await functionsUrl("submit-turn"), {
++      method: "POST",
++      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
++      body: JSON.stringify({
++        turn_id: args.turnId,
++        player_run_id: args.playerRunId,
++        action_type: args.actionType,
++        selected_choice_id: args.selectedChoiceId ?? null,
++        raw_action: args.rawAction ?? null,
++        story_setup: args.storySetup ?? null,
++      }),
++    });
++  } catch {
++    throw new Error("network_error");
++  }
+ 
+   const json = (await response.json()) as Record<string, unknown>;
+   if (!response.ok) {
+@@ -115,14 +109,18 @@ export async function submitTurn(args: SubmitTurnArgs): Promise<PlayState & { pl
+   }
+ 
+   const status = json.status as string;
++  const turnId = (json.turnId ?? json.turn_id) as string;
+   if (status === "CONTINUE_READY" || status === "EXPLICIT_CHECKPOINT" || status === "TERMINAL_ENDING") {
+-    return { status, scene: toCamelScene(json.scene as Record<string, unknown>)!, turnId: json.turn_id as string };
++    return { status, scene: toCamelScene(json.scene as Record<string, unknown>)!, turnId };
+   }
+   if (status === "GENERATION_FAILED") {
+-    return { status, turnId: json.turn_id as string, errorClass: json.error_class as string };
++    return { status, turnId, errorClass: (json.errorClass ?? json.error_class) as string };
+   }
+   if (status === "ALLOWANCE_EXHAUSTED") {
+-    return { status, resetAt: json.reset_at as string };
++    return { status, resetAt: (json.resetAt ?? json.reset_at) as string };
++  }
++  if (status === "BETA_CAPACITY_REACHED") {
++    return { status, resetAt: (json.resetAt ?? json.reset_at) as string };
+   }
+   if (status === "committed") {
+     // Idempotent replay of an already-committed turn (precheck short-circuit).
+@@ -130,10 +128,10 @@ export async function submitTurn(args: SubmitTurnArgs): Promise<PlayState & { pl
+     return {
+       status: scene.boundaryKind === "ending" ? "TERMINAL_ENDING" : scene.boundaryKind === "checkpoint" ? "EXPLICIT_CHECKPOINT" : "CONTINUE_READY",
+       scene,
+-      turnId: json.turn_id as string,
++      turnId,
+     };
+   }
+-  return { status: "in_flight", turnId: json.turn_id as string };
++  return { status: "in_flight", turnId };
+ }
+ 
+ export async function replayFromScene(playerRunId: string, sourceSceneId: string): Promise<{ runBranchId: string; scene: SceneDto }> {
+diff --git a/src/screens/account/index.tsx b/src/screens/account/index.tsx
+index 1535600..2a410da 100644
+--- a/src/screens/account/index.tsx
++++ b/src/screens/account/index.tsx
+@@ -223,18 +223,19 @@ function SignedInView() {
+   return (
+     <View style={{ gap: spacing.lg, width: "100%", alignItems: "center" }}>
+       <ThemedText variant="body" style={{ textAlign: "center" }}>
+-        {t("account.signedInAs", { email: user?.email ?? "" })}
++        {user?.is_anonymous ? t("account.guestSession") : t("account.signedInAs", { email: user?.email ?? "" })}
+       </ThemedText>
++      {user?.is_anonymous && <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>{t("account.guestPersistence")}</ThemedText>}
+       {signOutFailed && (
+         <ThemedText variant="caption" color="danger">
+           {t("account.signOutError")}
+         </ThemedText>
+       )}
+-      <SubmitButton
++      {!user?.is_anonymous && <SubmitButton
+         label={signingOut ? t("account.loading") : t("account.signOut")}
+         onPress={handleSignOut}
+         disabled={signingOut}
+-      />
++      />}
+     </View>
+   );
+ }
+diff --git a/src/screens/home/index.tsx b/src/screens/home/index.tsx
+index 45a26bf..ac30c47 100644
+--- a/src/screens/home/index.tsx
++++ b/src/screens/home/index.tsx
+@@ -52,7 +52,7 @@ export function HomeScreen() {
+             {t("home.subheading")}
+           </ThemedText>
+ 
+-          <Link href="/preview" asChild>
++          <Link href="/play" asChild>
+             <Pressable
+               accessibilityRole="button"
+               style={({ pressed }) => ({
+@@ -64,15 +64,15 @@ export function HomeScreen() {
+               })}
+             >
+               <ThemedText variant="label" color="onAccent">
+-                {t("home.previewCta")}
++                {t("home.newStoryCta")}
+               </ThemedText>
+             </Pressable>
+           </Link>
+           <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>
+-            {t("home.previewCaption")}
++            {t("home.newStoryCaption")}
+           </ThemedText>
+ 
+-          <Link href="/play" asChild>
++          <Link href="/preview" asChild>
+             <Pressable
+               accessibilityRole="button"
+               style={({ pressed }) => ({
+@@ -85,11 +85,11 @@ export function HomeScreen() {
+                 opacity: pressed ? interactiveState.pressedOpacity : 1,
+               })}
+             >
+-              <ThemedText variant="label">{t("home.newStoryCta")}</ThemedText>
++              <ThemedText variant="label">{t("home.previewCta")}</ThemedText>
+             </Pressable>
+           </Link>
+           <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>
+-            {t("home.newStoryCaption")}
++            {t("home.previewCaption")}
+           </ThemedText>
+         </View>
+ 
+diff --git a/src/screens/play/character-chat.tsx b/src/screens/play/character-chat.tsx
+index 3249598..6812202 100644
+--- a/src/screens/play/character-chat.tsx
++++ b/src/screens/play/character-chat.tsx
+@@ -17,7 +17,7 @@ import {
+ import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
+ import { useAppTheme } from "@/theme/use-app-theme";
+ 
+-type SendError = "provider_error" | "transport_error" | "validation_error" | null;
++type SendError = "provider_error" | "transport_error" | "validation_error" | "chat_allowance_exhausted" | "beta_capacity_reached" | "network_error" | null;
+ 
+ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId: string; characterId: string }) {
+   const { status: authStatus } = useAuth();
+@@ -64,7 +64,12 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
+       await load();
+     } catch (sendFailure) {
+       const code = (sendFailure as Error).message as SendError;
+-      setSendError(code === "validation_error" || code === "transport_error" || code === "provider_error" ? code : "provider_error");
++      setSendError(
++        code === "validation_error" || code === "transport_error" || code === "provider_error"
++          || code === "chat_allowance_exhausted" || code === "beta_capacity_reached" || code === "network_error"
++          ? code
++          : "provider_error",
++      );
+       await load().catch(() => undefined);
+     } finally {
+       setSending(false);
+@@ -137,8 +142,14 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
+           {sending && <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}><ActivityIndicator /><ThemedText variant="caption" color="secondary">{t("chat.sending")}</ThemedText></View>}
+           {sendError && (
+             <View accessibilityLiveRegion="polite" style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.sm }}>
+-              <ThemedText variant="label" color="danger">{sendError === "validation_error" ? t("chat.validationError") : t("chat.providerError")}</ThemedText>
+-              {sendError !== "validation_error" && <Pressable accessibilityRole="button" onPress={() => void send()}><ThemedText variant="label">{t("chat.retry")}</ThemedText></Pressable>}
++              <ThemedText variant="label" color="danger">{
++                sendError === "validation_error" ? t("chat.validationError")
++                  : sendError === "chat_allowance_exhausted" ? t("chat.allowanceExhausted")
++                    : sendError === "beta_capacity_reached" ? t("chat.betaCapacity")
++                      : sendError === "network_error" ? t("chat.networkError")
++                        : t("chat.providerError")
++              }</ThemedText>
++              {sendError !== "validation_error" && sendError !== "chat_allowance_exhausted" && sendError !== "beta_capacity_reached" && <Pressable accessibilityRole="button" onPress={() => void send()}><ThemedText variant="label">{t("chat.retry")}</ThemedText></Pressable>}
+             </View>
+           )}
+         </ScrollView>
+diff --git a/src/screens/play/new-story.tsx b/src/screens/play/new-story.tsx
+index e6bba5c..10bce82 100644
+--- a/src/screens/play/new-story.tsx
++++ b/src/screens/play/new-story.tsx
+@@ -48,7 +48,7 @@ function ChoicePill({ selected, label, onPress }: { selected: boolean; label: st
+ export function NewStoryScreen() {
+   const { t, locale } = useTranslation();
+   const { colors } = useAppTheme();
+-  const { status } = useAuth();
++  const { status, ensureProductSession } = useAuth();
+   const { draft, setDraft, clearDraft } = useStorySetupDraft(locale);
+   const [submitting, setSubmitting] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+@@ -63,15 +63,10 @@ export function NewStoryScreen() {
+     const nextErrors = validateDraft(draft);
+     setFieldErrors(nextErrors);
+     if (Object.keys(nextErrors).length > 0 || submitting) return;
+-    if (status !== "signed_in") {
+-      setError(t("setup.signInToStart"));
+-      router.push("/account");
+-      return;
+-    }
+-
+     setSubmitting(true);
+     setError(null);
+     try {
++      await ensureProductSession();
+       const result = await submitTurn({
+         turnId: newTurnId(),
+         playerRunId: null,
+@@ -84,11 +79,14 @@ export function NewStoryScreen() {
+         router.replace({ pathname: "/play/[runId]", params: { runId: playerRunId } });
+       } else if (result.status === "ALLOWANCE_EXHAUSTED") {
+         setError(t("play.allowanceExhaustedHeading"));
++      } else if (result.status === "BETA_CAPACITY_REACHED") {
++        setError(t("play.betaCapacityHeading"));
+       } else {
+         setError(t("play.failedHeading"));
+       }
+     } catch (caught) {
+-      setError((caught as Error).message === "alpha_access_required" ? t("play.alphaAccessRequired") : t("play.failedHeading"));
++      const code = (caught as Error).message;
++      setError(code === "beta_capacity_reached" ? t("play.betaCapacityHeading") : t("play.failedHeading"));
+     } finally {
+       setSubmitting(false);
+     }
+@@ -166,11 +164,12 @@ export function NewStoryScreen() {
+             onPress={handleStart}
+             style={{ backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center", opacity: submitting ? 0.5 : 1 }}
+           >
+-            <ThemedText variant="label" color="onAccent">{submitting ? t("play.generatingScene") : status === "signed_in" ? t("play.startButton") : t("setup.signInButton")}</ThemedText>
++            <ThemedText variant="label" color="onAccent">{submitting || status === "guest_creating" ? t("play.creatingStory") : t("play.startButton")}</ThemedText>
+           </Pressable>
+ 
+           {submitting ? <ActivityIndicator /> : null}
+           {error ? <ThemedText variant="caption" color="danger" accessibilityLiveRegion="polite">{error}</ThemedText> : null}
++          <ThemedText variant="caption" color="secondary">{t("setup.guestPersistenceNote")}</ThemedText>
+         </View>
+       </ScrollView>
+     </SafeAreaView>
+diff --git a/src/screens/play/run.tsx b/src/screens/play/run.tsx
+index 7e98b1c..a8ef327 100644
+--- a/src/screens/play/run.tsx
++++ b/src/screens/play/run.tsx
+@@ -23,6 +23,7 @@ type ScreenState =
+   | { kind: "generating"; scene: SceneDto; playerActionPreview: string | null }
+   | { kind: "failed"; scene: SceneDto; errorClass: string }
+   | { kind: "allowance_exhausted"; scene: SceneDto; resetAt: string }
++  | { kind: "beta_capacity"; scene: SceneDto; resetAt: string }
+   | { kind: "error"; message: string };
+ 
+ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+@@ -34,6 +35,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+   const [sceneHistory, setSceneHistory] = useState<SceneDto[]>([]);
+   const scrollRef = useRef<ScrollView>(null);
+   const [composerText, setComposerText] = useState("");
++  const [replayingSceneId, setReplayingSceneId] = useState<string | null>(null);
+   const [lastPlayerAction, setLastPlayerAction] = useState<string | null>(null);
+   const [lastTurnArgs, setLastTurnArgs] = useState<{ actionType: "choice" | "custom_action"; selectedChoiceId?: string; rawAction?: string } | null>(null);
+   const [storyHeader, setStoryHeader] = useState<{
+@@ -114,6 +116,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+       } else if (result.status === "ALLOWANCE_EXHAUSTED") {
+         // Composer text is preserved (G4/G5) — never cleared on a non-committed turn.
+         setState({ kind: "allowance_exhausted", scene: currentScene, resetAt: result.resetAt });
++      } else if (result.status === "BETA_CAPACITY_REACHED") {
++        setState({ kind: "beta_capacity", scene: currentScene, resetAt: result.resetAt });
+       } else if (result.status === "GENERATION_FAILED") {
+         setState({ kind: "failed", scene: currentScene, errorClass: result.errorClass });
+       } else {
+@@ -143,13 +147,16 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+     runTurn({ ...lastTurnArgs, preview: lastPlayerAction ?? "" });
+   };
+ 
+-  const handleReplayFromHere = async () => {
+-    if (!currentScene) return;
++  const handleReplayFromHere = async (sourceSceneId = currentScene?.id) => {
++    if (!sourceSceneId || replayingSceneId) return;
++    setReplayingSceneId(sourceSceneId);
+     try {
+-      await replayFromScene(playerRunId, currentScene.id);
++      await replayFromScene(playerRunId, sourceSceneId);
+       await load();
+     } catch (err) {
+       setState({ kind: "error", message: (err as Error).message });
++    } finally {
++      setReplayingSceneId(null);
+     }
+   };
+ 
+@@ -183,7 +190,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+ 
+   const scene = state.scene;
+   const isGenerating = state.kind === "generating";
+-  const composerEnabled = !isGenerating && state.kind !== "allowance_exhausted" && scene.boundaryKind !== "ending" && state.kind !== "failed";
++  const composerEnabled = !isGenerating && state.kind !== "allowance_exhausted" && state.kind !== "beta_capacity" && scene.boundaryKind !== "ending" && state.kind !== "failed";
+   const displayedPlayerAction = isGenerating ? state.playerActionPreview : lastPlayerAction;
+ 
+   const badgeLabel =
+@@ -245,7 +252,18 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+         {badgeLabel && <PlayStateBadge label={badgeLabel} />}
+ 
+         {(sceneHistory.length > 0 ? sceneHistory : [scene]).map((historyScene, index) => (
+-          <StorySceneSection key={historyScene.id} scene={historyScene} whatChanged={t("play.whatChanged")} isFirst={index === 0} />
++          <View key={historyScene.id} style={{ gap: spacing.md }}>
++            <StorySceneSection scene={historyScene} whatChanged={t("play.whatChanged")} sceneLabel={t("play.sceneLabel")} isFirst={index === 0} sceneNumber={index + 1} />
++            {state.kind === "ready" && historyScene.id !== scene.id && (
++              <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%" }}>
++                <ActionButton
++                  label={replayingSceneId === historyScene.id ? t("play.replayingLabel") : t("play.replayFromHereLabel")}
++                  variant="secondary"
++                  onPress={() => void handleReplayFromHere(historyScene.id)}
++                />
++              </View>
++            )}
++          </View>
+         ))}
+ 
+         {isGenerating && (
+@@ -259,11 +277,11 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+ 
+         {state.kind === "failed" && (
+           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
+-            <ThemedText variant="label">{t("play.failedHeading")}</ThemedText>
++            <ThemedText variant="label">{t(state.errorClass === "input_rejected" ? "play.safetyRejectedHeading" : state.errorClass === "network_error" ? "play.networkErrorHeading" : "play.failedHeading")}</ThemedText>
+             <ThemedText variant="caption" color="secondary">
+-              {t("play.failedBody")}
++              {t(state.errorClass === "input_rejected" ? "play.safetyRejectedBody" : state.errorClass === "network_error" ? "play.networkErrorBody" : "play.failedBody")}
+             </ThemedText>
+-            <ActionButton label={t("play.retryButton")} onPress={handleRetry} />
++            {state.errorClass !== "input_rejected" && <ActionButton label={t("play.retryButton")} onPress={handleRetry} />}
+           </View>
+         )}
+ 
+@@ -276,19 +294,26 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+           </View>
+         )}
+ 
++        {state.kind === "beta_capacity" && (
++          <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
++            <ThemedText variant="label">{t("play.betaCapacityHeading")}</ThemedText>
++            <ThemedText variant="caption" color="secondary">{t("play.betaCapacityBody")}</ThemedText>
++          </View>
++        )}
++
+         {state.kind === "ready" && state.playState !== "TERMINAL_ENDING" && scene.nextChoices.length > 0 && (
+           <ChoiceList heading={t("play.choicesHeading")} choices={scene.nextChoices} onSelect={handleChoice} disabled={isGenerating} />
+         )}
+ 
+         {state.kind === "ready" && state.playState === "EXPLICIT_CHECKPOINT" && (
+           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%" }}>
+-            <ActionButton label={t("play.replayFromHereLabel")} variant="secondary" onPress={handleReplayFromHere} />
++            <ActionButton label={t("play.replayFromHereLabel")} variant="secondary" onPress={() => void handleReplayFromHere()} />
+           </View>
+         )}
+ 
+         {state.kind === "ready" && state.playState === "TERMINAL_ENDING" && (
+           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
+-            <ActionButton label={t("play.endingReplayLabel")} onPress={handleReplayFromHere} />
++            <ActionButton label={t("play.endingReplayLabel")} onPress={() => void handleReplayFromHere()} />
+             <ActionButton variant="secondary" label={t("play.endingNewStoryLabel")} onPress={() => router.push("/play")} />
+           </View>
+         )}
+diff --git a/src/types/database.types.ts b/src/types/database.types.ts
+index aaab8e4..0247534 100644
+--- a/src/types/database.types.ts
++++ b/src/types/database.types.ts
+@@ -387,18 +387,21 @@ export type Database = {
+       }
+       usage_counters: {
+         Row: {
++          chat_generation_count: number
+           generation_count: number
+           updated_at: string
+           usage_date: string
+           user_id: string
+         }
+         Insert: {
++          chat_generation_count?: number
+           generation_count?: number
+           updated_at?: string
+           usage_date?: string
+           user_id: string
+         }
+         Update: {
++          chat_generation_count?: number
+           generation_count?: number
+           updated_at?: string
+           usage_date?: string
+diff --git a/supabase/config.toml b/supabase/config.toml
+index 2b77235..c7edf90 100644
+--- a/supabase/config.toml
++++ b/supabase/config.toml
+@@ -156,11 +156,11 @@ max_indexes = 5
+ enabled = true
+ # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
+ # in emails.
+-site_url = "http://127.0.0.1:3000"
++site_url = "https://lorewish.pages.dev"
+ # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
+ # external_url = ""
+ # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
+-additional_redirect_urls = ["https://127.0.0.1:3000"]
++additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000", "https://*.lorewish.pages.dev"]
+ # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
+ jwt_expiry = 3600
+ # JWT issuer URL. If not set, defaults to auth.external_url.
+@@ -175,7 +175,7 @@ refresh_token_reuse_interval = 10
+ # Allow/disallow new user signups to your project.
+ enable_signup = true
+ # Allow/disallow anonymous sign-ins to your project.
+-enable_anonymous_sign_ins = false
++enable_anonymous_sign_ins = true
+ # Allow/disallow testing manual linking of accounts
+ enable_manual_linking = false
+ # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
+@@ -223,13 +223,13 @@ enable_signup = true
+ # addresses. If disabled, only the new email is required to confirm.
+ double_confirm_changes = true
+ # If enabled, users need to confirm their email address before signing in.
+-enable_confirmations = false
++enable_confirmations = true
+ # If enabled, users will need to reauthenticate or have logged in recently to change their password.
+ secure_password_change = false
+ # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
+-max_frequency = "1s"
++max_frequency = "1m"
+ # Number of characters used in the email OTP.
+-otp_length = 6
++otp_length = 8
+ # Number of seconds before the email OTP expires (defaults to 1 hour).
+ otp_expiry = 3600
+ 
+@@ -300,8 +300,8 @@ max_enrolled_factors = 10
+ 
+ # Control MFA via App Authenticator (TOTP)
+ [auth.mfa.totp]
+-enroll_enabled = false
+-verify_enabled = false
++enroll_enabled = true
++verify_enabled = true
+ 
+ # Configure MFA via Phone Messaging
+ [auth.mfa.phone]
+diff --git a/supabase/functions/_shared/engine/alpha-access.test.ts b/supabase/functions/_shared/engine/alpha-access.test.ts
+index 1ab209e..2df5efa 100644
+--- a/supabase/functions/_shared/engine/alpha-access.test.ts
++++ b/supabase/functions/_shared/engine/alpha-access.test.ts
+@@ -1,6 +1,7 @@
+ import { describe, expect, it, vi } from "vitest";
+ import {
+   AlphaAccessForbiddenError,
++  GenerationUnauthenticatedError,
+   authorizeAlphaProvider,
+   isAlphaGenerationEnabled,
+   mapAlphaAccessError,
+@@ -16,6 +17,13 @@ describe("server-enforced alpha generation access", () => {
+     });
+   });
+ 
++  it("returns 401 for an invalid JWT before provider access", () => {
++    expect(mapAlphaAccessError(new GenerationUnauthenticatedError())).toEqual({
++      status: 401,
++      body: { error: "unauthenticated" },
++    });
++  });
++
+   it("does not construct or call a provider when the allowlist denies the user", async () => {
+     const gate: AlphaAccessGate = {
+       assertAllowed: vi.fn().mockRejectedValue(new AlphaAccessForbiddenError()),
+@@ -39,7 +47,7 @@ describe("server-enforced alpha generation access", () => {
+     const gate: AlphaAccessGate = {
+       assertAllowed: vi.fn(async () => {
+         order.push("allowlist");
+-        return { userId: "user-1" };
++        return { userId: "user-1", isAnonymous: false };
+       }),
+     };
+     const providerFactory = vi.fn(() => {
+diff --git a/supabase/functions/_shared/engine/alpha-access.ts b/supabase/functions/_shared/engine/alpha-access.ts
+index 3db65c8..c1cea0d 100644
+--- a/supabase/functions/_shared/engine/alpha-access.ts
++++ b/supabase/functions/_shared/engine/alpha-access.ts
+@@ -5,8 +5,22 @@ export class AlphaAccessForbiddenError extends Error {
+   }
+ }
+ 
++export class GenerationUnauthenticatedError extends Error {
++  constructor() {
++    super("unauthenticated");
++    this.name = "GenerationUnauthenticatedError";
++  }
++}
++
+ export interface AlphaAccessGate {
+-  assertAllowed(userJwt: string): Promise<{ userId: string }>;
++  assertAllowed(userJwt: string): Promise<{ userId: string; isAnonymous: boolean }>;
++}
++
++export function authorizeGenerationUser(
++  gate: AlphaAccessGate,
++  userJwt: string,
++): Promise<{ userId: string; isAnonymous: boolean }> {
++  return gate.assertAllowed(userJwt);
+ }
+ 
+ /** The DEV allowlist is a rollout/cost control, not an age-verification mechanism. */
+@@ -28,6 +42,9 @@ export async function authorizeAlphaProvider<T>(
+ }
+ 
+ export function mapAlphaAccessError(err: unknown): { status: number; body: { error: string } } | null {
++  if (err instanceof GenerationUnauthenticatedError) {
++    return { status: 401, body: { error: "unauthenticated" } };
++  }
+   if (err instanceof AlphaAccessForbiddenError) {
+     return { status: 403, body: { error: "alpha_access_required" } };
+   }
+diff --git a/supabase/functions/_shared/engine/character-chat.test.ts b/supabase/functions/_shared/engine/character-chat.test.ts
+index c6fad0e..07c8c04 100644
+--- a/supabase/functions/_shared/engine/character-chat.test.ts
++++ b/supabase/functions/_shared/engine/character-chat.test.ts
+@@ -71,4 +71,30 @@ describe("branch-bound non-canonical Character Chat", () => {
+     expect(prompt.system).toContain("Vietnamese");
+     expect(prompt.user).toContain(`Player self=${playerSelf}; player addresses character=${playerAddresses}; character self=${characterSelf}; character addresses player=${characterAddresses}`);
+   });
++
++  it("rejects a VI Character Chat reply that substitutes a configured pronoun", async () => {
++    const { repo, precheck, characterId } = await storyWithMira({
++      speakerSelfReference: "em", speakerAddressesTargetAs: "chị",
++      targetSelfReference: "chị", targetAddressesSpeakerAs: "em",
++    });
++    const inputs = await repo.loadContextInputs(precheck.playerRunId, precheck.runBranchId);
++    const context = assembleCharacterChatContext({ inputs, characterId, recentChat: [], playerMessage: "Chị có nhớ em không?" });
++    const result = validateCharacterChatResult({
++      result: { reply: "Ta vẫn nhớ em.", chat_memory_candidates: [] },
++      metadata: { provider: "fake", model: "chat", inputTokens: 1, outputTokens: 1, costMicros: 0, latencyMs: 1 },
++    }, context);
++    expect(result).toMatchObject({ ok: false, errorClass: "validation_error" });
++  });
++
++  it("makes the single repair instruction explicit at the provider boundary", async () => {
++    const { repo, precheck, characterId } = await storyWithMira({
++      speakerSelfReference: "em", speakerAddressesTargetAs: "chị",
++      targetSelfReference: "chị", targetAddressesSpeakerAs: "em",
++    });
++    const inputs = await repo.loadContextInputs(precheck.playerRunId, precheck.runBranchId);
++    const context = assembleCharacterChatContext({ inputs, characterId, recentChat: [], playerMessage: "Chị có nhớ em không?" });
++    const prompt = buildCharacterChatPrompt({ ...context, repairReason: "address terms drifted" });
++    expect(prompt.system).toContain("only repair attempt");
++    expect(prompt.system).toContain("address terms drifted");
++  });
+ });
+diff --git a/supabase/functions/_shared/engine/character-chat.ts b/supabase/functions/_shared/engine/character-chat.ts
+index a1fef6f..8e53dfe 100644
+--- a/supabase/functions/_shared/engine/character-chat.ts
++++ b/supabase/functions/_shared/engine/character-chat.ts
+@@ -1,4 +1,5 @@
+ import { moderateOutputText } from "./moderation.ts";
++import { characterReplyHasAddressTermDrift } from "./address-terms.ts";
+ import {
+   CharacterChatResultSchema,
+   type CharacterChatContext,
+@@ -39,7 +40,7 @@ export function assembleCharacterChatContext(args: {
+   };
+ }
+ 
+-export function validateCharacterChatResult(call: ProviderCallResult) {
++export function validateCharacterChatResult(call: ProviderCallResult, context?: CharacterChatContext) {
+   const parsed = CharacterChatResultSchema.safeParse(call.result);
+   if (!parsed.success) {
+     return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
+@@ -47,5 +48,11 @@ export function validateCharacterChatResult(call: ProviderCallResult) {
+   if (moderateOutputText(parsed.data.reply).blocked) {
+     return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
+   }
++  if (
++    context?.contentLanguage === "vi" &&
++    characterReplyHasAddressTermDrift(parsed.data.reply, context.character)
++  ) {
++    return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
++  }
+   return { ok: true as const, result: parsed.data, metadata: call.metadata };
+ }
+diff --git a/supabase/functions/_shared/engine/generation-validation.test.ts b/supabase/functions/_shared/engine/generation-validation.test.ts
+index 8d2bbbc..e32f0bc 100644
+--- a/supabase/functions/_shared/engine/generation-validation.test.ts
++++ b/supabase/functions/_shared/engine/generation-validation.test.ts
+@@ -116,4 +116,32 @@ describe("generation failure classification", () => {
+       )
+     ).toMatchObject({ ok: true });
+   });
++
++  it("rejects Vietnamese dialogue that substitutes pronouns for immutable address terms", () => {
++    const configured = [{
++      id: "00000000-0000-4000-8000-000000000003",
++      name: "Thư Ly",
++      aliases: [],
++      role: "người giữ thư quán",
++      description: null,
++      storyRelationship: "người chị dẫn đường",
++      addressTerms: {
++        speakerSelfReference: "em",
++        speakerAddressesTargetAs: "chị",
++        targetSelfReference: "chị",
++        targetAddressesSpeakerAs: "em",
++      },
++    }];
++    expect(evaluateGeneratedResult({
++      ...valid,
++      narrative: "Thư Ly đặt tách trà xuống và chờ câu trả lời.",
++      dialogue: [
++        { speaker: "Bạn", line: "Làm sao chị biết tên của tôi?" },
++        { speaker: "Thư Ly", line: "Ta đã chờ em từ lâu." },
++      ],
++    }, "vi", [], configured)).toMatchObject({
++      ok: false,
++      qualityFailures: ["address_terms_drift"],
++    });
++  });
+ });
+diff --git a/supabase/functions/_shared/engine/generation-validation.ts b/supabase/functions/_shared/engine/generation-validation.ts
+index 39bc08c..6d892ba 100644
+--- a/supabase/functions/_shared/engine/generation-validation.ts
++++ b/supabase/functions/_shared/engine/generation-validation.ts
+@@ -1,4 +1,5 @@
+ import { moderateOutputText } from "./moderation.ts";
++import { storyDialogueHasAddressTermDrift } from "./address-terms.ts";
+ import { runQualityGate, type QualityFailureCode } from "./quality-gate.ts";
+ import {
+   StructuredGenerationResultSchema,
+@@ -7,7 +8,7 @@ import {
+   type StructuredGenerationResult,
+ } from "./types.ts";
+ 
+-export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing" | "character_memory_unknown" | "runtime_character_duplicate";
++export type GenerationQualityFailure = QualityFailureCode | "address_terms_drift" | "character_identity_missing" | "character_memory_unknown" | "runtime_character_duplicate";
+ 
+ export type SanitizedGenerationFailureClass =
+   | "invalid_json"
+@@ -128,6 +129,17 @@ export function evaluateGeneratedResult(
+     };
+   }
+ 
++  if (language === "vi" && storyDialogueHasAddressTermDrift(parsed.data.dialogue, availableCharacters)) {
++    return {
++      ok: false,
++      failureClass: "quality_gate",
++      pipelineErrorClass: "unusable_output",
++      qualityFailures: ["address_terms_drift"],
++      schemaIssues: [],
++      repairInstruction: "Vietnamese address terms drifted; rewrite every participant dialogue line using exactly the configured player-self/player-to-character/character-self/character-to-player terms and no substitute pronouns",
++    };
++  }
++
+   if (requiredStartingCharacters.length > 0) {
+     const identitySurface = [
+       parsed.data.narrative,
+diff --git a/supabase/functions/_shared/engine/providers.ts b/supabase/functions/_shared/engine/providers.ts
+index 4119e19..d79dc00 100644
+--- a/supabase/functions/_shared/engine/providers.ts
++++ b/supabase/functions/_shared/engine/providers.ts
+@@ -255,6 +255,9 @@ export function buildPrompt(context: NarrativeContext): { system: string; user:
+     `Never break character, never mention being an AI, never use meta-commentary.`,
+     `Every canon_candidates fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$, even when writing Vietnamese. Never put diacritics, spaces, or punctuation in fact_key.`,
+     `Character memory is canonical structured state, not a transcript. Emit character_memory_candidates only for durable, relevant facts. Copy character_id exactly from CHARACTER IDENTITY. Reuse fact_key when a relationship/state fact supersedes an earlier one. Never emit configured address terms as memory updates.`,
++    context.characters.some((character) => character.addressTerms)
++      ? `Vietnamese address terms are an exact output constraint, not tone guidance. In every participant dialogue line, use only the configured self-reference and target-address pair for that speaker. Never substitute tôi, ta, mình, bạn, cậu, anh, chị, em, or ngươi unless that exact term is configured for that direction.`
++      : "",
+     `Emit at most 3 new_character_candidates only for notable, reusable NPCs first introduced in this Scene. Never emit a random named mention, an existing name/alias, a database UUID, or address terms. Use temporary_key only for validation; a new canonical UUID is available starting on the next turn.`,
+     `boundary_kind must be "ending" ONLY for a genuine, deliberate story conclusion — never because the scene is merely well-paced or you are unsure how to continue. Default to "none".`,
+     `Prohibited copy in any language: "to be continued" or any equivalent phrase.`,
+@@ -476,6 +479,12 @@ export function buildCharacterChatPrompt(context: CharacterChatContext): { syste
+     "Stay in character. Never mention being an AI or claim knowledge absent from the provided Story/Chat context.",
+     "Do not advance physical Story events, create Scenes, or imply this side conversation automatically happened in Story canon.",
+     "Configured address terms are immutable. Preserve their direction exactly; emotional tone may change but the terms may not.",
++      terms
++        ? `Use only character self=${terms.targetSelfReference} and character addresses player=${terms.targetAddressesSpeakerAs} in the reply. Never substitute another Vietnamese participant pronoun.`
++        : "",
++      context.repairReason
++        ? `This is the only repair attempt. The prior reply failed validation because ${context.repairReason}. Rewrite it from scratch and obey every constraint above.`
++        : "",
+     "Propose at most 5 small durable chat_memory_candidates only for facts worth an explicit player promotion. Never include hidden reasoning, a transcript, address-term changes, or invented history. When no candidate cleanly fits the exact schema, return an empty array.",
+     "Every fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$.",
+     "For every candidate, memory_type MUST be exactly one of: player_fact, character_fact, relationship_fact, shared_event, promise, discovery. Do not invent another memory_type.",
+diff --git a/supabase/functions/_shared/engine/repository.ts b/supabase/functions/_shared/engine/repository.ts
+index bf359b0..afd68ca 100644
+--- a/supabase/functions/_shared/engine/repository.ts
++++ b/supabase/functions/_shared/engine/repository.ts
+@@ -145,7 +145,7 @@ export interface TurnRepository {
+ 
+   failTurn(args: {
+     turnId: string;
+-    errorClass: "output_blocked" | "unusable_output" | "transport_failure";
++    errorClass: "output_blocked" | "unusable_output" | "transport_failure" | "capacity_reached";
+     generationAttemptCount: number;
+     costMicros: number;
+   }): Promise<FailOutcome>;
+diff --git a/supabase/functions/_shared/engine/supabase-alpha-access.ts b/supabase/functions/_shared/engine/supabase-alpha-access.ts
+index 6ebb2ed..30ae3ed 100644
+--- a/supabase/functions/_shared/engine/supabase-alpha-access.ts
++++ b/supabase/functions/_shared/engine/supabase-alpha-access.ts
+@@ -1,6 +1,7 @@
+ import { createClient } from "npm:@supabase/supabase-js@2";
+ import {
+   AlphaAccessForbiddenError,
++  GenerationUnauthenticatedError,
+   isAlphaGenerationEnabled,
+   type AlphaAccessGate,
+ } from "./alpha-access.ts";
+@@ -13,13 +14,13 @@ export class SupabaseAlphaAccessGate implements AlphaAccessGate {
+     private readonly serviceRoleKey: string
+   ) {}
+ 
+-  async assertAllowed(userJwt: string): Promise<{ userId: string }> {
++  async assertAllowed(userJwt: string): Promise<{ userId: string; isAnonymous: boolean }> {
+     const authClient = createClient(this.supabaseUrl, this.anonKey, {
+       global: { headers: { Authorization: `Bearer ${userJwt}` } },
+     });
+     const { data: userData, error: userError } = await authClient.auth.getUser(userJwt);
+-    if (userError || !userData.user || userData.user.is_anonymous) {
+-      throw new AlphaAccessForbiddenError();
++    if (userError || !userData.user) {
++      throw new GenerationUnauthenticatedError();
+     }
+ 
+     const serviceClient = createClient(this.supabaseUrl, this.serviceRoleKey);
+@@ -29,9 +30,15 @@ export class SupabaseAlphaAccessGate implements AlphaAccessGate {
+       .eq("user_id", userData.user.id)
+       .maybeSingle();
+ 
+-    if (error || !isAlphaGenerationEnabled(data)) {
++    // W4 public-beta policy: a valid anonymous or permanent user is allowed
++    // by default. An explicit legacy/admin row with enabled=false is a deny
++    // override; enabled=true remains an allow/testing override.
++    if (error || (data !== null && !isAlphaGenerationEnabled(data))) {
+       throw new AlphaAccessForbiddenError();
+     }
+-    return { userId: userData.user.id };
++    return {
++      userId: userData.user.id,
++      isAnonymous: userData.user.is_anonymous === true,
++    };
+   }
+ }
+diff --git a/supabase/functions/_shared/engine/supabase-chat-repository.ts b/supabase/functions/_shared/engine/supabase-chat-repository.ts
+index f34c9f7..57001ce 100644
+--- a/supabase/functions/_shared/engine/supabase-chat-repository.ts
++++ b/supabase/functions/_shared/engine/supabase-chat-repository.ts
+@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+ import { assembleCharacterChatContext, CHAT_HISTORY_LIMIT, validateCharacterChatResult } from "./character-chat.ts";
+ import { ProviderOutputError, ProviderTransportError, type CharacterChatProvider, type ChatMessageContext } from "./types.ts";
+ import { SupabaseTurnRepository } from "./supabase-repository.ts";
++import { BetaCapacityReachedError } from "./provider-budget.ts";
+ 
+ export class ChatGenerationError extends Error {
+   constructor(readonly errorClass: "provider_error" | "validation_error" | "transport_error") {
+@@ -11,6 +12,13 @@ export class ChatGenerationError extends Error {
+   }
+ }
+ 
++export class ChatAllowanceExhaustedError extends Error {
++  constructor(readonly resetAt: string) {
++    super("CHAT_ALLOWANCE_EXHAUSTED");
++    this.name = "ChatAllowanceExhaustedError";
++  }
++}
++
+ export class SupabaseCharacterChatRepository {
+   private readonly userClient: SupabaseClient;
+   private readonly serviceClient: SupabaseClient;
+@@ -83,13 +91,20 @@ export class SupabaseCharacterChatRepository {
+ 
+   async send(args: { threadId: string; messageId: string; content: string; provider: CharacterChatProvider }) {
+     const ownerUserId = await this.ownerUserId();
+-    const { data: playerMessage, error: startError } = await this.serviceClient.rpc("lw_start_chat_generation", {
++    const { data: start, error: startError } = await this.serviceClient.rpc("lw_start_chat_generation", {
+       p_owner_user_id: ownerUserId,
+       p_thread_id: args.threadId,
+       p_message_id: args.messageId,
+       p_content: args.content,
+     });
+-    if (startError || !playerMessage) throw new Error(startError?.message ?? "chat_start_failed");
++    if (startError || !start) throw new Error(startError?.message ?? "chat_start_failed");
++    if (start.status === "CHAT_ALLOWANCE_EXHAUSTED") {
++      throw new ChatAllowanceExhaustedError(start.reset_at as string);
++    }
++    if (start.status === "completed" || start.status === "in_flight") {
++      return start;
++    }
++    const playerMessage = start.player_message;
+ 
+     const threadState = await this.loadThread(args.threadId);
+     const recentChat: ChatMessageContext[] = threadState.messages
+@@ -108,8 +123,16 @@ export class SupabaseCharacterChatRepository {
+     });
+ 
+     try {
+-      const call = await args.provider.generateChat(context);
+-      const validated = validateCharacterChatResult(call);
++      let call = await args.provider.generateChat(context);
++      let validated = validateCharacterChatResult(call, context);
++      if (!validated.ok) {
++        const repairContext = {
++          ...context,
++          repairReason: "the reply was unsafe, malformed, or changed configured Vietnamese address terms",
++        };
++        call = await args.provider.generateChat(repairContext);
++        validated = validateCharacterChatResult(call, repairContext);
++      }
+       if (!validated.ok) {
+         await this.fail(ownerUserId, args.messageId, validated.errorClass, validated.metadata);
+         throw new ChatGenerationError("validation_error");
+@@ -131,6 +154,10 @@ export class SupabaseCharacterChatRepository {
+       return { player_message: playerMessage, character_message: data };
+     } catch (error) {
+       if (error instanceof ChatGenerationError) throw error;
++      if (error instanceof BetaCapacityReachedError) {
++        await this.fail(ownerUserId, args.messageId, "capacity_reached");
++        throw error;
++      }
+       const metadata = error instanceof ProviderOutputError ? error.metadata : undefined;
+       const errorClass = error instanceof ProviderOutputError
+         ? "validation_error"
+@@ -142,7 +169,7 @@ export class SupabaseCharacterChatRepository {
+     }
+   }
+ 
+-  private async fail(ownerUserId: string, messageId: string, errorClass: string, metadata?: {
++  private async fail(ownerUserId: string, messageId: string, errorClass: "provider_error" | "validation_error" | "transport_error" | "capacity_reached", metadata?: {
+     provider: string; model: string; inputTokens: number; outputTokens: number; costMicros: number; latencyMs: number;
+   }) {
+     await this.serviceClient.rpc("lw_fail_chat_generation", {
+diff --git a/supabase/functions/_shared/engine/supabase-repository.ts b/supabase/functions/_shared/engine/supabase-repository.ts
+index e1a7e02..cc132de 100644
+--- a/supabase/functions/_shared/engine/supabase-repository.ts
++++ b/supabase/functions/_shared/engine/supabase-repository.ts
+@@ -358,17 +358,28 @@ export class SupabaseTurnRepository implements TurnRepository {
+ 
+   async failTurn(args: {
+     turnId: string;
+-    errorClass: "output_blocked" | "unusable_output" | "transport_failure";
++    errorClass: "output_blocked" | "unusable_output" | "transport_failure" | "capacity_reached";
+     generationAttemptCount: number;
+     costMicros: number;
+   }): Promise<FailOutcome> {
+-    const { data, error } = await this.userClient.rpc("lw_fail_turn", {
++    const rpc = args.errorClass === "capacity_reached"
++      ? this.serviceClient.rpc("lw_fail_turn_capacity", {
++          p_turn_id: args.turnId,
++          p_generation_attempt_count: args.generationAttemptCount,
++          p_provider_cost_micros: args.costMicros,
++        })
++      : this.userClient.rpc("lw_fail_turn", {
+       p_turn_id: args.turnId,
+       p_error_class: args.errorClass,
+       p_generation_attempt_count: args.generationAttemptCount,
+       p_provider_cost_micros: args.costMicros,
+-    });
++      });
++    const { data, error } = await rpc;
+     if (error) throwTypedRpcError("lw_fail_turn", error);
+-    return { status: "GENERATION_FAILED", turnId: data.turn_id, errorClass: data.error_class };
++    return {
++      status: "GENERATION_FAILED",
++      turnId: data.turn_id,
++      errorClass: args.errorClass,
++    };
+   }
+ }
+diff --git a/supabase/functions/_shared/engine/test-support/in-memory-repository.ts b/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
+index 16d423b..9ea3d9e 100644
+--- a/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
++++ b/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
+@@ -503,7 +503,7 @@ export class InMemoryTurnRepository implements TurnRepository {
+ 
+   async failTurn(args: {
+     turnId: string;
+-    errorClass: "output_blocked" | "unusable_output" | "transport_failure";
++    errorClass: "output_blocked" | "unusable_output" | "transport_failure" | "capacity_reached";
+     generationAttemptCount: number;
+     costMicros: number;
+   }): Promise<FailOutcome> {
+diff --git a/supabase/functions/_shared/engine/turn-pipeline.ts b/supabase/functions/_shared/engine/turn-pipeline.ts
+index f562283..c093649 100644
+--- a/supabase/functions/_shared/engine/turn-pipeline.ts
++++ b/supabase/functions/_shared/engine/turn-pipeline.ts
+@@ -21,6 +21,7 @@ import {
+   type StructuredGenerationResult,
+ } from "./types.ts";
+ import { ProviderOutputError, ProviderTransportError } from "./types.ts";
++import { BetaCapacityReachedError } from "./provider-budget.ts";
+ 
+ export interface SubmitTurnRequest {
+   turnId: string;
+@@ -35,6 +36,7 @@ export type SubmitTurnResult =
+   | { status: "CONTINUE_READY" | "EXPLICIT_CHECKPOINT" | "TERMINAL_ENDING"; scene: unknown; turnId: string }
+   | { status: "GENERATION_FAILED"; turnId: string; errorClass: string }
+   | { status: "ALLOWANCE_EXHAUSTED"; resetAt: string }
++  | { status: "BETA_CAPACITY_REACHED"; resetAt: string }
+   | { status: "in_flight"; turnId: string };
+ 
+ /** Provider call result plus whatever validation/quality-gate outcome it produced, for one attempt. */
+@@ -43,6 +45,7 @@ async function attemptGeneration(
+   contextInput: Parameters<typeof assembleContext>[0]
+ ): Promise<
+   | { ok: true; result: StructuredGenerationResult; metadata: { provider: string; model: string; inputTokens: number; outputTokens: number; costMicros: number; latencyMs: number } }
++  | { ok: false; errorClass: "capacity_reached"; resetAt: string; metadata: null }
+   | {
+       ok: false;
+       errorClass: "output_blocked" | "unusable_output" | "transport_failure";
+@@ -57,6 +60,14 @@ async function attemptGeneration(
+   try {
+     raw = await provider.generateTurn(context);
+   } catch (err) {
++    if (err instanceof BetaCapacityReachedError) {
++      return {
++        ok: false,
++        errorClass: "capacity_reached",
++        resetAt: err.resetAt,
++        metadata: null,
++      };
++    }
+     if (err instanceof ProviderTransportError) {
+       return {
+         ok: false,
+@@ -173,7 +184,18 @@ export async function submitTurn(
+   };
+ 
+   let attempt = await attemptGeneration(provider, baseContextInput);
+-  let attemptCount = 1;
++  let attemptCount = 0;
++
++  if (!attempt.ok && attempt.errorClass === "capacity_reached") {
++    await repo.failTurn({
++      turnId: request.turnId,
++      errorClass: "capacity_reached",
++      generationAttemptCount: 0,
++      costMicros: 0,
++    });
++    return { status: "BETA_CAPACITY_REACHED", resetAt: attempt.resetAt };
++  }
++  attemptCount += 1;
+ 
+   if (!attempt.ok) {
+     accumulate(attempt.metadata);
+@@ -181,7 +203,6 @@ export async function submitTurn(
+       // "At most one transparent automatic retry, transport-level failures
+       // only, under the same key" (CONTINUOUS_PLAY_CONTRACT.md §8).
+       attempt = await attemptGeneration(provider, baseContextInput);
+-      attemptCount += 1;
+     } else {
+       // Quality-gate / moderation failure: at most one automatic repair
+       // (NARRATIVE_QUALITY_CONTRACT.md §D), with the failure reason fed back.
+@@ -189,8 +210,18 @@ export async function submitTurn(
+         ...baseContextInput,
+         repairReason: attempt.repairInstruction,
+       });
+-      attemptCount += 1;
+     }
++
++    if (!attempt.ok && attempt.errorClass === "capacity_reached") {
++      await repo.failTurn({
++        turnId: request.turnId,
++        errorClass: "capacity_reached",
++        generationAttemptCount: attemptCount,
++        costMicros: totalCost,
++      });
++      return { status: "BETA_CAPACITY_REACHED", resetAt: attempt.resetAt };
++    }
++    attemptCount += 1;
+   }
+ 
+   if (!attempt.ok) {
+diff --git a/supabase/functions/_shared/engine/types.ts b/supabase/functions/_shared/engine/types.ts
+index b95991a..700db02 100644
+--- a/supabase/functions/_shared/engine/types.ts
++++ b/supabase/functions/_shared/engine/types.ts
+@@ -354,6 +354,8 @@ export interface CharacterChatContext {
+   characterMemories: ContextCharacterMemory[];
+   recentChat: ChatMessageContext[];
+   playerMessage: string;
++  /** Present only for the single bounded repair attempt after validation fails. */
++  repairReason?: string | null;
+ }
+ 
+ export interface CharacterChatProvider {
+diff --git a/supabase/functions/character-chat/index.ts b/supabase/functions/character-chat/index.ts
+index 4f92aff..18e128a 100644
+--- a/supabase/functions/character-chat/index.ts
++++ b/supabase/functions/character-chat/index.ts
+@@ -1,75 +1,91 @@
+-import { authorizeAlphaProvider, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
++import { authorizeGenerationUser, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
+ import { selectCharacterChatProvider } from "../_shared/engine/providers.ts";
+-import { ChatGenerationError, SupabaseCharacterChatRepository } from "../_shared/engine/supabase-chat-repository.ts";
++import { ChatAllowanceExhaustedError, ChatGenerationError, SupabaseCharacterChatRepository } from "../_shared/engine/supabase-chat-repository.ts";
+ import { SupabaseAlphaAccessGate } from "../_shared/engine/supabase-alpha-access.ts";
++import { BetaCapacityReachedError, BudgetedCharacterChatProvider } from "../_shared/engine/provider-budget.ts";
++import { SupabaseProviderAttemptBudget } from "../_shared/engine/supabase-provider-budget.ts";
++import { corsHeaders } from "../_shared/cors.ts";
+ 
+-const CORS_HEADERS = {
+-  "Access-Control-Allow-Origin": "*",
+-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+-};
+-
+-function json(body: unknown, status = 200) {
++function json(body: unknown, cors: Record<string, string>, status = 200) {
+   return new Response(JSON.stringify(body), {
+     status,
+-    headers: { ...CORS_HEADERS, "content-type": "application/json" },
++    headers: { ...cors, "content-type": "application/json" },
+   });
+ }
+ 
+ Deno.serve(async (req) => {
++  const CORS_HEADERS = corsHeaders(req.headers.get("Origin"));
+   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
+-  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
++  if (req.method !== "POST") return json({ error: "method_not_allowed" }, CORS_HEADERS, 405);
+   const authHeader = req.headers.get("Authorization");
+-  if (!authHeader?.startsWith("Bearer ")) return json({ error: "unauthenticated" }, 401);
++  if (!authHeader?.startsWith("Bearer ")) return json({ error: "unauthenticated" }, CORS_HEADERS, 401);
+   const userJwt = authHeader.slice("Bearer ".length);
+ 
+   let body: Record<string, unknown>;
+   try {
+     body = await req.json();
+   } catch {
+-    return json({ error: "invalid_json" }, 400);
++    return json({ error: "invalid_json" }, CORS_HEADERS, 400);
+   }
+ 
+   const supabaseUrl = Deno.env.get("SUPABASE_URL");
+   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+-  if (!supabaseUrl || !anonKey || !serviceRoleKey) return json({ error: "server_misconfigured" }, 500);
++  if (!supabaseUrl || !anonKey || !serviceRoleKey) return json({ error: "server_misconfigured" }, CORS_HEADERS, 500);
+ 
+   try {
+     const repository = new SupabaseCharacterChatRepository(supabaseUrl, anonKey, userJwt, serviceRoleKey);
+     if (body.action === "open") {
+       if (typeof body.player_run_id !== "string" || typeof body.character_id !== "string") {
+-        return json({ error: "missing_required_fields" }, 400);
++        return json({ error: "missing_required_fields" }, CORS_HEADERS, 400);
+       }
+-      return json(await repository.open(body.player_run_id, body.character_id));
++      return json(await repository.open(body.player_run_id, body.character_id), CORS_HEADERS);
+     }
+     if (body.action === "send") {
+       if (typeof body.thread_id !== "string" || typeof body.message_id !== "string" || typeof body.content !== "string") {
+-        return json({ error: "missing_required_fields" }, 400);
++        return json({ error: "missing_required_fields" }, CORS_HEADERS, 400);
++      }
++      const configuredProvider = Deno.env.get("LOREWISH_NARRATIVE_PROVIDER");
++      const configuredModel = Deno.env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-flash";
++      if (configuredProvider !== "deepseek" || configuredModel !== "deepseek-v4-flash") {
++        throw new Error("W4 Character Chat requires DeepSeek deepseek-v4-flash");
+       }
+-      const gate = new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey);
+-      const provider = await authorizeAlphaProvider(gate, userJwt, () =>
+-        selectCharacterChatProvider({ get: (key) => Deno.env.get(key) })
++      const identity = await authorizeGenerationUser(
++        new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey),
++        userJwt,
+       );
++      const provider = new BudgetedCharacterChatProvider({
++        ...identity,
++        provider: configuredProvider,
++        model: configuredModel,
++        budget: new SupabaseProviderAttemptBudget(supabaseUrl, serviceRoleKey),
++        providerFactory: () => selectCharacterChatProvider({ get: (key) => Deno.env.get(key) }),
++      });
+       const result = await repository.send({
+         threadId: body.thread_id,
+         messageId: body.message_id,
+         content: body.content,
+         provider,
+       });
+-      return json(result);
++      return json(result, CORS_HEADERS);
+     }
+-    return json({ error: "invalid_action" }, 400);
++    return json({ error: "invalid_action" }, CORS_HEADERS, 400);
+   } catch (error) {
+     console.error("[character-chat] error", error);
+     const alpha = mapAlphaAccessError(error);
+-    if (alpha) return json(alpha.body, alpha.status);
++    if (alpha) return json(alpha.body, CORS_HEADERS, alpha.status);
++    if (error instanceof ChatAllowanceExhaustedError) {
++      return json({ error: "chat_allowance_exhausted", reset_at: error.resetAt }, CORS_HEADERS, 429);
++    }
++    if (error instanceof BetaCapacityReachedError) {
++      return json({ error: "beta_capacity_reached", reset_at: error.resetAt }, CORS_HEADERS, 429);
++    }
+     if (error instanceof ChatGenerationError) {
+-      return json({ error: error.errorClass }, error.errorClass === "validation_error" ? 422 : 502);
++      return json({ error: error.errorClass }, CORS_HEADERS, error.errorClass === "validation_error" ? 422 : 502);
+     }
+     const message = (error as Error).message;
+-    if (message === "unauthenticated") return json({ error: "unauthenticated" }, 401);
+-    if (message === "forbidden") return json({ error: "forbidden" }, 403);
+-    return json({ error: "internal_error" }, 500);
++    if (message === "unauthenticated") return json({ error: "unauthenticated" }, CORS_HEADERS, 401);
++    if (message === "forbidden") return json({ error: "forbidden" }, CORS_HEADERS, 403);
++    return json({ error: "internal_error" }, CORS_HEADERS, 500);
+   }
+ });
+diff --git a/supabase/functions/submit-turn/index.ts b/supabase/functions/submit-turn/index.ts
+index b040a53..62fa6dd 100644
+--- a/supabase/functions/submit-turn/index.ts
++++ b/supabase/functions/submit-turn/index.ts
+@@ -19,17 +19,15 @@ import { submitTurn } from "../_shared/engine/turn-pipeline.ts";
+ import { SupabaseTurnRepository } from "../_shared/engine/supabase-repository.ts";
+ import { selectProvider } from "../_shared/engine/providers.ts";
+ import { mapRepositoryErrorToHttpStatus } from "../_shared/engine/repository.ts";
+-import { authorizeAlphaProvider, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
++import { authorizeGenerationUser, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
+ import { SupabaseAlphaAccessGate } from "../_shared/engine/supabase-alpha-access.ts";
++import { BudgetedNarrativeProvider } from "../_shared/engine/provider-budget.ts";
++import { SupabaseProviderAttemptBudget } from "../_shared/engine/supabase-provider-budget.ts";
+ import { ActionTypeSchema, StorySetupSchema } from "../_shared/engine/types.ts";
+-
+-const CORS_HEADERS = {
+-  "Access-Control-Allow-Origin": "*",
+-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+-};
++import { corsHeaders } from "../_shared/cors.ts";
+ 
+ Deno.serve(async (req) => {
++  const CORS_HEADERS = corsHeaders(req.headers.get("Origin"));
+   if (req.method === "OPTIONS") {
+     return new Response("ok", { headers: CORS_HEADERS });
+   }
+@@ -85,12 +83,21 @@ Deno.serve(async (req) => {
+   }
+ 
+   try {
+-    const gate = new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey);
+-    const provider = await authorizeAlphaProvider(gate, userJwt, () => {
+-      if (!Deno.env.get("LOREWISH_NARRATIVE_PROVIDER")) {
+-        throw new Error("LOREWISH_NARRATIVE_PROVIDER is required for the AI alpha");
+-      }
+-      return selectProvider({ get: (k) => Deno.env.get(k) });
++    const configuredProvider = Deno.env.get("LOREWISH_NARRATIVE_PROVIDER");
++    const configuredModel = Deno.env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-flash";
++    if (configuredProvider !== "deepseek" || configuredModel !== "deepseek-v4-flash") {
++      throw new Error("W4 real generation requires DeepSeek deepseek-v4-flash");
++    }
++    const identity = await authorizeGenerationUser(
++      new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey),
++      userJwt,
++    );
++    const provider = new BudgetedNarrativeProvider({
++      ...identity,
++      provider: configuredProvider,
++      model: configuredModel,
++      budget: new SupabaseProviderAttemptBudget(supabaseUrl, serviceRoleKey),
++      providerFactory: () => selectProvider({ get: (k) => Deno.env.get(k) }),
+     });
+     const repo = new SupabaseTurnRepository(supabaseUrl, anonKey, userJwt, serviceRoleKey);
+     const result = await submitTurn(repo, provider, {
+diff --git a/tests/e2e/roleplay-chat.spec.ts b/tests/e2e/roleplay-chat.spec.ts
+index 3dbb862..b1a84be 100644
+--- a/tests/e2e/roleplay-chat.spec.ts
++++ b/tests/e2e/roleplay-chat.spec.ts
+@@ -104,7 +104,8 @@ test("Story reader remains editorial, long-session safe, and duplicate-submit re
+   await expect(page.getByText("The hidden stair opens beneath your hand.")).toBeVisible();
+   await expect(page.getByText("Alternate path", { exact: true })).toBeVisible();
+   await expect(page.getByRole("link", { name: /Characters/ })).toBeVisible();
+-  await expect(page.getByRole("button", { name: "Replay from here" })).toBeVisible();
++  await expect(page.getByRole("button", { name: "Replay from here" })).toHaveCount(2);
++  await expect(page.getByRole("button", { name: "Replay from here" }).first()).toBeVisible();
+   await page.getByRole("heading", { name: "The Archive Below" }).scrollIntoViewIfNeeded();
+   await page.screenshot({ path: testInfo.outputPath("story.png"), fullPage: false });
+ 
+diff --git a/tests/e2e/story-setup.spec.ts b/tests/e2e/story-setup.spec.ts
+index a2cf302..40fa6c7 100644
+--- a/tests/e2e/story-setup.spec.ts
++++ b/tests/e2e/story-setup.spec.ts
+@@ -6,7 +6,11 @@ test.beforeEach(async ({ page }) => {
+   await page.reload();
+ });
+ 
+-test("Quick Start and Advanced Setup remain public, responsive, and draft-safe", async ({ page }) => {
++test("Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe", async ({ page }) => {
++  let anonymousSignups = 0;
++  page.on("request", (request) => {
++    if (request.url().includes("/auth/v1/signup")) anonymousSignups += 1;
++  });
+   await expect(page.getByText("Start a new story", { exact: true })).toBeVisible();
+   await expect(page.getByRole("radio", { name: "Quick Start" })).toBeChecked();
+   await expect(page.getByText("Starter", { exact: true })).toBeVisible();
+@@ -22,7 +26,8 @@ test("Quick Start and Advanced Setup remain public, responsive, and draft-safe",
+   await page.reload();
+   await expect(page.getByRole("radio", { name: "Advanced Setup" })).toBeChecked();
+   await expect(page.getByLabel("Premise")).toHaveValue("A lighthouse remembers every visitor.");
+-  await expect(page.getByRole("button", { name: "Sign in to start" })).toBeVisible();
++  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
++  expect(anonymousSignups).toBe(0);
+ 
+   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+   expect(horizontalOverflow).toBeLessThanOrEqual(1);
+@@ -32,5 +37,5 @@ test("manual UI language switch renders Vietnamese setup copy", async ({ page })
+   await page.getByLabel("Language").getByRole("radio", { name: "Tiếng Việt" }).click();
+   await expect(page.getByText("Bắt đầu một câu chuyện mới", { exact: true })).toBeVisible();
+   await expect(page.getByRole("radio", { name: "Thiết lập nâng cao" })).toBeVisible();
+-  await expect(page.getByRole("button", { name: "Đăng nhập để bắt đầu" })).toBeVisible();
++  await expect(page.getByRole("button", { name: "Bắt đầu", exact: true })).toBeVisible();
+ });

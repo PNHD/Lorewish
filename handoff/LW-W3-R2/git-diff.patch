@@ -1,0 +1,3353 @@
+diff --git a/package.json b/package.json
+index 1c198c9..1982084 100644
+--- a/package.json
++++ b/package.json
+@@ -45,13 +45,14 @@
+     "web": "expo start --web",
+     "lint": "expo lint",
+     "typecheck": "tsc --noEmit",
+-    "export:web": "expo export -p web",
++    "export:web": "expo export -p web && node scripts/write-web-routes.mjs",
+     "serve:web-export": "node scripts/serve-web-export.mjs",
+     "test:e2e": "playwright test",
+     "test": "vitest run",
+     "test:watch": "vitest",
+     "bakeoff": "tsx supabase/functions/_shared/engine/golden-set/bakeoff.ts",
+     "soak:deepseek": "tsx supabase/functions/_shared/engine/golden-set/soak.ts",
+-    "soak:continuity": "tsx supabase/functions/_shared/engine/golden-set/continuity-soak.ts"
++    "soak:continuity": "tsx supabase/functions/_shared/engine/golden-set/continuity-soak.ts",
++    "spot-check:chat": "tsx supabase/functions/_shared/engine/golden-set/chat-spot-check.ts"
+   }
+ }
+diff --git a/scripts/serve-web-export.mjs b/scripts/serve-web-export.mjs
+index 402727d..3d72d0f 100644
+--- a/scripts/serve-web-export.mjs
++++ b/scripts/serve-web-export.mjs
+@@ -23,7 +23,16 @@ function resolveRequestPath(pathname) {
+   if (existsSync(candidate) && statSync(candidate).isDirectory()) return join(candidate, "index.html");
+   if (existsSync(candidate)) return candidate;
+   const htmlCandidate = `${candidate}.html`;
+-  return existsSync(htmlCandidate) ? htmlCandidate : null;
++  if (existsSync(htmlCandidate)) return htmlCandidate;
++  const dynamicRoutes = [
++    { pattern: /^play\/[^/]+\/characters\/[^/]+\/?$/, file: "play/[runId]/characters/[characterId].html" },
++    { pattern: /^play\/[^/]+\/characters\/?$/, file: "play/[runId]/characters.html" },
++    { pattern: /^play\/[^/]+\/?$/, file: "play/[runId].html" },
++  ];
++  const dynamic = dynamicRoutes.find((route) => route.pattern.test(relative.replace(/\\/g, "/")));
++  if (!dynamic) return null;
++  const dynamicPath = join(root, dynamic.file);
++  return existsSync(dynamicPath) ? dynamicPath : null;
+ }
+ 
+ createServer((request, response) => {
+diff --git a/scripts/write-web-routes.mjs b/scripts/write-web-routes.mjs
+new file mode 100644
+index 0000000..988257e
+--- /dev/null
++++ b/scripts/write-web-routes.mjs
+@@ -0,0 +1,23 @@
++import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
++import { dirname, resolve } from "node:path";
++
++const routeShells = [
++  { source: "dist/play/[runId].html", target: "dist/__route-shells/story/index.html" },
++  { source: "dist/play/[runId]/characters.html", target: "dist/__route-shells/characters/index.html" },
++  { source: "dist/play/[runId]/characters/[characterId].html", target: "dist/__route-shells/character-chat/index.html" },
++];
++
++for (const shell of routeShells) {
++  const target = resolve(shell.target);
++  mkdirSync(dirname(target), { recursive: true });
++  copyFileSync(resolve(shell.source), target);
++}
++
++const redirects = [
++  "/play/:runId/characters/:characterId /__route-shells/character-chat/ 200",
++  "/play/:runId/characters /__route-shells/characters/ 200",
++  "/play/:runId /__route-shells/story/ 200",
++  "",
++].join("\n");
++
++writeFileSync(resolve("dist/_redirects"), redirects, "utf8");
+diff --git a/src/app/play/[runId]/characters/[characterId].tsx b/src/app/play/[runId]/characters/[characterId].tsx
+new file mode 100644
+index 0000000..6e660b2
+--- /dev/null
++++ b/src/app/play/[runId]/characters/[characterId].tsx
+@@ -0,0 +1,8 @@
++import { useLocalSearchParams } from "expo-router";
++
++import { CharacterChatScreen } from "@/screens/play/character-chat";
++
++export default function CharacterChatRoute() {
++  const { runId, characterId } = useLocalSearchParams<{ runId: string; characterId: string }>();
++  return <CharacterChatScreen playerRunId={runId} characterId={characterId} />;
++}
+diff --git a/src/app/play/[runId]/characters/index.tsx b/src/app/play/[runId]/characters/index.tsx
+new file mode 100644
+index 0000000..74c4470
+--- /dev/null
++++ b/src/app/play/[runId]/characters/index.tsx
+@@ -0,0 +1,8 @@
++import { useLocalSearchParams } from "expo-router";
++
++import { CharacterDirectoryScreen } from "@/screens/play/characters";
++
++export default function CharacterDirectoryRoute() {
++  const { runId } = useLocalSearchParams<{ runId: string }>();
++  return <CharacterDirectoryScreen playerRunId={runId} />;
++}
+diff --git a/src/components/reading/story-scene-section.tsx b/src/components/reading/story-scene-section.tsx
+new file mode 100644
+index 0000000..765d7c3
+--- /dev/null
++++ b/src/components/reading/story-scene-section.tsx
+@@ -0,0 +1,25 @@
++import { View } from "react-native";
++
++import { DialogueLine } from "@/components/reading/dialogue-line";
++import { NarrativeBlock } from "@/components/reading/narrative-block";
++import { StateChangePanel } from "@/components/reading/state-change-panel";
++import { ThemedText } from "@/components/themed-text";
++import type { SceneDto } from "@/lib/story-engine";
++import { readingWidth, spacing } from "@/theme/tokens";
++import { useAppTheme } from "@/theme/use-app-theme";
++
++export function StorySceneSection({ scene, whatChanged, isFirst }: { scene: SceneDto; whatChanged: string; isFirst: boolean }) {
++  const { colors } = useAppTheme();
++  return (
++    <View style={{ gap: spacing.lg, paddingTop: isFirst ? 0 : spacing.xxxl, borderTopWidth: isFirst ? 0 : 1, borderTopColor: colors.border }}>
++      {!isFirst && (
++        <View style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center" }}>
++          <ThemedText variant="caption" color="secondary">{`Scene ${scene.seqInBranch + 1}`}</ThemedText>
++        </View>
++      )}
++      <NarrativeBlock paragraphs={scene.narrative.split(/\n\n+/)} />
++      {scene.dialogue.map((line, index) => <DialogueLine key={`${scene.id}:${index}`} speaker={line.speaker} line={line.line} />)}
++      {scene.stateChangeSummary.length > 0 && <StateChangePanel heading={whatChanged} items={scene.stateChangeSummary} />}
++    </View>
++  );
++}
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index a2599ee..5f20aa4 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -131,6 +131,34 @@
+     "allowanceExhaustedBody": "Your story stays here exactly as it is. Come back after the reset to continue.",
+     "alphaAccessRequired": "Real AI play is currently limited to approved alpha testers.",
+     "setupLockedNotice": "Story setup is locked after the first scene. Start a new story to change canonical identity or setting.",
+-    "backToHome": "Back to Home"
++    "backToHome": "Back to Home",
++    "characters": "Characters",
++    "currentPath": "Current path",
++    "alternatePath": "Alternate path"
++  },
++  "characters": {
++    "backToStory": "Back to Story",
++    "heading": "Characters",
++    "intro": "The important people this story has made real. Each conversation stays with this path.",
++    "currentPath": "Talking from your current story path",
++    "alternatePath": "Talking from an alternate story path",
++    "empty": "No important characters are known on this path yet.",
++    "openChat": "Talk to character"
++  },
++  "chat": {
++    "heading": "Character Chat",
++    "backToStory": "Back to Story",
++    "nonCanonicalNotice": "This conversation is private to this story path. It does not change the story unless you explicitly remember something in canon.",
++    "emptyHeading": "A quieter moment",
++    "emptyBody": "Say what you could not fit into the scene. The character knows the story so far, but this side conversation is not automatically canon.",
++    "placeholder": "Write to this character…",
++    "send": "Send",
++    "sending": "Waiting for a reply…",
++    "failedMessage": "The reply did not arrive. Your message is saved.",
++    "providerError": "The reply could not arrive right now.",
++    "validationError": "That reply could not be safely used. Edit your message and try a different direction.",
++    "retry": "Try the reply again",
++    "rememberInStory": "Remember in story",
++    "remembered": "Remembered in story"
+   }
+ }
+diff --git a/src/i18n/locales/vi.json b/src/i18n/locales/vi.json
+index eb55313..d7ed216 100644
+--- a/src/i18n/locales/vi.json
++++ b/src/i18n/locales/vi.json
+@@ -131,6 +131,34 @@
+     "allowanceExhaustedBody": "Câu chuyện của bạn vẫn được giữ nguyên ở đây. Hãy quay lại sau khi lượt dùng được làm mới để tiếp tục.",
+     "alphaAccessRequired": "Chế độ chơi AI thật hiện chỉ dành cho người thử nghiệm alpha đã được phê duyệt.",
+     "setupLockedNotice": "Thiết lập câu chuyện được khóa sau cảnh đầu tiên. Hãy bắt đầu câu chuyện mới để đổi danh tính hoặc bối cảnh chính thức.",
+-    "backToHome": "Về trang chủ"
++    "backToHome": "Về trang chủ",
++    "characters": "Nhân vật",
++    "currentPath": "Mạch truyện hiện tại",
++    "alternatePath": "Mạch truyện khác"
++  },
++  "characters": {
++    "backToStory": "Trở lại câu chuyện",
++    "heading": "Nhân vật",
++    "intro": "Những người quan trọng đã thực sự hiện diện trong câu chuyện. Mỗi cuộc trò chuyện thuộc về mạch truyện này.",
++    "currentPath": "Đang trò chuyện trong mạch truyện hiện tại",
++    "alternatePath": "Đang trò chuyện trong một mạch truyện khác",
++    "empty": "Mạch truyện này chưa có nhân vật quan trọng nào được biết đến.",
++    "openChat": "Trò chuyện"
++  },
++  "chat": {
++    "heading": "Trò chuyện cùng nhân vật",
++    "backToStory": "Trở lại câu chuyện",
++    "nonCanonicalNotice": "Cuộc trò chuyện này chỉ thuộc về mạch truyện hiện tại. Nó không thay đổi câu chuyện trừ khi bạn chủ động lưu một điều vào chính truyện.",
++    "emptyHeading": "Một khoảnh khắc yên tĩnh",
++    "emptyBody": "Hãy nói điều bạn chưa thể nói trong cảnh truyện. Nhân vật biết câu chuyện đến lúc này, nhưng cuộc trò chuyện riêng không tự động trở thành chính truyện.",
++    "placeholder": "Viết cho nhân vật này…",
++    "send": "Gửi",
++    "sending": "Đang chờ hồi đáp…",
++    "failedMessage": "Chưa nhận được hồi đáp. Tin nhắn của bạn vẫn được lưu.",
++    "providerError": "Hiện chưa thể nhận hồi đáp.",
++    "validationError": "Hồi đáp chưa thể được sử dụng an toàn. Hãy sửa tin nhắn và thử một hướng khác.",
++    "retry": "Thử nhận hồi đáp lại",
++    "rememberInStory": "Lưu vào chính truyện",
++    "remembered": "Đã lưu vào chính truyện"
+   }
+ }
+diff --git a/src/lib/character-chat.ts b/src/lib/character-chat.ts
+new file mode 100644
+index 0000000..fd72f72
+--- /dev/null
++++ b/src/lib/character-chat.ts
+@@ -0,0 +1,78 @@
++import { getSupabaseClient } from "@/lib/supabase";
++
++export interface ChatMemoryCandidateDto {
++  memory_type: "player_fact" | "character_fact" | "relationship_fact" | "shared_event" | "promise" | "discovery";
++  fact_key: string;
++  fact_text: string;
++  salience: number;
++}
++
++export interface ChatMessageDto {
++  id: string;
++  role: "player" | "character";
++  content: string;
++  generation_status: "pending" | "completed" | "failed" | null;
++  error_class: "provider_error" | "validation_error" | "transport_error" | null;
++  memory_candidates: ChatMemoryCandidateDto[];
++  created_at: string;
++}
++
++export interface CharacterChatStateDto {
++  thread: { id: string; player_run_id: string; run_branch_id: string; character_id: string };
++  character: {
++    id: string; name: string; role: string | null; description: string | null;
++    storyRelationship: string | null;
++  };
++  content_language: "en" | "vi";
++  messages: ChatMessageDto[];
++}
++
++async function requireAccessToken() {
++  const { data } = await getSupabaseClient().auth.getSession();
++  const token = data.session?.access_token;
++  if (!token) throw new Error("Not signed in");
++  return token;
++}
++
++async function chatRequest(body: Record<string, unknown>) {
++  const base = process.env.EXPO_PUBLIC_SUPABASE_URL;
++  if (!base) throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
++  const response = await fetch(`${base}/functions/v1/character-chat`, {
++    method: "POST",
++    headers: { "content-type": "application/json", authorization: `Bearer ${await requireAccessToken()}` },
++    body: JSON.stringify(body),
++  });
++  const result = (await response.json()) as Record<string, unknown>;
++  if (!response.ok) {
++    const error = new Error((result.error as string) ?? `character-chat failed with HTTP ${response.status}`);
++    (error as Error & { status?: number }).status = response.status;
++    throw error;
++  }
++  return result;
++}
++
++export async function openCharacterChat(playerRunId: string, characterId: string): Promise<CharacterChatStateDto> {
++  return await chatRequest({ action: "open", player_run_id: playerRunId, character_id: characterId }) as unknown as CharacterChatStateDto;
++}
++
++export async function sendCharacterChatMessage(args: {
++  threadId: string; messageId: string; content: string;
++}) {
++  return chatRequest({ action: "send", thread_id: args.threadId, message_id: args.messageId, content: args.content });
++}
++
++export async function promoteChatMemory(characterMessageId: string, candidateIndex: number) {
++  const client = getSupabaseClient() as unknown as {
++    rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
++  };
++  const { data, error } = await client.rpc("lw_promote_chat_memory", {
++    p_character_message_id: characterMessageId,
++    p_candidate_index: candidateIndex,
++  });
++  if (error) throw new Error(error.message);
++  return data;
++}
++
++export function newChatMessageId(): string {
++  return globalThis.crypto?.randomUUID?.() ?? `chat_${Date.now()}_${Math.random().toString(36).slice(2)}`;
++}
+diff --git a/src/lib/story-engine.ts b/src/lib/story-engine.ts
+index 861d30c..adbcfbe 100644
+--- a/src/lib/story-engine.ts
++++ b/src/lib/story-engine.ts
+@@ -155,23 +155,45 @@ export interface RunStateDto {
+   runBranchId: string;
+   status: "CONTINUE_READY" | "EXPLICIT_CHECKPOINT" | "TERMINAL_ENDING";
+   scene: SceneDto | null;
++  scenes: SceneDto[];
+   storyTitle: string;
+   storyPremise: string;
++  contentLanguage: ContentLanguage;
++  branchSeq: number;
++  characters: RunCharacterDto[];
+   startingCharacter: { name: string; role: string | null; relationship: string | null } | null;
+ }
+ 
++export interface RunCharacterDto {
++  id: string;
++  name: string;
++  role: string | null;
++  relationship: string | null;
++  description: string | null;
++  origin: "authored" | "runtime";
++}
++
+ export async function getRunState(playerRunId: string): Promise<RunStateDto> {
+   const { data, error } = await getSupabaseClient().rpc("lw_get_run_state", { p_player_run_id: playerRunId });
+   if (error) throw new Error(error.message);
+   const payload = data as Record<string, unknown>;
++  const characters = (payload.characters as RunCharacterDto[] | undefined) ?? [];
+   return {
+     playerRunId,
+     runBranchId: payload.run_branch_id as string,
+     status: payload.status as RunStateDto["status"],
+     scene: toCamelScene(payload.scene as Record<string, unknown>),
++    scenes: ((payload.scenes as Record<string, unknown>[] | undefined) ?? [])
++      .map((scene) => toCamelScene(scene))
++      .filter((scene): scene is SceneDto => Boolean(scene)),
+     storyTitle: payload.story_title as string,
+     storyPremise: payload.story_premise as string,
+-    startingCharacter: (payload.starting_character as RunStateDto["startingCharacter"]) ?? null,
++    contentLanguage: (payload.content_language as ContentLanguage) ?? "en",
++    branchSeq: (payload.branch_seq as number) ?? 0,
++    characters,
++    startingCharacter: characters[0]
++      ? { name: characters[0].name, role: characters[0].role, relationship: characters[0].relationship }
++      : null,
+   };
+ }
+ 
+diff --git a/src/screens/play/character-chat.tsx b/src/screens/play/character-chat.tsx
+new file mode 100644
+index 0000000..3249598
+--- /dev/null
++++ b/src/screens/play/character-chat.tsx
+@@ -0,0 +1,154 @@
++import { router } from "expo-router";
++import { useCallback, useEffect, useRef, useState } from "react";
++import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
++import { SafeAreaView } from "react-native-safe-area-context";
++
++import { useAuth } from "@/auth/auth-context";
++import { Composer } from "@/components/composer";
++import { ThemedText } from "@/components/themed-text";
++import { useTranslation } from "@/i18n";
++import {
++  newChatMessageId,
++  openCharacterChat,
++  promoteChatMemory,
++  sendCharacterChatMessage,
++  type CharacterChatStateDto,
++} from "@/lib/character-chat";
++import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
++import { useAppTheme } from "@/theme/use-app-theme";
++
++type SendError = "provider_error" | "transport_error" | "validation_error" | null;
++
++export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId: string; characterId: string }) {
++  const { status: authStatus } = useAuth();
++  const { t } = useTranslation();
++  const { colors } = useAppTheme();
++  const scrollRef = useRef<ScrollView>(null);
++  const [chat, setChat] = useState<CharacterChatStateDto | null>(null);
++  const [draft, setDraft] = useState("");
++  const [sending, setSending] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [sendError, setSendError] = useState<SendError>(null);
++  const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
++  const [promoted, setPromoted] = useState<Set<string>>(new Set());
++
++  const load = useCallback(async () => {
++    const state = await openCharacterChat(playerRunId, characterId);
++    setChat(state);
++    setError(null);
++  }, [characterId, playerRunId]);
++
++  useEffect(() => {
++    if (authStatus !== "signed_in") return;
++    // `load` updates state only after the awaited server read resolves.
++    // eslint-disable-next-line react-hooks/set-state-in-effect
++    void load().catch((loadError) => setError((loadError as Error).message));
++  }, [authStatus, load]);
++
++  useEffect(() => {
++    if (!chat) return;
++    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
++  }, [chat]);
++
++  const send = async () => {
++    const content = draft.trim();
++    if (!content || !chat || sending) return;
++    const messageId = pendingMessageId ?? newChatMessageId();
++    setPendingMessageId(messageId);
++    setSending(true);
++    setSendError(null);
++    try {
++      await sendCharacterChatMessage({ threadId: chat.thread.id, messageId, content });
++      setDraft("");
++      setPendingMessageId(null);
++      await load();
++    } catch (sendFailure) {
++      const code = (sendFailure as Error).message as SendError;
++      setSendError(code === "validation_error" || code === "transport_error" || code === "provider_error" ? code : "provider_error");
++      await load().catch(() => undefined);
++    } finally {
++      setSending(false);
++    }
++  };
++
++  const promote = async (messageId: string, candidateIndex: number) => {
++    const key = `${messageId}:${candidateIndex}`;
++    try {
++      await promoteChatMemory(messageId, candidateIndex);
++      setPromoted((current) => new Set(current).add(key));
++    } catch (promotionError) {
++      setError((promotionError as Error).message);
++    }
++  };
++
++  if (authStatus === "loading" || (authStatus === "signed_in" && !chat && !error)) {
++    return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /></SafeAreaView>;
++  }
++
++  return (
++    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
++      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
++        <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.xs }}>
++          <Pressable accessibilityRole="link" onPress={() => router.replace(`/play/${playerRunId}`)}>
++            <ThemedText variant="label" color="secondary">{"‹ "}{t("chat.backToStory")}</ThemedText>
++          </Pressable>
++          <ThemedText variant="heading" accessibilityRole="header">{chat?.character.name ?? t("chat.heading")}</ThemedText>
++          {chat?.character.storyRelationship && <ThemedText variant="caption" color="secondary">{chat.character.storyRelationship}</ThemedText>}
++          <ThemedText variant="caption" color="secondary">{t("chat.nonCanonicalNotice")}</ThemedText>
++        </View>
++
++        <ScrollView
++          ref={scrollRef}
++          keyboardShouldPersistTaps="handled"
++          contentContainerStyle={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center", padding: spacing.lg, gap: spacing.lg, flexGrow: 1 }}
++          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
++        >
++          {error && <ThemedText color="danger" style={{ textAlign: "center" }}>{error}</ThemedText>}
++          {chat?.messages.length === 0 && (
++            <View style={{ flex: 1, justifyContent: "center", paddingVertical: spacing.xxxl, gap: spacing.sm }}>
++              <ThemedText variant="heading" style={{ textAlign: "center" }}>{t("chat.emptyHeading")}</ThemedText>
++              <ThemedText variant="body" color="secondary" style={{ textAlign: "center" }}>{t("chat.emptyBody")}</ThemedText>
++            </View>
++          )}
++          {chat?.messages.map((message) => (
++            <View key={message.id} style={{ alignSelf: message.role === "player" ? "flex-end" : "stretch", maxWidth: message.role === "player" ? "84%" : "100%", gap: spacing.sm }}>
++              <View style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: message.role === "player" ? colors.surfaceSunken : colors.surface, borderWidth: message.role === "character" ? 1 : 0, borderColor: colors.border }}>
++                <ThemedText variant="caption" color="secondary">{message.role === "player" ? t("play.youLabel") : chat.character.name}</ThemedText>
++                <ThemedText variant="body">{message.content}</ThemedText>
++                {message.generation_status === "failed" && <ThemedText variant="caption" color="danger">{t("chat.failedMessage")}</ThemedText>}
++              </View>
++              {message.role === "character" && message.memory_candidates.map((candidate, candidateIndex) => {
++                const key = `${message.id}:${candidateIndex}`;
++                const isPromoted = promoted.has(key);
++                return (
++                  <Pressable
++                    key={key}
++                    accessibilityRole="button"
++                    disabled={isPromoted}
++                    onPress={() => void promote(message.id, candidateIndex)}
++                    style={({ pressed }) => ({ alignSelf: "flex-start", borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, opacity: isPromoted ? interactiveState.disabledOpacity : pressed ? interactiveState.pressedOpacity : 1 })}
++                  >
++                    <ThemedText variant="caption">{isPromoted ? t("chat.remembered") : t("chat.rememberInStory")}</ThemedText>
++                  </Pressable>
++                );
++              })}
++            </View>
++          ))}
++          {sending && <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}><ActivityIndicator /><ThemedText variant="caption" color="secondary">{t("chat.sending")}</ThemedText></View>}
++          {sendError && (
++            <View accessibilityLiveRegion="polite" style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.sm }}>
++              <ThemedText variant="label" color="danger">{sendError === "validation_error" ? t("chat.validationError") : t("chat.providerError")}</ThemedText>
++              {sendError !== "validation_error" && <Pressable accessibilityRole="button" onPress={() => void send()}><ThemedText variant="label">{t("chat.retry")}</ThemedText></Pressable>}
++            </View>
++          )}
++        </ScrollView>
++
++        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.md, backgroundColor: colors.background }}>
++          <View style={{ width: "100%", maxWidth: readingWidth.maxComposerWidth, alignSelf: "center" }}>
++            <Composer value={draft} onChangeText={setDraft} onSend={() => void send()} placeholder={t("chat.placeholder")} sendLabel={t("chat.send")} disabled={sending} />
++          </View>
++        </View>
++      </KeyboardAvoidingView>
++    </SafeAreaView>
++  );
++}
+diff --git a/src/screens/play/characters.tsx b/src/screens/play/characters.tsx
+new file mode 100644
+index 0000000..7bd4471
+--- /dev/null
++++ b/src/screens/play/characters.tsx
+@@ -0,0 +1,76 @@
++import { router } from "expo-router";
++import { useCallback, useEffect, useState } from "react";
++import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
++import { SafeAreaView } from "react-native-safe-area-context";
++
++import { useAuth } from "@/auth/auth-context";
++import { ThemedText } from "@/components/themed-text";
++import { useTranslation } from "@/i18n";
++import { getRunState, type RunStateDto } from "@/lib/story-engine";
++import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
++import { useAppTheme } from "@/theme/use-app-theme";
++
++export function CharacterDirectoryScreen({ playerRunId }: { playerRunId: string }) {
++  const { status: authStatus } = useAuth();
++  const { t } = useTranslation();
++  const { colors } = useAppTheme();
++  const [run, setRun] = useState<RunStateDto | null>(null);
++  const [error, setError] = useState<string | null>(null);
++
++  const load = useCallback(async () => {
++    try {
++      setRun(await getRunState(playerRunId));
++      setError(null);
++    } catch (loadError) {
++      setError((loadError as Error).message);
++    }
++  }, [playerRunId]);
++
++  useEffect(() => {
++    // `load` updates state only after the awaited server read resolves.
++    // eslint-disable-next-line react-hooks/set-state-in-effect
++    if (authStatus === "signed_in") void load();
++  }, [authStatus, load]);
++
++  if (authStatus === "loading" || (authStatus === "signed_in" && !run && !error)) {
++    return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}><ActivityIndicator /></SafeAreaView>;
++  }
++
++  return (
++    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
++      <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, padding: spacing.lg }}>
++        <Pressable accessibilityRole="link" onPress={() => router.replace(`/play/${playerRunId}`)}>
++          <ThemedText variant="label" color="secondary">{"‹ "}{t("characters.backToStory")}</ThemedText>
++        </Pressable>
++      </View>
++      <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.xl }}>
++        <View style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center", gap: spacing.sm }}>
++          <ThemedText variant="display" accessibilityRole="header">{t("characters.heading")}</ThemedText>
++          <ThemedText variant="body" color="secondary">{t("characters.intro")}</ThemedText>
++          {run && <ThemedText variant="caption" color="secondary">{run.branchSeq > 0 ? t("characters.alternatePath") : t("characters.currentPath")}</ThemedText>}
++        </View>
++        {error && <ThemedText color="danger" style={{ textAlign: "center" }}>{error}</ThemedText>}
++        {run?.characters.length === 0 && (
++          <View style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center", paddingVertical: spacing.xxxl }}>
++            <ThemedText variant="body" color="secondary" style={{ textAlign: "center" }}>{t("characters.empty")}</ThemedText>
++          </View>
++        )}
++        {run?.characters.map((character) => (
++          <View key={character.id} style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center", borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.lg, gap: spacing.xs }}>
++            <ThemedText variant="heading">{character.name}</ThemedText>
++            {character.role && <ThemedText variant="label" color="secondary">{character.role}</ThemedText>}
++            {character.relationship && <ThemedText variant="body">{character.relationship}</ThemedText>}
++            {character.description && <ThemedText variant="caption" color="secondary">{character.description}</ThemedText>}
++            <Pressable
++              accessibilityRole="button"
++              onPress={() => router.push(`/play/${playerRunId}/characters/${character.id}`)}
++              style={({ pressed }) => ({ alignSelf: "flex-start", marginTop: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accent, opacity: pressed ? interactiveState.pressedOpacity : 1 })}
++            >
++              <ThemedText variant="label" color="onAccent">{t("characters.openChat")}</ThemedText>
++            </Pressable>
++          </View>
++        ))}
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
+diff --git a/src/screens/play/run.tsx b/src/screens/play/run.tsx
+index 4d12e8d..7e98b1c 100644
+--- a/src/screens/play/run.tsx
++++ b/src/screens/play/run.tsx
+@@ -1,16 +1,14 @@
+ import { router } from "expo-router";
+-import { useCallback, useEffect, useState } from "react";
+-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
++import { useCallback, useEffect, useRef, useState } from "react";
++import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+ import { SafeAreaView } from "react-native-safe-area-context";
+ 
+ import { useAuth } from "@/auth/auth-context";
+ import { ActionButton } from "@/components/reading/action-button";
+ import { ChoiceList } from "@/components/reading/choice-list";
+-import { DialogueLine } from "@/components/reading/dialogue-line";
+-import { NarrativeBlock } from "@/components/reading/narrative-block";
+ import { PlayerActionBanner } from "@/components/reading/player-action-banner";
+ import { PlayStateBadge } from "@/components/reading/play-state-badge";
+-import { StateChangePanel } from "@/components/reading/state-change-panel";
++import { StorySceneSection } from "@/components/reading/story-scene-section";
+ import { Composer } from "@/components/composer";
+ import { LanguageSwitcher } from "@/components/language-switcher";
+ import { ThemedText } from "@/components/themed-text";
+@@ -33,6 +31,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+   const { status: authStatus } = useAuth();
+ 
+   const [state, setState] = useState<ScreenState>({ kind: "loading" });
++  const [sceneHistory, setSceneHistory] = useState<SceneDto[]>([]);
++  const scrollRef = useRef<ScrollView>(null);
+   const [composerText, setComposerText] = useState("");
+   const [lastPlayerAction, setLastPlayerAction] = useState<string | null>(null);
+   const [lastTurnArgs, setLastTurnArgs] = useState<{ actionType: "choice" | "custom_action"; selectedChoiceId?: string; rawAction?: string } | null>(null);
+@@ -40,6 +40,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+     title: string;
+     premise: string;
+     character: { name: string; role: string | null; relationship: string | null } | null;
++    branchSeq: number;
++    characterCount: number;
+   } | null>(null);
+ 
+   // If playerRunId changes while this screen stays mounted, reset to the
+@@ -47,10 +49,13 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+   // for resetting state in response to a prop change — see
+   // src/screens/preview/index.tsx for the same idiom used on locale change)
+   // rather than an effect, so a real fetch never starts from stale state.
+-  const [loadedForRunId, setLoadedForRunId] = useState<string | null>(null);
+-  if (loadedForRunId !== playerRunId && state.kind !== "loading") {
++  const [loadedForRunId, setLoadedForRunId] = useState(playerRunId);
++  if (loadedForRunId !== playerRunId) {
+     setLoadedForRunId(playerRunId);
+     setState({ kind: "loading" });
++    setSceneHistory([]);
++    setStoryHeader(null);
++    setComposerText("");
+   }
+ 
+   const load = useCallback(async () => {
+@@ -60,7 +65,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+         setState({ kind: "error", message: "This run has no scenes yet." });
+         return;
+       }
+-      setStoryHeader({ title: run.storyTitle, premise: run.storyPremise, character: run.startingCharacter });
++      setStoryHeader({ title: run.storyTitle, premise: run.storyPremise, character: run.startingCharacter, branchSeq: run.branchSeq, characterCount: run.characters.length });
++      setSceneHistory(run.scenes);
+       setState({ kind: "ready", scene: run.scene, playState: run.status });
+     } catch (err) {
+       setState({ kind: "error", message: (err as Error).message });
+@@ -80,6 +86,11 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+     if (authStatus === "signed_in") load();
+   }, [authStatus, load]);
+ 
++  useEffect(() => {
++    if (sceneHistory.length === 0) return;
++    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
++  }, [sceneHistory.length]);
++
+   const currentScene = "scene" in state ? state.scene : null;
+ 
+   const runTurn = async (args: { actionType: "choice" | "custom_action"; selectedChoiceId?: string; rawAction?: string; preview: string }) => {
+@@ -98,6 +109,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+       });
+       if (result.status === "CONTINUE_READY" || result.status === "EXPLICIT_CHECKPOINT" || result.status === "TERMINAL_ENDING") {
+         setComposerText("");
++        setSceneHistory((current) => current.some((scene) => scene.id === result.scene.id) ? current : [...current, result.scene]);
+         setState({ kind: "ready", scene: result.scene, playState: result.status });
+       } else if (result.status === "ALLOWANCE_EXHAUSTED") {
+         // Composer text is preserved (G4/G5) — never cleared on a non-committed turn.
+@@ -134,8 +146,8 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+   const handleReplayFromHere = async () => {
+     if (!currentScene) return;
+     try {
+-      const { scene } = await replayFromScene(playerRunId, currentScene.id);
+-      setState({ kind: "ready", scene, playState: scene.boundaryKind === "checkpoint" ? "EXPLICIT_CHECKPOINT" : "CONTINUE_READY" });
++      await replayFromScene(playerRunId, currentScene.id);
++      await load();
+     } catch (err) {
+       setState({ kind: "error", message: (err as Error).message });
+     }
+@@ -204,10 +216,12 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+         <LanguageSwitcher />
+       </View>
+ 
+-      <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
++      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
++      <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+         {storyHeader && (
+           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.xs }}>
+-            <ThemedText variant="heading">{storyHeader.title}</ThemedText>
++            <ThemedText variant="heading" accessibilityRole="header">{storyHeader.title}</ThemedText>
++            <ThemedText variant="body" color="secondary">{storyHeader.premise}</ThemedText>
+             {storyHeader.character && (
+               <ThemedText variant="caption" color="secondary">
+                 {storyHeader.character.name}
+@@ -215,9 +229,12 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+                 {storyHeader.character.relationship ? ` · ${storyHeader.character.relationship}` : ""}
+               </ThemedText>
+             )}
+-            <ThemedText variant="caption" color="secondary">
+-              {t("play.setupLockedNotice")}
+-            </ThemedText>
++            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.md, paddingTop: spacing.sm }}>
++              <ThemedText variant="caption" color="secondary">{storyHeader.branchSeq > 0 ? t("play.alternatePath") : t("play.currentPath")}</ThemedText>
++              <Pressable accessibilityRole="link" onPress={() => router.push(`/play/${playerRunId}/characters`)}>
++                <ThemedText variant="label">{t("play.characters")}{storyHeader.characterCount > 0 ? ` · ${storyHeader.characterCount}` : ""}</ThemedText>
++              </Pressable>
++            </View>
+           </View>
+         )}
+         {/* Fixed vertical order per UX_CONTRACT §1A. The previous scene stays
+@@ -227,14 +244,10 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+ 
+         {badgeLabel && <PlayStateBadge label={badgeLabel} />}
+ 
+-        <NarrativeBlock paragraphs={scene.narrative.split(/\n\n+/)} />
+-
+-        {scene.dialogue.map((line, index) => (
+-          <DialogueLine key={index} speaker={line.speaker} line={line.line} />
++        {(sceneHistory.length > 0 ? sceneHistory : [scene]).map((historyScene, index) => (
++          <StorySceneSection key={historyScene.id} scene={historyScene} whatChanged={t("play.whatChanged")} isFirst={index === 0} />
+         ))}
+ 
+-        {scene.stateChangeSummary.length > 0 && <StateChangePanel heading={t("play.whatChanged")} items={scene.stateChangeSummary} />}
+-
+         {isGenerating && (
+           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+             <ActivityIndicator />
+@@ -282,16 +295,17 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
+       </ScrollView>
+ 
+       {composerEnabled && (
+-        <View style={{ padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border }}>
+-          <Composer
++        <View style={{ padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background }}>
++          <View style={{ width: "100%", maxWidth: readingWidth.maxComposerWidth, alignSelf: "center" }}><Composer
+             value={composerText}
+             onChangeText={setComposerText}
+             onSend={handleSend}
+             placeholder={t("play.composerPlaceholder")}
+             sendLabel={t("play.composerSend")}
+-          />
++          /></View>
+         </View>
+       )}
++      </KeyboardAvoidingView>
+     </SafeAreaView>
+   );
+ }
+diff --git a/supabase/functions/_shared/engine/alpha-access.ts b/supabase/functions/_shared/engine/alpha-access.ts
+index 183e82a..3db65c8 100644
+--- a/supabase/functions/_shared/engine/alpha-access.ts
++++ b/supabase/functions/_shared/engine/alpha-access.ts
+@@ -1,5 +1,3 @@
+-import type { NarrativeProvider } from "./types.ts";
+-
+ export class AlphaAccessForbiddenError extends Error {
+   constructor() {
+     super("AI alpha generation access is not enabled for this account");
+@@ -20,11 +18,11 @@ export function isAlphaGenerationEnabled(row: { enabled?: boolean | null } | nul
+  * Ordering is security-significant: provider construction happens only after
+  * the server-side allowlist check succeeds.
+  */
+-export async function authorizeAlphaProvider(
++export async function authorizeAlphaProvider<T>(
+   gate: AlphaAccessGate,
+   userJwt: string,
+-  providerFactory: () => NarrativeProvider
+-): Promise<NarrativeProvider> {
++  providerFactory: () => T
++): Promise<T> {
+   await gate.assertAllowed(userJwt);
+   return providerFactory();
+ }
+diff --git a/supabase/functions/_shared/engine/character-chat.test.ts b/supabase/functions/_shared/engine/character-chat.test.ts
+new file mode 100644
+index 0000000..c6fad0e
+--- /dev/null
++++ b/supabase/functions/_shared/engine/character-chat.test.ts
+@@ -0,0 +1,74 @@
++import { describe, expect, it } from "vitest";
++
++import { assembleCharacterChatContext, boundRecentChat, CHAT_HISTORY_LIMIT, validateCharacterChatResult } from "./character-chat.ts";
++import { buildCharacterChatPrompt } from "./providers.ts";
++import { InMemoryTurnRepository } from "./test-support/in-memory-repository.ts";
++import { StructuredGenerationResultSchema, type AddressTerms, type StorySetup } from "./types.ts";
++
++async function storyWithMira(addressTerms?: AddressTerms) {
++  const repo = new InMemoryTurnRepository();
++  const setup: StorySetup = {
++    premise: "Mira guards the hidden key.", genre: "mystery", contentLanguage: "vi", storyMode: "narrative",
++    tone: "balanced", narrativePov: "second_person", playerRole: "người giữ chìa khóa", playerName: "An",
++    startingCharacter: { name: "Mira", role: "người canh giữ", relationship: "đồng minh dè dặt", aliases: [], addressTerms },
++  };
++  const precheck = await repo.precheckAndStartTurn({ turnId: crypto.randomUUID(), playerRunId: null, actionType: "start", selectedChoiceId: null, rawAction: null, storySetup: setup });
++  if (precheck.status !== "proceed") throw new Error("unexpected precheck");
++  const characterId = repo.runs.get(precheck.playerRunId)!.startingCharacterId!;
++  const committed = await repo.commitTurn({
++    turnId: precheck.turnId,
++    result: StructuredGenerationResultSchema.parse({
++      narrative: "Mira biết An đã giấu chiếc chìa khóa dưới bậc đá.", next_choices: [],
++      character_memory_candidates: [{ character_id: characterId, memory_type: "discovery", fact_key: "player_hid_key", fact_text: "An giấu chiếc chìa khóa dưới bậc đá.", salience: 5 }],
++    }),
++    generationAttemptCount: 1, provider: "fake", model: "chat-contract", inputTokens: 1, outputTokens: 1, costMicros: 0, latencyMs: 1,
++  });
++  return { repo, precheck, characterId, openingSceneId: committed.scene.id };
++}
++
++describe("branch-bound non-canonical Character Chat", () => {
++  it("bounds recent Chat independently from Story context", () => {
++    const messages = Array.from({ length: 31 }, (_, index) => ({ role: index % 2 ? "character" as const : "player" as const, content: `message-${index}` }));
++    const bounded = boundRecentChat(messages);
++    expect(bounded).toHaveLength(CHAT_HISTORY_LIMIT);
++    expect(bounded[0].content).toBe("message-11");
++  });
++
++  it("keeps Chat-only knowledge out of Story until explicit promotion, then isolates it from the parent branch", async () => {
++    const { repo, precheck, characterId, openingSceneId } = await storyWithMira();
++    const childBranch = repo.replayFromScene(precheck.playerRunId, openingSceneId).runBranchId;
++    const before = await repo.loadContextInputs(precheck.playerRunId, childBranch);
++    const chatContext = assembleCharacterChatContext({ inputs: before, characterId, recentChat: [], playerMessage: "Tôi thú nhận đã đánh tráo chiếc chìa khóa." });
++    expect(chatContext.characterMemories.map((memory) => memory.factKey)).toContain("player_hid_key");
++
++    const providerCall = {
++      result: { reply: "Mira im lặng rất lâu rồi gật đầu.", chat_memory_candidates: [{ memory_type: "player_fact", fact_key: "player_swapped_key", fact_text: "An thú nhận đã đánh tráo chiếc chìa khóa.", salience: 5 }] },
++      metadata: { provider: "fake", model: "chat", inputTokens: 4, outputTokens: 5, costMicros: 0, latencyMs: 1 },
++    };
++    const validated = validateCharacterChatResult(providerCall);
++    expect(validated.ok).toBe(true);
++    expect((await repo.loadContextInputs(precheck.playerRunId, childBranch)).allCharacterMemories.map((memory) => memory.factKey)).not.toContain("player_swapped_key");
++
++    if (!validated.ok) throw new Error("unexpected validation failure");
++    repo.promoteChatMemory({ playerRunId: precheck.playerRunId, runBranchId: childBranch, characterId, sourceChatMessageId: "chat-message-1", candidate: validated.result.chat_memory_candidates[0] });
++    expect((await repo.loadContextInputs(precheck.playerRunId, childBranch)).allCharacterMemories.map((memory) => memory.factKey)).toContain("player_swapped_key");
++    expect((await repo.loadContextInputs(precheck.playerRunId, repo.branches.get(childBranch)!.parentBranchId!)).allCharacterMemories.map((memory) => memory.factKey)).not.toContain("player_swapped_key");
++  });
++
++  it.each([
++    ["anh", "em", "em", "anh"],
++    ["chị", "em", "em", "chị"],
++    ["tôi", "cậu", "tôi", "cậu"],
++    ["ta", "ngươi", "ta", "ngươi"],
++  ])("preserves VI address direction %s/%s", async (playerSelf, playerAddresses, characterSelf, characterAddresses) => {
++    const { repo, precheck, characterId } = await storyWithMira({
++      speakerSelfReference: playerSelf, speakerAddressesTargetAs: playerAddresses,
++      targetSelfReference: characterSelf, targetAddressesSpeakerAs: characterAddresses,
++    });
++    const inputs = await repo.loadContextInputs(precheck.playerRunId, precheck.runBranchId);
++    const context = assembleCharacterChatContext({ inputs, characterId, recentChat: [], playerMessage: "Mira có nhớ không?" });
++    const prompt = buildCharacterChatPrompt(context);
++    expect(prompt.system).toContain("Vietnamese");
++    expect(prompt.user).toContain(`Player self=${playerSelf}; player addresses character=${playerAddresses}; character self=${characterSelf}; character addresses player=${characterAddresses}`);
++  });
++});
+diff --git a/supabase/functions/_shared/engine/character-chat.ts b/supabase/functions/_shared/engine/character-chat.ts
+new file mode 100644
+index 0000000..a1fef6f
+--- /dev/null
++++ b/supabase/functions/_shared/engine/character-chat.ts
+@@ -0,0 +1,51 @@
++import { moderateOutputText } from "./moderation.ts";
++import {
++  CharacterChatResultSchema,
++  type CharacterChatContext,
++  type ChatMessageContext,
++  type ProviderCallResult,
++} from "./types.ts";
++import type { ContextInputs } from "./repository.ts";
++
++export const CHAT_HISTORY_LIMIT = 20;
++export const CHAT_STORY_SCENE_LIMIT = 3;
++
++export function boundRecentChat(messages: ChatMessageContext[]): ChatMessageContext[] {
++  return messages.slice(-CHAT_HISTORY_LIMIT);
++}
++
++export function assembleCharacterChatContext(args: {
++  inputs: ContextInputs;
++  characterId: string;
++  recentChat: ChatMessageContext[];
++  playerMessage: string;
++}): CharacterChatContext {
++  const character = args.inputs.characters.find((item) => item.id === args.characterId);
++  if (!character) throw new Error("character_not_visible");
++  return {
++    contentLanguage: args.inputs.contentLanguage,
++    genre: args.inputs.genre,
++    storyMode: args.inputs.storyMode,
++    premise: args.inputs.premise,
++    worldSetting: args.inputs.worldSetting,
++    playerRole: args.inputs.playerRole,
++    playerName: args.inputs.playerName,
++    playerDescription: args.inputs.playerDescription,
++    character,
++    recentScenes: args.inputs.allScenesOldestFirst.slice(-CHAT_STORY_SCENE_LIMIT),
++    characterMemories: args.inputs.allCharacterMemories.filter((memory) => memory.characterId === character.id),
++    recentChat: boundRecentChat(args.recentChat),
++    playerMessage: args.playerMessage,
++  };
++}
++
++export function validateCharacterChatResult(call: ProviderCallResult) {
++  const parsed = CharacterChatResultSchema.safeParse(call.result);
++  if (!parsed.success) {
++    return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
++  }
++  if (moderateOutputText(parsed.data.reply).blocked) {
++    return { ok: false as const, errorClass: "validation_error" as const, metadata: call.metadata };
++  }
++  return { ok: true as const, result: parsed.data, metadata: call.metadata };
++}
+diff --git a/supabase/functions/_shared/engine/generation-validation.ts b/supabase/functions/_shared/engine/generation-validation.ts
+index 2d06594..39bc08c 100644
+--- a/supabase/functions/_shared/engine/generation-validation.ts
++++ b/supabase/functions/_shared/engine/generation-validation.ts
+@@ -7,7 +7,7 @@ import {
+   type StructuredGenerationResult,
+ } from "./types.ts";
+ 
+-export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing" | "character_memory_unknown";
++export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing" | "character_memory_unknown" | "runtime_character_duplicate";
+ 
+ export type SanitizedGenerationFailureClass =
+   | "invalid_json"
+@@ -107,6 +107,27 @@ export function evaluateGeneratedResult(
+     };
+   }
+ 
++  const existingIdentityKeys = new Set(
++    availableCharacters
++      .flatMap((character) => [character.name, ...character.aliases])
++      .map((value) => value.trim().toLocaleLowerCase(language).replace(/\s+/g, " "))
++  );
++  const duplicatesExistingCharacter = parsed.data.new_character_candidates.some((candidate) =>
++    [candidate.name, ...candidate.aliases]
++      .map((value) => value.trim().toLocaleLowerCase(language).replace(/\s+/g, " "))
++      .some((identity) => existingIdentityKeys.has(identity))
++  );
++  if (duplicatesExistingCharacter) {
++    return {
++      ok: false,
++      failureClass: "valid_json_wrong_shape",
++      pipelineErrorClass: "unusable_output",
++      qualityFailures: ["runtime_character_duplicate"],
++      schemaIssues: [],
++      repairInstruction: "new_character_candidates duplicated an existing canonical name or alias; omit existing characters and do not fuzzy-merge identities",
++    };
++  }
++
+   if (requiredStartingCharacters.length > 0) {
+     const identitySurface = [
+       parsed.data.narrative,
+diff --git a/supabase/functions/_shared/engine/golden-set/chat-spot-check.ts b/supabase/functions/_shared/engine/golden-set/chat-spot-check.ts
+new file mode 100644
+index 0000000..aa16dab
+--- /dev/null
++++ b/supabase/functions/_shared/engine/golden-set/chat-spot-check.ts
+@@ -0,0 +1,113 @@
++import { validateCharacterChatResult } from "../character-chat.ts";
++import { buildCharacterChatPrompt, DeepSeekCharacterChatProvider } from "../providers.ts";
++import { CharacterChatResultSchema, type CharacterChatContext, type ContextCharacterMemory } from "../types.ts";
++
++const MAX_COST_MICROS = 250_000;
++
++function context(language: "en" | "vi", playerMessage: string, memories: ContextCharacterMemory[] = []): CharacterChatContext {
++  return {
++    contentLanguage: language,
++    genre: "mystery",
++    storyMode: "narrative",
++    premise: language === "vi" ? "Một thư khố ghi nhớ mọi lời hứa." : "An archive remembers every promise.",
++    worldSetting: language === "vi" ? "Một thành phố mưa bên bờ biển." : "A rain-bound coastal city.",
++    playerRole: language === "vi" ? "người giữ chìa khóa" : "the key keeper",
++    playerName: "An",
++    playerDescription: null,
++    character: {
++      id: "33333333-3333-4333-8333-333333333333",
++      name: "Mira",
++      aliases: [],
++      role: language === "vi" ? "người canh thư khố" : "archive keeper",
++      description: language === "vi" ? "Bình tĩnh, sắc sảo và luôn nhớ giá của một lời hứa." : "Calm, incisive, and mindful of every promise's cost.",
++      storyRelationship: language === "vi" ? "đồng minh dè dặt" : "a wary ally",
++      addressTerms: language === "vi" ? {
++        speakerSelfReference: "anh",
++        speakerAddressesTargetAs: "em",
++        targetSelfReference: "em",
++        targetAddressesSpeakerAs: "anh",
++      } : undefined,
++    },
++    recentScenes: [{
++      seqInBranch: 2, boundaryKind: "none",
++      narrative: language === "vi" ? "Mira nhìn thấy An giấu chiếc chìa khóa dưới bậc đá." : "Mira saw An hide the key beneath the stone step.",
++      dialogue: [], stateChangeSummary: [], playerAction: null,
++    }],
++    characterMemories: memories,
++    recentChat: [],
++    playerMessage,
++  };
++}
++
++const visibleMemory: ContextCharacterMemory = {
++  id: "11111111-1111-4111-8111-111111111111",
++  characterId: "33333333-3333-4333-8333-333333333333",
++  characterName: "Mira",
++  memoryType: "discovery",
++  factKey: "player_hid_key",
++  factText: "An hid the key beneath the stone step.",
++  salience: 5,
++  supersedesFactId: null,
++  createdAt: "2026-08-11T00:00:00Z",
++};
++
++const promotedMemory: ContextCharacterMemory = {
++  ...visibleMemory,
++  id: "22222222-2222-4222-8222-222222222222",
++  memoryType: "player_fact",
++  factKey: "player_confessed_swap",
++  factText: "An explicitly confessed to swapping the archive key.",
++};
++
++const cases = [
++  { id: "en-key", context: context("en", "Do you remember where I hid the key?", [visibleMemory]) },
++  { id: "en-relationship", context: context("en", "Tell me what you still trust about me.", [visibleMemory]) },
++  { id: "vi-address", context: context("vi", "Em còn nhớ anh đã giấu chìa khóa ở đâu không?", [visibleMemory]) },
++  { id: "vi-confession", context: context("vi", "Anh muốn thú nhận một điều, nhưng chuyện này chưa xảy ra trong chính truyện.", [visibleMemory]) },
++  { id: "branch-isolation", context: context("en", "What do you know about this path?", [visibleMemory]), forbidden: "sibling-only future coronation" },
++  { id: "promoted-memory", context: context("en", "What confession do you remember?", [visibleMemory, promotedMemory]), required: promotedMemory.factText },
++];
++
++async function main() {
++  const apiKey = process.env.DEEPSEEK_API_KEY;
++  if (!apiKey) {
++    console.log(JSON.stringify({ status: "DEEPSEEK_CREDENTIAL_NOT_AVAILABLE", credentialPresent: false }));
++    return;
++  }
++  const model = process.env.LOREWISH_NARRATIVE_MODEL ?? "deepseek-v4-flash";
++  const provider = new DeepSeekCharacterChatProvider(apiKey, model);
++  let totalCostMicros = 0;
++  const results: Record<string, unknown>[] = [];
++  for (const item of cases) {
++    const prompt = buildCharacterChatPrompt(item.context);
++    if (item.forbidden && prompt.user.includes(item.forbidden)) throw new Error(`${item.id}: forbidden branch text leaked into prompt`);
++    if (item.required && !prompt.user.includes(item.required)) throw new Error(`${item.id}: promoted memory missing from prompt`);
++    const call = await provider.generateChat(item.context);
++    totalCostMicros += call.metadata.costMicros;
++    if (totalCostMicros > MAX_COST_MICROS) throw new Error("CHAT_SPOT_CHECK_COST_CAP_EXCEEDED");
++    const validated = validateCharacterChatResult(call);
++    results.push({
++      id: item.id,
++      schemaValid: validated.ok,
++      provider: call.metadata.provider,
++      model: call.metadata.model,
++      inputTokens: call.metadata.inputTokens,
++      outputTokens: call.metadata.outputTokens,
++      costMicros: call.metadata.costMicros,
++      latencyMs: call.metadata.latencyMs,
++    });
++    if (!validated.ok) {
++      const parsed = CharacterChatResultSchema.safeParse(call.result);
++      const issues = parsed.success
++        ? [{ path: "reply", code: "moderation_blocked" }]
++        : parsed.error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code }));
++      throw new Error(`${item.id}: invalid Character Chat result ${JSON.stringify(issues)}`);
++    }
++  }
++  console.log(JSON.stringify({ status: "DEEPSEEK_CHAT_SPOT_CHECK_PASS", credentialPresent: true, totalCostMicros, maxCostMicros: MAX_COST_MICROS, cases: results }, null, 2));
++}
++
++main().catch((error) => {
++  console.error((error as Error).message);
++  process.exitCode = 1;
++});
+diff --git a/supabase/functions/_shared/engine/providers.ts b/supabase/functions/_shared/engine/providers.ts
+index e27cd10..4119e19 100644
+--- a/supabase/functions/_shared/engine/providers.ts
++++ b/supabase/functions/_shared/engine/providers.ts
+@@ -50,7 +50,14 @@
+  * logged, loaded only via an explicit env-file mechanism.
+  */
+ 
+-import type { NarrativeContext, NarrativeProvider, ProviderCallMetadata, ProviderCallResult } from "./types.ts";
++import type {
++  CharacterChatContext,
++  CharacterChatProvider,
++  NarrativeContext,
++  NarrativeProvider,
++  ProviderCallMetadata,
++  ProviderCallResult,
++} from "./types.ts";
+ import { ProviderOutputError, ProviderTransportError } from "./types.ts";
+ import { FakeNarrativeProvider } from "./fake-provider.ts";
+ 
+@@ -96,6 +103,18 @@ const RESULT_TOOL_SCHEMA = {
+         required: ["character_id", "memory_type", "fact_key", "fact_text", "salience"],
+       },
+     },
++    new_character_candidates: {
++      type: "array",
++      items: {
++        type: "object",
++        properties: {
++          temporary_key: { type: "string" }, name: { type: "string" }, role: { type: "string" },
++          description: { type: "string" }, relationship: { type: "string" },
++          aliases: { type: "array", items: { type: "string" } },
++        },
++        required: ["temporary_key", "name", "role", "description", "relationship", "aliases"],
++      },
++    },
+     next_choices: {
+       type: "array",
+       items: {
+@@ -169,6 +188,20 @@ export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
+         additionalProperties: false,
+       },
+     },
++    new_character_candidates: {
++      type: "array",
++      maxItems: 3,
++      items: {
++        type: "object",
++        properties: {
++          temporary_key: { type: "string", pattern: "^[a-z][a-z0-9_]{1,63}$" },
++          name: { type: "string" }, role: { type: "string" }, description: { type: "string" },
++          relationship: { type: "string" }, aliases: { type: "array", items: { type: "string" } },
++        },
++        required: ["temporary_key", "name", "role", "description", "relationship", "aliases"],
++        additionalProperties: false,
++      },
++    },
+     next_choices: {
+       type: "array",
+       items: {
+@@ -205,6 +238,7 @@ export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
+     "state_changes",
+     "canon_candidates",
+     "character_memory_candidates",
++    "new_character_candidates",
+     "next_choices",
+     "boundary_kind",
+     "structured_outcome",
+@@ -221,6 +255,7 @@ export function buildPrompt(context: NarrativeContext): { system: string; user:
+     `Never break character, never mention being an AI, never use meta-commentary.`,
+     `Every canon_candidates fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$, even when writing Vietnamese. Never put diacritics, spaces, or punctuation in fact_key.`,
+     `Character memory is canonical structured state, not a transcript. Emit character_memory_candidates only for durable, relevant facts. Copy character_id exactly from CHARACTER IDENTITY. Reuse fact_key when a relationship/state fact supersedes an earlier one. Never emit configured address terms as memory updates.`,
++    `Emit at most 3 new_character_candidates only for notable, reusable NPCs first introduced in this Scene. Never emit a random named mention, an existing name/alias, a database UUID, or address terms. Use temporary_key only for validation; a new canonical UUID is available starting on the next turn.`,
+     `boundary_kind must be "ending" ONLY for a genuine, deliberate story conclusion — never because the scene is merely well-paced or you are unsure how to continue. Default to "none".`,
+     `Prohibited copy in any language: "to be continued" or any equivalent phrase.`,
+     context.repairReason
+@@ -265,8 +300,8 @@ export function buildPrompt(context: NarrativeContext): { system: string; user:
+     `STORY CONFIG\nGenre: ${context.genre}\nStory mode: ${context.storyMode}\nContent language: ${context.contentLanguage}\nPremise: ${context.premise}${context.worldSetting ? `\nWorld/setting: ${context.worldSetting}` : ""}${context.tone ? `\nTone: ${context.tone}` : ""}${context.narrativePov ? `\nNarrative POV: ${context.narrativePov}` : ""}`,
+     `PLAYER IDENTITY\nRole: ${context.playerRole ?? "unspecified"}${context.playerName ? `\nName: ${context.playerName}` : ""}${context.playerDescription ? `\nDescription: ${context.playerDescription}` : ""}`,
+     characterLines
+-      ? `CHARACTER IDENTITY\nPreserve these authored identities; never silently replace them with invented NPCs.\n${characterLines}`
+-      : "CHARACTER IDENTITY\nNo authored starting character.",
++      ? `CHARACTER IDENTITY\nPreserve these canonical identities; never silently replace them with invented NPCs.\n${characterLines}`
++      : "CHARACTER IDENTITY\nNo canonical character yet.",
+     context.characters.some((character) => character.addressTerms)
+       ? `ADDRESS TERMS\nConfigured terms are immutable authoring data for this turn. Preserve speaker/target directionality.\n${context.characters
+           .filter((character) => character.addressTerms)
+@@ -283,6 +318,7 @@ export function buildPrompt(context: NarrativeContext): { system: string; user:
+       ? "PLAYER ACTION\nGenerate the opening scene for this story."
+       : `PLAYER ACTION\nType: ${context.actionType}\nAction: ${context.selectedChoiceLabel ?? context.playerAction}`,
+     "Return 2-4 meaningfully distinct next choices unless this is a true ending.",
++    "Return new_character_candidates as [] unless this Scene introduces a genuinely important recurring character.",
+   ]
+     .filter(Boolean)
+     .join("\n\n");
+@@ -396,7 +432,7 @@ const DEEPSEEK_PRICING_USD_PER_1M: Record<string, { inputCacheMiss: number; inpu
+ 
+ export type DeepSeekStructuredOutputMode = "json_object" | "strict_tool";
+ 
+-function parseProviderJson(
++export function parseProviderJson(
+   content: string,
+   finishReason: unknown,
+   metadata: ProviderCallMetadata
+@@ -419,6 +455,122 @@ function parseProviderJson(
+   }
+ }
+ 
++export function buildCharacterChatPrompt(context: CharacterChatContext): { system: string; user: string } {
++  const languageName = context.contentLanguage.startsWith("vi") ? "Vietnamese" : "English";
++  const character = context.character;
++  const terms = character.addressTerms;
++  const recentScenes = context.recentScenes
++    .map((scene) => `Scene ${scene.seqInBranch}: ${scene.narrative}`)
++    .join("\n\n") || "No prior Scene.";
++  const memories = context.characterMemories
++    .filter((memory) => memory.characterId === character.id)
++    .map((memory) => `- [${memory.memoryType}; ${memory.factKey}] ${memory.factText}`)
++    .join("\n") || "No relevant canonical Character memory.";
++  const recentChat = context.recentChat
++    .map((message) => `${message.role === "player" ? "Player" : character.name}: ${message.content}`)
++    .join("\n") || "No prior messages in this Chat thread.";
++
++  const system = [
++    `You are ${character.name}, speaking in a private, non-canonical Lorewish Character Chat.`,
++    `Reply naturally in ${languageName}, the Story content language, regardless of the app UI language.`,
++    "Stay in character. Never mention being an AI or claim knowledge absent from the provided Story/Chat context.",
++    "Do not advance physical Story events, create Scenes, or imply this side conversation automatically happened in Story canon.",
++    "Configured address terms are immutable. Preserve their direction exactly; emotional tone may change but the terms may not.",
++    "Propose at most 5 small durable chat_memory_candidates only for facts worth an explicit player promotion. Never include hidden reasoning, a transcript, address-term changes, or invented history. When no candidate cleanly fits the exact schema, return an empty array.",
++    "Every fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$.",
++    "For every candidate, memory_type MUST be exactly one of: player_fact, character_fact, relationship_fact, shared_event, promise, discovery. Do not invent another memory_type.",
++    "Return only JSON: {\"reply\": string, \"chat_memory_candidates\": [{\"memory_type\": \"player_fact\"|\"character_fact\"|\"relationship_fact\"|\"shared_event\"|\"promise\"|\"discovery\", \"fact_key\": string, \"fact_text\": string, \"salience\": 1|2|3|4|5}] }.",
++  ].join("\n");
++
++  const user = [
++    `STORY CONFIG\nGenre: ${context.genre}\nMode: ${context.storyMode}\nContent language: ${context.contentLanguage}\nPremise: ${context.premise}${context.worldSetting ? `\nWorld: ${context.worldSetting}` : ""}`,
++    `PLAYER IDENTITY\nRole: ${context.playerRole ?? "unspecified"}${context.playerName ? `\nName: ${context.playerName}` : ""}${context.playerDescription ? `\nDescription: ${context.playerDescription}` : ""}`,
++    `CHARACTER IDENTITY\nName: ${character.name}\nRole: ${character.role ?? "unspecified"}\nDescription: ${character.description ?? "unspecified"}\nRelationship: ${character.storyRelationship ?? "unspecified"}\nAliases: ${character.aliases.join(", ") || "none"}`,
++    terms
++      ? `ADDRESS TERMS\nPlayer self=${terms.speakerSelfReference}; player addresses character=${terms.speakerAddressesTargetAs}; character self=${terms.targetSelfReference}; character addresses player=${terms.targetAddressesSpeakerAs}`
++      : "ADDRESS TERMS\nNo configured address terms.",
++    `CURRENT BRANCH STORY CONTEXT\n${recentScenes}`,
++    `RELEVANT CANONICAL CHARACTER MEMORY\n${memories}`,
++    `RECENT CHAT\n${recentChat}`,
++    `PLAYER MESSAGE\n${context.playerMessage}`,
++  ].join("\n\n");
++  return { system, user };
++}
++
++export class FakeCharacterChatProvider implements CharacterChatProvider {
++  readonly id = "fake";
++  async generateChat(context: CharacterChatContext): Promise<ProviderCallResult> {
++    return {
++      result: {
++        reply: context.contentLanguage.startsWith("vi")
++          ? `${context.character.name} lắng nghe, rồi đáp lại bằng giọng điệu quen thuộc.`
++          : `${context.character.name} listens, then answers in the familiar voice you know.`,
++        chat_memory_candidates: [],
++      },
++      metadata: { provider: this.id, model: "deterministic-chat-v1", inputTokens: 0, outputTokens: 0, costMicros: 0, latencyMs: 0 },
++    };
++  }
++}
++
++export class DeepSeekCharacterChatProvider implements CharacterChatProvider {
++  readonly id = "deepseek";
++  private readonly timeoutMs = 30_000;
++  private readonly pricing: { inputCacheMiss: number; inputCacheHit: number; output: number };
++
++  constructor(private readonly apiKey: string, private readonly model = "deepseek-v4-flash") {
++    const pricing = DEEPSEEK_PRICING_USD_PER_1M[model];
++    if (!pricing) throw new Error(`DeepSeekCharacterChatProvider: unrecognized model "${model}"`);
++    this.pricing = pricing;
++  }
++
++  async generateChat(context: CharacterChatContext): Promise<ProviderCallResult> {
++    const { system, user } = buildCharacterChatPrompt(context);
++    const started = performance.now();
++    const controller = new AbortController();
++    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
++    let response: Response;
++    try {
++      response = await fetch("https://api.deepseek.com/chat/completions", {
++        method: "POST",
++        headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
++        signal: controller.signal,
++        body: JSON.stringify({
++          model: this.model,
++          messages: [{ role: "system", content: system }, { role: "user", content: user }],
++          response_format: { type: "json_object" },
++          max_tokens: 1024,
++          thinking: { type: "disabled" },
++        }),
++      });
++    } catch (error) {
++      if ((error as Error).name === "AbortError") throw new ProviderTransportError("character chat timed out", "timeout");
++      throw new ProviderTransportError(`character chat fetch failed: ${(error as Error).message}`, "provider_transport");
++    } finally {
++      clearTimeout(timeout);
++    }
++    if (!response.ok) throw new ProviderTransportError(`character chat provider HTTP ${response.status}`, "provider_http");
++    const body = await response.json();
++    const usage = body?.usage ?? {};
++    const cacheHitTokens = usage.prompt_cache_hit_tokens ?? 0;
++    const cacheMissTokens = usage.prompt_cache_miss_tokens ?? (usage.prompt_tokens ?? 0) - cacheHitTokens;
++    const inputTokens = usage.prompt_tokens ?? cacheHitTokens + cacheMissTokens;
++    const outputTokens = usage.completion_tokens ?? 0;
++    const metadata: ProviderCallMetadata = {
++      provider: this.id,
++      model: this.model,
++      inputTokens,
++      outputTokens,
++      cacheHitTokens,
++      cacheMissTokens,
++      costMicros: Math.round(cacheHitTokens * this.pricing.inputCacheHit + cacheMissTokens * this.pricing.inputCacheMiss + outputTokens * this.pricing.output),
++      latencyMs: Math.round(performance.now() - started),
++    };
++    const content = body?.choices?.[0]?.message?.content;
++    if (typeof content !== "string") throw new ProviderOutputError("character chat response contained no message", "provider_response", metadata);
++    return { result: parseProviderJson(content, body?.choices?.[0]?.finish_reason, metadata), metadata };
++  }
++}
++
+ /**
+  * DeepSeek's `response_format: {type: "json_object"}` guarantees syntactically valid JSON but,
+  * unlike Gemini's `responseSchema` or Anthropic's tool-forced schema, does NOT enforce a specific
+@@ -431,7 +583,7 @@ function parseProviderJson(
+  * for this adapter, describing that same shape in plain JSON-Schema-shaped text.
+  */
+ const DEEPSEEK_SCHEMA_INSTRUCTION = `Respond with ONLY a single JSON object — no markdown code fences, no commentary before or after — matching exactly this shape:
+-{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "character_memory_candidates": [{"character_id": uuid, "memory_type": "player_fact"|"character_fact"|"relationship_fact"|"shared_event"|"promise"|"discovery", "fact_key": string, "fact_text": string, "salience": 1|2|3|4|5}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
++{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "character_memory_candidates": [{"character_id": uuid, "memory_type": "player_fact"|"character_fact"|"relationship_fact"|"shared_event"|"promise"|"discovery", "fact_key": string, "fact_text": string, "salience": 1|2|3|4|5}], "new_character_candidates": [{"temporary_key": string, "name": string, "role": string, "description": string, "relationship": string, "aliases": [string]}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
+ "narrative" and "boundary_kind" are required. Every other field must still be present — use an empty array/object when there is nothing to report, never omit the key.`;
+ 
+ /**
+@@ -799,3 +951,18 @@ export function selectProvider(env: { get(key: string): string | undefined }): N
+   );
+   return new FakeNarrativeProvider();
+ }
++
++/** Character Chat deliberately follows the controlled DEV Story provider selection. */
++export function selectCharacterChatProvider(env: { get(key: string): string | undefined }): CharacterChatProvider {
++  const configured = env.get("LOREWISH_NARRATIVE_PROVIDER");
++  if (configured === "deepseek") {
++    const key = env.get("DEEPSEEK_API_KEY");
++    if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=deepseek but DEEPSEEK_API_KEY is not set");
++    return new DeepSeekCharacterChatProvider(
++      key,
++      env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-flash"
++    );
++  }
++  if (configured === "fake") return new FakeCharacterChatProvider();
++  throw new Error("Character Chat requires the controlled DeepSeek provider in this milestone");
++}
+diff --git a/supabase/functions/_shared/engine/runtime-character.test.ts b/supabase/functions/_shared/engine/runtime-character.test.ts
+new file mode 100644
+index 0000000..23fb4be
+--- /dev/null
++++ b/supabase/functions/_shared/engine/runtime-character.test.ts
+@@ -0,0 +1,85 @@
++import { describe, expect, it } from "vitest";
++
++import { evaluateGeneratedResult } from "./generation-validation.ts";
++import { InMemoryTurnRepository } from "./test-support/in-memory-repository.ts";
++import { StructuredGenerationResultSchema, type StorySetup } from "./types.ts";
++
++const SETUP: StorySetup = {
++  premise: "A sealed archive remembers every promise.",
++  genre: "mystery",
++  contentLanguage: "en",
++  storyMode: "narrative",
++  tone: "balanced",
++  narrativePov: "second_person",
++  playerRole: "an archivist",
++  startingCharacter: {
++    name: "Mira", role: "archive keeper", relationship: "wary ally", aliases: ["Keeper Mira"],
++  },
++};
++
++async function begin(repo: InMemoryTurnRepository) {
++  const precheck = await repo.precheckAndStartTurn({
++    turnId: crypto.randomUUID(), playerRunId: null, actionType: "start",
++    selectedChoiceId: null, rawAction: null, storySetup: SETUP,
++  });
++  if (precheck.status !== "proceed") throw new Error("unexpected precheck");
++  return precheck;
++}
++
++async function commit(repo: InMemoryTurnRepository, turnId: string, result: unknown) {
++  return repo.commitTurn({
++    turnId,
++    result: StructuredGenerationResultSchema.parse(result),
++    generationAttemptCount: 1, provider: "fake", model: "runtime-test",
++    inputTokens: 10, outputTokens: 20, costMicros: 0, latencyMs: 1,
++  });
++}
++
++describe("runtime Character foundation", () => {
++  it("creates a validated notable Character atomically with its Scene and exposes it on the next turn", async () => {
++    const repo = new InMemoryTurnRepository();
++    const first = await begin(repo);
++    const opening = await commit(repo, first.turnId, { narrative: "Mira opens the archive.", next_choices: [] });
++    const next = await repo.precheckAndStartTurn({
++      turnId: crypto.randomUUID(), playerRunId: first.playerRunId, actionType: "custom_action",
++      selectedChoiceId: null, rawAction: "Ask who is watching.", storySetup: null,
++    });
++    if (next.status !== "proceed") throw new Error("unexpected next precheck");
++    await commit(repo, next.turnId, {
++      narrative: "A courier named Ilya steps from the stacks.",
++      new_character_candidates: [{
++        temporary_key: "archive_courier", name: "Ilya", role: "archive courier",
++        description: "A careful messenger with ink-stained gloves.", relationship: "newly encountered ally", aliases: ["the courier"],
++      }],
++      next_choices: [],
++    });
++    const context = await repo.loadContextInputs(first.playerRunId, next.runBranchId);
++    expect(context.characters.map((character) => character.name)).toEqual(["Mira", "Ilya"]);
++    expect(context.characters.find((character) => character.name === "Ilya")?.origin).toBe("runtime");
++
++    const sibling = repo.replayFromScene(first.playerRunId, opening.scene.id).runBranchId;
++    const siblingContext = await repo.loadContextInputs(first.playerRunId, sibling);
++    expect(siblingContext.characters.map((character) => character.name)).toEqual(["Mira"]);
++  });
++
++  it("does not persist a runtime Character when no canonical commit occurs", async () => {
++    const repo = new InMemoryTurnRepository();
++    await begin(repo);
++    expect([...repo.characters.values()].map((character) => character.name)).toEqual(["Mira"]);
++    expect(repo.scenes.size).toBe(0);
++  });
++
++  it("rejects an exact existing name or alias before commit and never fuzzy-merges", async () => {
++    const repo = new InMemoryTurnRepository();
++    const first = await begin(repo);
++    const context = await repo.loadContextInputs(first.playerRunId, first.runBranchId);
++    const duplicate = evaluateGeneratedResult({
++      narrative: "A second keeper appears, calling herself Keeper Mira.", dialogue: [], state_changes: [],
++      canon_candidates: [], character_memory_candidates: [],
++      new_character_candidates: [{ temporary_key: "second_keeper", name: "Keeper Mira", role: "keeper", description: "A duplicate identity.", relationship: "unknown", aliases: [] }],
++      next_choices: [], boundary_kind: "none", structured_outcome: {},
++    }, "en", context.characters, context.characters);
++    expect(duplicate.ok).toBe(false);
++    if (!duplicate.ok) expect(duplicate.qualityFailures).toContain("runtime_character_duplicate");
++  });
++});
+diff --git a/supabase/functions/_shared/engine/supabase-chat-repository.ts b/supabase/functions/_shared/engine/supabase-chat-repository.ts
+new file mode 100644
+index 0000000..f34c9f7
+--- /dev/null
++++ b/supabase/functions/_shared/engine/supabase-chat-repository.ts
+@@ -0,0 +1,160 @@
++import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
++
++import { assembleCharacterChatContext, CHAT_HISTORY_LIMIT, validateCharacterChatResult } from "./character-chat.ts";
++import { ProviderOutputError, ProviderTransportError, type CharacterChatProvider, type ChatMessageContext } from "./types.ts";
++import { SupabaseTurnRepository } from "./supabase-repository.ts";
++
++export class ChatGenerationError extends Error {
++  constructor(readonly errorClass: "provider_error" | "validation_error" | "transport_error") {
++    super(errorClass);
++    this.name = "ChatGenerationError";
++  }
++}
++
++export class SupabaseCharacterChatRepository {
++  private readonly userClient: SupabaseClient;
++  private readonly serviceClient: SupabaseClient;
++  private readonly turnRepository: SupabaseTurnRepository;
++
++  constructor(
++    supabaseUrl: string,
++    anonKey: string,
++    private readonly userJwt: string,
++    serviceRoleKey: string,
++  ) {
++    this.userClient = createClient(supabaseUrl, anonKey, {
++      global: { headers: { Authorization: `Bearer ${userJwt}` } },
++    });
++    this.serviceClient = createClient(supabaseUrl, serviceRoleKey);
++    this.turnRepository = new SupabaseTurnRepository(supabaseUrl, anonKey, userJwt, serviceRoleKey);
++  }
++
++  private async ownerUserId(): Promise<string> {
++    const { data, error } = await this.userClient.auth.getUser(this.userJwt);
++    if (error || !data.user) throw new Error("unauthenticated");
++    return data.user.id;
++  }
++
++  async open(playerRunId: string, characterId: string) {
++    const { data: thread, error } = await this.userClient.rpc("lw_get_or_create_chat_thread", {
++      p_player_run_id: playerRunId,
++      p_character_id: characterId,
++    });
++    if (error || !thread) throw new Error(error?.message ?? "chat_thread_failed");
++    return this.loadThread(thread.id as string);
++  }
++
++  async loadThread(threadId: string) {
++    const ownerUserId = await this.ownerUserId();
++    const { data: thread, error } = await this.serviceClient
++      .from("character_chat_threads")
++      .select("*")
++      .eq("id", threadId)
++      .single();
++    if (error || !thread) throw new Error("chat_thread_not_found");
++    const { data: run } = await this.serviceClient
++      .from("player_runs")
++      .select("owner_user_id")
++      .eq("id", thread.player_run_id)
++      .single();
++    if (!run || run.owner_user_id !== ownerUserId) throw new Error("forbidden");
++    const { data: messages, error: messagesError } = await this.serviceClient
++      .from("character_chat_messages")
++      .select("*")
++      .eq("thread_id", threadId)
++      .order("created_at", { ascending: true })
++      .order("id", { ascending: true });
++    if (messagesError) throw new Error("chat_history_failed");
++    const inputs = await this.turnRepository.loadContextInputs(thread.player_run_id, thread.run_branch_id);
++    const character = inputs.characters.find((item) => item.id === thread.character_id);
++    if (!character) throw new Error("character_not_visible");
++    return {
++      thread: {
++        id: thread.id,
++        player_run_id: thread.player_run_id,
++        run_branch_id: thread.run_branch_id,
++        character_id: thread.character_id,
++      },
++      character,
++      content_language: inputs.contentLanguage,
++      messages: messages ?? [],
++    };
++  }
++
++  async send(args: { threadId: string; messageId: string; content: string; provider: CharacterChatProvider }) {
++    const ownerUserId = await this.ownerUserId();
++    const { data: playerMessage, error: startError } = await this.serviceClient.rpc("lw_start_chat_generation", {
++      p_owner_user_id: ownerUserId,
++      p_thread_id: args.threadId,
++      p_message_id: args.messageId,
++      p_content: args.content,
++    });
++    if (startError || !playerMessage) throw new Error(startError?.message ?? "chat_start_failed");
++
++    const threadState = await this.loadThread(args.threadId);
++    const recentChat: ChatMessageContext[] = threadState.messages
++      .filter((message: Record<string, unknown>) => message.id !== args.messageId && (message.role === "player" || message.role === "character"))
++      .slice(-CHAT_HISTORY_LIMIT)
++      .map((message: Record<string, unknown>) => ({ role: message.role as "player" | "character", content: message.content as string }));
++    const inputs = await this.turnRepository.loadContextInputs(
++      threadState.thread.player_run_id,
++      threadState.thread.run_branch_id,
++    );
++    const context = assembleCharacterChatContext({
++      inputs,
++      characterId: threadState.thread.character_id,
++      recentChat,
++      playerMessage: args.content.trim(),
++    });
++
++    try {
++      const call = await args.provider.generateChat(context);
++      const validated = validateCharacterChatResult(call);
++      if (!validated.ok) {
++        await this.fail(ownerUserId, args.messageId, validated.errorClass, validated.metadata);
++        throw new ChatGenerationError("validation_error");
++      }
++      const { data, error } = await this.serviceClient.rpc("lw_commit_chat_generation", {
++        p_owner_user_id: ownerUserId,
++        p_player_message_id: args.messageId,
++        p_character_message_id: crypto.randomUUID(),
++        p_reply: validated.result.reply,
++        p_memory_candidates: validated.result.chat_memory_candidates,
++        p_provider: validated.metadata.provider,
++        p_model: validated.metadata.model,
++        p_input_tokens: validated.metadata.inputTokens,
++        p_output_tokens: validated.metadata.outputTokens,
++        p_provider_cost_micros: validated.metadata.costMicros,
++        p_latency_ms: validated.metadata.latencyMs,
++      });
++      if (error) throw new Error(error.message);
++      return { player_message: playerMessage, character_message: data };
++    } catch (error) {
++      if (error instanceof ChatGenerationError) throw error;
++      const metadata = error instanceof ProviderOutputError ? error.metadata : undefined;
++      const errorClass = error instanceof ProviderOutputError
++        ? "validation_error"
++        : error instanceof ProviderTransportError
++          ? "transport_error"
++          : "provider_error";
++      await this.fail(ownerUserId, args.messageId, errorClass, metadata);
++      throw new ChatGenerationError(errorClass);
++    }
++  }
++
++  private async fail(ownerUserId: string, messageId: string, errorClass: string, metadata?: {
++    provider: string; model: string; inputTokens: number; outputTokens: number; costMicros: number; latencyMs: number;
++  }) {
++    await this.serviceClient.rpc("lw_fail_chat_generation", {
++      p_owner_user_id: ownerUserId,
++      p_player_message_id: messageId,
++      p_error_class: errorClass,
++      p_provider: metadata?.provider ?? null,
++      p_model: metadata?.model ?? null,
++      p_input_tokens: metadata?.inputTokens ?? null,
++      p_output_tokens: metadata?.outputTokens ?? null,
++      p_provider_cost_micros: metadata?.costMicros ?? null,
++      p_latency_ms: metadata?.latencyMs ?? null,
++    });
++  }
++}
+diff --git a/supabase/functions/_shared/engine/supabase-repository.ts b/supabase/functions/_shared/engine/supabase-repository.ts
+index c8a59ae..e1a7e02 100644
+--- a/supabase/functions/_shared/engine/supabase-repository.ts
++++ b/supabase/functions/_shared/engine/supabase-repository.ts
+@@ -223,16 +223,21 @@ export class SupabaseTurnRepository implements TurnRepository {
+       .eq("player_run_id", playerRunId)
+       .eq("scope", "run");
+ 
+-    const branchScopeFacts = sceneIds.length
+-      ? (
+-          await this.serviceClient
+-            .from("canon_facts")
+-            .select("*")
+-            .eq("player_run_id", playerRunId)
+-            .eq("scope", "branch")
+-            .in("source_scene_id", sceneIds)
+-        ).data ?? []
+-      : [];
++    const branchIds = new Set([
++      runBranchId,
++      ...sceneRows.map((scene) => scene.run_branch_id as string),
++    ]);
++    const allBranchFacts = (
++      await this.serviceClient
++        .from("canon_facts")
++        .select("*")
++        .eq("player_run_id", playerRunId)
++        .eq("scope", "branch")
++    ).data ?? [];
++    const branchScopeFacts = allBranchFacts.filter((fact) =>
++      Boolean(fact.source_scene_id && sceneIds.includes(fact.source_scene_id as string)) &&
++      (fact.origin !== "character_chat" || branchIds.has(fact.run_branch_id as string))
++    );
+ 
+     const visibleFacts = [...(runScopeFacts ?? []), ...branchScopeFacts];
+     const allCanonFacts: ContextCanonFact[] = visibleFacts
+@@ -274,7 +279,11 @@ export class SupabaseTurnRepository implements TurnRepository {
+       playerAction: null,
+     }));
+ 
+-    const contextCharacters: ContextCharacter[] = (characters ?? []).map((c) => {
++    const visibleCharacters = (characters ?? []).filter((character) =>
++      (character.origin ?? "authored") === "authored" ||
++      Boolean(character.source_scene_id && sceneIds.includes(character.source_scene_id as string))
++    );
++    const contextCharacters: ContextCharacter[] = visibleCharacters.map((c) => {
+       const terms = c.address_terms as Record<string, string> | null;
+       return {
+         id: c.id,
+@@ -283,6 +292,7 @@ export class SupabaseTurnRepository implements TurnRepository {
+         role: c.role ?? null,
+         description: c.description,
+         storyRelationship: c.story_relationship,
++        origin: (c.origin as "authored" | "runtime" | null) ?? "authored",
+         addressTerms: terms
+           ? {
+               speakerSelfReference: terms.speaker_self_reference,
+@@ -323,7 +333,7 @@ export class SupabaseTurnRepository implements TurnRepository {
+     costMicros: number;
+     latencyMs: number;
+   }): Promise<CommitOutcome> {
+-    const { data, error } = await this.userClient.rpc("lw_commit_turn", {
++    const { data, error } = await this.serviceClient.rpc("lw_commit_turn", {
+       p_turn_id: args.turnId,
+       p_narrative: args.result.narrative,
+       p_dialogue: args.result.dialogue,
+@@ -333,6 +343,7 @@ export class SupabaseTurnRepository implements TurnRepository {
+       p_boundary_kind: args.result.boundary_kind,
+       p_canon_candidates: args.result.canon_candidates,
+       p_character_memory_candidates: args.result.character_memory_candidates,
++      p_new_character_candidates: args.result.new_character_candidates,
+       p_generation_attempt_count: args.generationAttemptCount,
+       p_provider: args.provider,
+       p_model: args.model,
+diff --git a/supabase/functions/_shared/engine/test-support/in-memory-repository.ts b/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
+index f3eaf90..16d423b 100644
+--- a/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
++++ b/supabase/functions/_shared/engine/test-support/in-memory-repository.ts
+@@ -11,7 +11,7 @@
+  */
+ 
+ import { randomUUID } from "node:crypto";
+-import type { ActionType, BoundaryKind, StorySetup, StructuredGenerationResult } from "../types.ts";
++import type { ActionType, AddressTerms, BoundaryKind, ChatMemoryCandidate, StorySetup, StructuredGenerationResult } from "../types.ts";
+ import type {
+   CommitOutcome,
+   ContextInputs,
+@@ -30,6 +30,19 @@ interface Run {
+   startingCharacterId: string | null;
+ }
+ 
++interface Character {
++  id: string;
++  runId: string;
++  name: string;
++  aliases: string[];
++  role: string | null;
++  description: string | null;
++  relationship: string | null;
++  addressTerms?: AddressTerms;
++  origin: "authored" | "runtime";
++  sourceSceneId: string | null;
++}
++
+ interface Branch {
+   id: string;
+   runId: string;
+@@ -74,6 +87,8 @@ interface CanonFact {
+   memoryType?: "player_fact" | "character_fact" | "relationship_fact" | "shared_event" | "promise" | "discovery";
+   salience?: number;
+   supersedesFactId?: string | null;
++  origin?: "story_scene" | "character_chat";
++  sourceChatMessageId?: string;
+ }
+ 
+ export class InMemoryTurnRepository implements TurnRepository {
+@@ -81,6 +96,7 @@ export class InMemoryTurnRepository implements TurnRepository {
+   branches = new Map<string, Branch>();
+   scenes = new Map<string, Scene>();
+   turns = new Map<string, Turn>();
++  characters = new Map<string, Character>();
+   canonFacts: CanonFact[] = [];
+   private dailyCap = 30;
+   private generationCount = 0;
+@@ -130,6 +146,16 @@ export class InMemoryTurnRepository implements TurnRepository {
+     return ids;
+   }
+ 
++  private resolveBranchIds(branchId: string): Set<string> {
++    const ids = new Set<string>();
++    let cursor: string | null = branchId;
++    while (cursor) {
++      ids.add(cursor);
++      cursor = this.branches.get(cursor)?.parentBranchId ?? null;
++    }
++    return ids;
++  }
++
+   private toSceneRow(s: Scene): SceneRow {
+     return {
+       id: s.id,
+@@ -180,6 +206,22 @@ export class InMemoryTurnRepository implements TurnRepository {
+         storySetup: args.storySetup,
+         startingCharacterId: args.storySetup.startingCharacter ? randomUUID() : null,
+       });
++      const createdRun = this.runs.get(runId)!;
++      if (args.storySetup.startingCharacter && createdRun.startingCharacterId) {
++        const authored = args.storySetup.startingCharacter;
++        this.characters.set(createdRun.startingCharacterId, {
++          id: createdRun.startingCharacterId,
++          runId,
++          name: authored.name,
++          aliases: authored.aliases,
++          role: authored.role,
++          description: authored.description ?? null,
++          relationship: authored.relationship,
++          addressTerms: authored.addressTerms,
++          origin: "authored",
++          sourceSceneId: null,
++        });
++      }
+     } else {
+       const run = this.runs.get(runId);
+       // Mirrors lw_precheck_and_start_turn's "run not found or not owned by
+@@ -250,6 +292,11 @@ export class InMemoryTurnRepository implements TurnRepository {
+   async loadContextInputs(playerRunId: string, runBranchId: string): Promise<ContextInputs> {
+     const run = this.runs.get(playerRunId)!;
+     const sceneIds = this.resolveBranchSceneIds(runBranchId);
++    const branchIds = this.resolveBranchIds(runBranchId);
++    const visibleCharacters = [...this.characters.values()].filter(
++      (character) => character.runId === playerRunId &&
++        (character.origin === "authored" || Boolean(character.sourceSceneId && sceneIds.includes(character.sourceSceneId)))
++    );
+     const allScenesOldestFirst = sceneIds.map((id) => {
+       const s = this.scenes.get(id)!;
+       return {
+@@ -268,6 +315,7 @@ export class InMemoryTurnRepository implements TurnRepository {
+     );
+     const visibleMemories = this.canonFacts.filter(
+       (f) => f.runId === playerRunId && Boolean(f.characterId) && f.sourceSceneId && sceneIds.includes(f.sourceSceneId)
++        && (f.origin !== "character_chat" || Boolean(f.branchId && branchIds.has(f.branchId)))
+     );
+     const supersededMemoryIds = new Set(
+       visibleMemories.map((memory) => memory.supersedesFactId).filter((id): id is string => Boolean(id))
+@@ -284,19 +332,16 @@ export class InMemoryTurnRepository implements TurnRepository {
+       playerDescription: run.storySetup.playerDescription ?? null,
+       tone: run.storySetup.tone,
+       narrativePov: run.storySetup.narrativePov,
+-      characters: run.storySetup.startingCharacter
+-        ? [
+-            {
+-              id: run.startingCharacterId!,
+-              name: run.storySetup.startingCharacter.name,
+-              aliases: run.storySetup.startingCharacter.aliases,
+-              role: run.storySetup.startingCharacter.role,
+-              description: run.storySetup.startingCharacter.description ?? null,
+-              storyRelationship: run.storySetup.startingCharacter.relationship,
+-              addressTerms: run.storySetup.startingCharacter.addressTerms,
+-            },
+-          ]
+-        : [],
++      characters: visibleCharacters.map((character) => ({
++        id: character.id,
++        name: character.name,
++        aliases: character.aliases,
++        role: character.role,
++        description: character.description,
++        storyRelationship: character.relationship,
++        addressTerms: character.addressTerms,
++        origin: character.origin,
++      })),
+       allScenesOldestFirst,
+       allCanonFacts: [...runScope, ...branchScope].map((f) => ({
+         id: f.id,
+@@ -310,7 +355,7 @@ export class InMemoryTurnRepository implements TurnRepository {
+         .map((memory) => ({
+           id: memory.id,
+           characterId: memory.characterId!,
+-          characterName: run.storySetup.startingCharacter?.name ?? "Unknown character",
++          characterName: this.characters.get(memory.characterId!)?.name ?? "Unknown character",
+           memoryType: memory.memoryType!,
+           factKey: memory.factKey,
+           factText: memory.factText,
+@@ -344,11 +389,13 @@ export class InMemoryTurnRepository implements TurnRepository {
+       };
+     }
+     if (turn.status !== "generating") throw new Error(`turn ${args.turnId} is not committable (status=${turn.status})`);
+-    if (
+-      args.result.character_memory_candidates.some(
+-        (candidate) => candidate.character_id !== this.runs.get(turn.runId)?.startingCharacterId
+-      )
+-    ) {
++    const visibleCharacterIds = new Set(
++      [...this.characters.values()]
++        .filter((character) => character.runId === turn.runId &&
++          (character.origin === "authored" || Boolean(character.sourceSceneId && this.resolveBranchSceneIds(turn.branchId).includes(character.sourceSceneId))))
++        .map((character) => character.id)
++    );
++    if (args.result.character_memory_candidates.some((candidate) => !visibleCharacterIds.has(candidate.character_id))) {
+       throw new Error("character memory references a character outside this run's Story");
+     }
+ 
+@@ -368,6 +415,31 @@ export class InMemoryTurnRepository implements TurnRepository {
+     };
+     this.scenes.set(sceneId, scene);
+ 
++    const normalizeIdentity = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
++    const existingIdentities = new Set(
++      [...this.characters.values()]
++        .filter((character) => character.runId === turn.runId)
++        .flatMap((character) => [character.name, ...character.aliases])
++        .map(normalizeIdentity)
++    );
++    for (const candidate of args.result.new_character_candidates) {
++      const candidateIdentities = [candidate.name, ...candidate.aliases].map(normalizeIdentity);
++      if (candidateIdentities.some((identity) => existingIdentities.has(identity))) continue;
++      const characterId = randomUUID();
++      this.characters.set(characterId, {
++        id: characterId,
++        runId: turn.runId,
++        name: candidate.name,
++        aliases: candidate.aliases,
++        role: candidate.role,
++        description: candidate.description,
++        relationship: candidate.relationship,
++        origin: "runtime",
++        sourceSceneId: sceneId,
++      });
++      candidateIdentities.forEach((identity) => existingIdentities.add(identity));
++    }
++
+     for (const candidate of args.result.canon_candidates) {
+       this.canonFacts.push({
+         id: randomUUID(),
+@@ -378,6 +450,7 @@ export class InMemoryTurnRepository implements TurnRepository {
+         factText: candidate.fact_text,
+         sourceSceneId: sceneId,
+         createdAt: new Date().toISOString(),
++        origin: "story_scene",
+       });
+     }
+ 
+@@ -409,6 +482,7 @@ export class InMemoryTurnRepository implements TurnRepository {
+         memoryType: candidate.memory_type,
+         salience: candidate.salience,
+         supersedesFactId: previous?.id ?? null,
++        origin: "story_scene",
+       });
+     }
+ 
+@@ -442,6 +516,37 @@ export class InMemoryTurnRepository implements TurnRepository {
+     return { status: "GENERATION_FAILED", turnId: turn.id, errorClass: args.errorClass };
+   }
+ 
++  /** Explicit test-only analog of lw_promote_chat_memory; never called by Story generation. */
++  promoteChatMemory(args: {
++    playerRunId: string;
++    runBranchId: string;
++    characterId: string;
++    sourceChatMessageId: string;
++    candidate: ChatMemoryCandidate;
++  }) {
++    const run = this.runs.get(args.playerRunId);
++    if (!run || run.activeBranchId !== args.runBranchId) throw new RepositoryForbiddenError("promotion branch is not active");
++    const sceneIds = this.resolveBranchSceneIds(args.runBranchId);
++    const sourceSceneId = sceneIds.at(-1);
++    if (!sourceSceneId) throw new Error("promotion requires a Scene");
++    if (this.canonFacts.some((fact) => fact.sourceChatMessageId === args.sourceChatMessageId && fact.factKey === args.candidate.fact_key)) {
++      return;
++    }
++    const visible = this.canonFacts.filter((fact) =>
++      fact.runId === args.playerRunId && fact.characterId === args.characterId &&
++      fact.factKey === args.candidate.fact_key && fact.sourceSceneId && sceneIds.includes(fact.sourceSceneId)
++    );
++    const superseded = new Set(visible.map((fact) => fact.supersedesFactId).filter((id): id is string => Boolean(id)));
++    const previous = visible.filter((fact) => !superseded.has(fact.id)).at(-1);
++    this.canonFacts.push({
++      id: randomUUID(), runId: args.playerRunId, scope: "branch", branchId: args.runBranchId,
++      factKey: args.candidate.fact_key, factText: args.candidate.fact_text, sourceSceneId,
++      createdAt: new Date(Date.now() + this.canonFacts.length).toISOString(), characterId: args.characterId,
++      memoryType: args.candidate.memory_type, salience: args.candidate.salience,
++      supersedesFactId: previous?.id ?? null, origin: "character_chat", sourceChatMessageId: args.sourceChatMessageId,
++    });
++  }
++
+   getGenerationCount(): number {
+     return this.generationCount;
+   }
+diff --git a/supabase/functions/_shared/engine/types.ts b/supabase/functions/_shared/engine/types.ts
+index e79415c..b95991a 100644
+--- a/supabase/functions/_shared/engine/types.ts
++++ b/supabase/functions/_shared/engine/types.ts
+@@ -74,6 +74,23 @@ export const CharacterMemoryCandidateSchema = z.object({
+ });
+ export type CharacterMemoryCandidate = z.infer<typeof CharacterMemoryCandidateSchema>;
+ 
++/**
++ * A notable NPC proposed by the same Story generation call that creates the
++ * Scene where they first appear. The provider supplies identity only; the
++ * canonical UUID and provenance are owned by the database commit.
++ */
++export const RuntimeCharacterCandidateSchema = z
++  .object({
++    temporary_key: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
++    name: z.string().min(1).max(200),
++    role: z.string().min(1).max(500),
++    description: z.string().min(1).max(2000),
++    relationship: z.string().min(1).max(500),
++    aliases: z.array(z.string().min(1).max(200)).max(10).default([]),
++  })
++  .strict();
++export type RuntimeCharacterCandidate = z.infer<typeof RuntimeCharacterCandidateSchema>;
++
+ /** Light Roll outcome (ADVENTURE mode only) — server decides the roll, never the model. */
+ export const StructuredOutcomeSchema = z
+   .object({
+@@ -95,6 +112,7 @@ export const StructuredGenerationResultSchema = z
+     state_changes: z.array(StateChangeItemSchema).max(10).default([]),
+     canon_candidates: z.array(CanonCandidateSchema).max(10).default([]),
+     character_memory_candidates: z.array(CharacterMemoryCandidateSchema).max(10).default([]),
++    new_character_candidates: z.array(RuntimeCharacterCandidateSchema).max(3).default([]),
+     next_choices: z.array(ChoiceOptionSchema).min(0).max(4).default([]),
+     boundary_kind: BoundaryKindSchema.default("none"),
+     structured_outcome: StructuredOutcomeSchema.default({}),
+@@ -112,6 +130,19 @@ export const StructuredGenerationResultSchema = z
+       }
+       keys.add(key);
+     });
++    const temporaryKeys = new Set<string>();
++    const normalizedNames = new Set<string>();
++    result.new_character_candidates.forEach((candidate, index) => {
++      const normalizedName = candidate.name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
++      if (temporaryKeys.has(candidate.temporary_key)) {
++        ctx.addIssue({ code: "custom", path: ["new_character_candidates", index, "temporary_key"], message: "duplicate temporary character key" });
++      }
++      if (normalizedNames.has(normalizedName)) {
++        ctx.addIssue({ code: "custom", path: ["new_character_candidates", index, "name"], message: "duplicate normalized character name" });
++      }
++      temporaryKeys.add(candidate.temporary_key);
++      normalizedNames.add(normalizedName);
++    });
+   });
+ export type StructuredGenerationResult = z.infer<
+   typeof StructuredGenerationResultSchema
+@@ -198,6 +229,7 @@ export interface ContextCharacter {
+   role: string | null;
+   description: string | null;
+   storyRelationship: string | null;
++  origin?: "authored" | "runtime";
+   /** Present only when contentLanguage calls for it (NARRATIVE_QUALITY_CONTRACT.md §C). */
+   addressTerms?: AddressTerms;
+ }
+@@ -287,3 +319,44 @@ export interface NarrativeProvider {
+   readonly id: string;
+   generateTurn(context: NarrativeContext): Promise<ProviderCallResult>;
+ }
++
++export const ChatMemoryCandidateSchema = z.object({
++  memory_type: CharacterMemoryTypeSchema,
++  fact_key: z.string().regex(/^[a-z][a-z0-9_]{1,79}$/),
++  fact_text: z.string().min(1).max(500),
++  salience: z.number().int().min(1).max(5),
++}).strict();
++export type ChatMemoryCandidate = z.infer<typeof ChatMemoryCandidateSchema>;
++
++export const CharacterChatResultSchema = z.object({
++  reply: z.string().min(1).max(4000),
++  chat_memory_candidates: z.array(ChatMemoryCandidateSchema).max(5).default([]),
++}).strict();
++export type CharacterChatResult = z.infer<typeof CharacterChatResultSchema>;
++
++export interface ChatMessageContext {
++  role: "player" | "character";
++  content: string;
++}
++
++/** Explicitly separated context sections for a branch-bound side conversation. */
++export interface CharacterChatContext {
++  contentLanguage: ContentLanguage;
++  genre: string;
++  storyMode: "narrative" | "adventure";
++  premise: string;
++  worldSetting: string | null;
++  playerRole: string | null;
++  playerName: string | null;
++  playerDescription: string | null;
++  character: ContextCharacter;
++  recentScenes: ContextScene[];
++  characterMemories: ContextCharacterMemory[];
++  recentChat: ChatMessageContext[];
++  playerMessage: string;
++}
++
++export interface CharacterChatProvider {
++  readonly id: string;
++  generateChat(context: CharacterChatContext): Promise<ProviderCallResult>;
++}
+diff --git a/supabase/functions/_shared/engine/w3-r2-migration-contract.test.ts b/supabase/functions/_shared/engine/w3-r2-migration-contract.test.ts
+new file mode 100644
+index 0000000..ccda2d3
+--- /dev/null
++++ b/supabase/functions/_shared/engine/w3-r2-migration-contract.test.ts
+@@ -0,0 +1,49 @@
++import { readFileSync } from "node:fs";
++import { describe, expect, it } from "vitest";
++
++const sql = readFileSync("supabase/migrations/20260811075526_lw_w3_r2_roleplay_chat_runtime_characters.sql", "utf8");
++const repairSql = readFileSync("supabase/migrations/20260811085819_lw_w3_r2_allowance_double_debit_repair.sql", "utf8");
++
++describe("LW-W3-R2 database authority contract", () => {
++  it("keeps post-start authored mutation locked while admitting only provenanced runtime inserts", () => {
++    expect(sql).toContain("new.origin = 'runtime'");
++    expect(sql).toContain("runtime character provenance is invalid");
++    expect(sql).toContain("story setup is locked after the first generated scene");
++  });
++
++  it("makes canonical Story/runtime commit server-only", () => {
++    expect(sql).toMatch(/revoke execute on function public\.lw_commit_turn[\s\S]*from public, anon, authenticated;/);
++    expect(sql).toMatch(/grant execute on function public\.lw_commit_turn[\s\S]*to service_role;/);
++  });
++
++  it("binds chat threads to run + branch + character and promotion to exact provenance", () => {
++    expect(sql).toContain("unique (player_run_id, run_branch_id, character_id)");
++    expect(sql).toContain("source_chat_message_id");
++    expect(sql).toContain("source_chat_candidate_index");
++    expect(sql).toContain("pr.active_branch_id = thread.run_branch_id");
++  });
++
++  it("does not grant browser writes to Chat storage or anonymous inference state", () => {
++    expect(sql).toContain("revoke all on public.character_chat_threads, public.character_chat_messages from public, anon, authenticated");
++    expect(sql).toContain("grant select on public.character_chat_threads, public.character_chat_messages to authenticated");
++    expect(sql).not.toContain("grant insert on public.character_chat_messages to authenticated");
++  });
++
++  it("repairs Story allowance accounting without changing the W3-R2 commit authority", () => {
++    const commitBody = repairSql.match(
++      /create or replace function public\.lw_commit_turn\([\s\S]*?\nend;\n\$\$;/,
++    )?.[0];
++
++    expect(commitBody).toBeDefined();
++    expect(commitBody).not.toContain("insert into public.usage_counters");
++    expect(commitBody).not.toMatch(/update public\.usage_counters\s+set generation_count/);
++    expect(repairSql).toMatch(/grant execute on function public\.lw_commit_turn[\s\S]*to service_role;/);
++    expect(repairSql).not.toMatch(/grant execute on function public\.lw_commit_turn[\s\S]*to authenticated;/);
++  });
++
++  it("rejects a reused Chat message id when canonical content differs", () => {
++    expect(repairSql).toContain("v_message.content is distinct from btrim(p_content)");
++    expect(repairSql).toContain("chat message: idempotency content mismatch");
++    expect(repairSql).toMatch(/grant execute on function public\.lw_start_chat_generation[\s\S]*to service_role;/);
++  });
++});
+diff --git a/supabase/functions/character-chat/index.ts b/supabase/functions/character-chat/index.ts
+new file mode 100644
+index 0000000..4f92aff
+--- /dev/null
++++ b/supabase/functions/character-chat/index.ts
+@@ -0,0 +1,75 @@
++import { authorizeAlphaProvider, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
++import { selectCharacterChatProvider } from "../_shared/engine/providers.ts";
++import { ChatGenerationError, SupabaseCharacterChatRepository } from "../_shared/engine/supabase-chat-repository.ts";
++import { SupabaseAlphaAccessGate } from "../_shared/engine/supabase-alpha-access.ts";
++
++const CORS_HEADERS = {
++  "Access-Control-Allow-Origin": "*",
++  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
++  "Access-Control-Allow-Methods": "POST, OPTIONS",
++};
++
++function json(body: unknown, status = 200) {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { ...CORS_HEADERS, "content-type": "application/json" },
++  });
++}
++
++Deno.serve(async (req) => {
++  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
++  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
++  const authHeader = req.headers.get("Authorization");
++  if (!authHeader?.startsWith("Bearer ")) return json({ error: "unauthenticated" }, 401);
++  const userJwt = authHeader.slice("Bearer ".length);
++
++  let body: Record<string, unknown>;
++  try {
++    body = await req.json();
++  } catch {
++    return json({ error: "invalid_json" }, 400);
++  }
++
++  const supabaseUrl = Deno.env.get("SUPABASE_URL");
++  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
++  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
++  if (!supabaseUrl || !anonKey || !serviceRoleKey) return json({ error: "server_misconfigured" }, 500);
++
++  try {
++    const repository = new SupabaseCharacterChatRepository(supabaseUrl, anonKey, userJwt, serviceRoleKey);
++    if (body.action === "open") {
++      if (typeof body.player_run_id !== "string" || typeof body.character_id !== "string") {
++        return json({ error: "missing_required_fields" }, 400);
++      }
++      return json(await repository.open(body.player_run_id, body.character_id));
++    }
++    if (body.action === "send") {
++      if (typeof body.thread_id !== "string" || typeof body.message_id !== "string" || typeof body.content !== "string") {
++        return json({ error: "missing_required_fields" }, 400);
++      }
++      const gate = new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey);
++      const provider = await authorizeAlphaProvider(gate, userJwt, () =>
++        selectCharacterChatProvider({ get: (key) => Deno.env.get(key) })
++      );
++      const result = await repository.send({
++        threadId: body.thread_id,
++        messageId: body.message_id,
++        content: body.content,
++        provider,
++      });
++      return json(result);
++    }
++    return json({ error: "invalid_action" }, 400);
++  } catch (error) {
++    console.error("[character-chat] error", error);
++    const alpha = mapAlphaAccessError(error);
++    if (alpha) return json(alpha.body, alpha.status);
++    if (error instanceof ChatGenerationError) {
++      return json({ error: error.errorClass }, error.errorClass === "validation_error" ? 422 : 502);
++    }
++    const message = (error as Error).message;
++    if (message === "unauthenticated") return json({ error: "unauthenticated" }, 401);
++    if (message === "forbidden") return json({ error: "forbidden" }, 403);
++    return json({ error: "internal_error" }, 500);
++  }
++});
+diff --git a/supabase/migrations/20260811075526_lw_w3_r2_roleplay_chat_runtime_characters.sql b/supabase/migrations/20260811075526_lw_w3_r2_roleplay_chat_runtime_characters.sql
+new file mode 100644
+index 0000000..2ace8f5
+--- /dev/null
++++ b/supabase/migrations/20260811075526_lw_w3_r2_roleplay_chat_runtime_characters.sql
+@@ -0,0 +1,575 @@
++-- LW-W3-R2: branch-bound Character Chat, explicit canon promotion, and
++-- server-controlled runtime Character creation. Forward-only, DEV first.
++
++alter table public.characters
++  add column origin text not null default 'authored'
++    check (origin in ('authored', 'runtime')),
++  add column source_scene_id uuid references public.scenes(id) on delete set null,
++  add column created_by_turn_id uuid references public.turns(id) on delete set null,
++  add column introduced_run_branch_id uuid references public.run_branches(id) on delete cascade,
++  add column normalized_name text generated always as (
++    lower(regexp_replace(btrim(name), '\s+', ' ', 'g'))
++  ) stored;
++
++alter table public.characters
++  add constraint characters_runtime_provenance check (
++    (origin = 'authored' and source_scene_id is null and created_by_turn_id is null and introduced_run_branch_id is null)
++    or
++    (origin = 'runtime' and source_scene_id is not null and created_by_turn_id is not null and introduced_run_branch_id is not null)
++  );
++
++create unique index characters_story_normalized_name_uidx
++  on public.characters(story_id, normalized_name);
++create index characters_source_scene_id_idx on public.characters(source_scene_id);
++create index characters_created_by_turn_id_idx on public.characters(created_by_turn_id);
++create index characters_introduced_branch_id_idx on public.characters(introduced_run_branch_id);
++
++comment on column public.characters.origin is
++  'authored setup identity or runtime identity atomically introduced by a committed Scene.';
++comment on column public.characters.source_scene_id is
++  'Runtime Character visibility/provenance anchor. Authored Characters have no source Scene.';
++
++create table public.character_chat_threads (
++  id uuid primary key default gen_random_uuid(),
++  player_run_id uuid not null references public.player_runs(id) on delete cascade,
++  run_branch_id uuid not null references public.run_branches(id) on delete cascade,
++  character_id uuid not null references public.characters(id) on delete cascade,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now(),
++  unique (player_run_id, run_branch_id, character_id)
++);
++
++create index character_chat_threads_run_branch_id_idx on public.character_chat_threads(run_branch_id);
++create index character_chat_threads_character_id_idx on public.character_chat_threads(character_id);
++
++create table public.character_chat_messages (
++  id uuid primary key,
++  thread_id uuid not null references public.character_chat_threads(id) on delete cascade,
++  role text not null check (role in ('player', 'character')),
++  content text not null check (char_length(content) between 1 and 4000),
++  reply_to_message_id uuid references public.character_chat_messages(id) on delete cascade,
++  generation_status text check (generation_status in ('pending', 'completed', 'failed')),
++  error_class text check (error_class in ('provider_error', 'validation_error', 'transport_error')),
++  provider text,
++  model text,
++  input_tokens integer check (input_tokens is null or input_tokens >= 0),
++  output_tokens integer check (output_tokens is null or output_tokens >= 0),
++  provider_cost_micros bigint check (provider_cost_micros is null or provider_cost_micros >= 0),
++  latency_ms integer check (latency_ms is null or latency_ms >= 0),
++  memory_candidates jsonb not null default '[]'::jsonb
++    check (jsonb_typeof(memory_candidates) = 'array' and jsonb_array_length(memory_candidates) <= 5),
++  created_at timestamptz not null default now(),
++  check (
++    (role = 'player' and generation_status is not null and jsonb_array_length(memory_candidates) = 0)
++    or
++    (role = 'character' and generation_status is null and error_class is null)
++  )
++);
++
++create index character_chat_messages_thread_created_idx
++  on public.character_chat_messages(thread_id, created_at, id);
++create index character_chat_messages_reply_to_idx on public.character_chat_messages(reply_to_message_id);
++
++alter table public.canon_facts
++  add column source_chat_message_id uuid references public.character_chat_messages(id) on delete set null,
++  add column source_chat_candidate_index smallint;
++
++alter table public.canon_facts
++  add constraint canon_facts_chat_provenance check (
++    (origin = 'story_scene' and source_chat_message_id is null and source_chat_candidate_index is null)
++    or
++    (origin = 'character_chat' and character_id is not null and source_chat_message_id is not null
++      and source_chat_candidate_index between 0 and 4)
++  );
++
++create unique index canon_facts_chat_candidate_uidx
++  on public.canon_facts(source_chat_message_id, source_chat_candidate_index)
++  where source_chat_message_id is not null;
++create index canon_facts_run_branch_id_idx on public.canon_facts(run_branch_id);
++create index canon_facts_source_turn_id_idx on public.canon_facts(source_turn_id);
++
++alter table public.character_chat_threads enable row level security;
++alter table public.character_chat_messages enable row level security;
++
++create policy "character_chat_threads_select_own"
++  on public.character_chat_threads for select to authenticated
++  using (exists (
++    select 1 from public.player_runs pr
++    where pr.id = character_chat_threads.player_run_id
++      and pr.owner_user_id = (select auth.uid())
++  ));
++
++create policy "character_chat_messages_select_own"
++  on public.character_chat_messages for select to authenticated
++  using (exists (
++    select 1
++    from public.character_chat_threads thread
++    join public.player_runs pr on pr.id = thread.player_run_id
++    where thread.id = character_chat_messages.thread_id
++      and pr.owner_user_id = (select auth.uid())
++  ));
++
++revoke all on public.character_chat_threads, public.character_chat_messages from public, anon, authenticated;
++grant select on public.character_chat_threads, public.character_chat_messages to authenticated;
++
++-- Preserve the authored setup lock. The only post-start exception is a fully
++-- provenanced runtime INSERT whose Scene and Turn already agree inside the
++-- same server-only canonical commit transaction.
++create or replace function public.lw_guard_started_story_setup()
++returns trigger
++language plpgsql
++security definer
++set search_path = ''
++as $$
++declare
++  v_story_id uuid;
++begin
++  if tg_table_name = 'characters' and tg_op = 'INSERT' and new.origin = 'runtime' then
++    if exists (
++      select 1
++      from public.scenes s
++      join public.turns t on t.id = s.generation_turn_id
++      join public.player_runs pr on pr.id = t.player_run_id
++      where s.id = new.source_scene_id
++        and t.id = new.created_by_turn_id
++        and s.run_branch_id = new.introduced_run_branch_id
++        and t.run_branch_id = new.introduced_run_branch_id
++        and pr.story_id = new.story_id
++        and t.status = 'generating'
++    ) then
++      return new;
++    end if;
++    raise exception 'runtime character provenance is invalid' using errcode = '22023';
++  end if;
++
++  if tg_table_name = 'stories' then
++    v_story_id := coalesce(new.id, old.id);
++  else
++    v_story_id := coalesce(new.story_id, old.story_id);
++  end if;
++
++  if exists (
++    select 1 from public.player_runs pr
++    join public.run_branches rb on rb.player_run_id = pr.id
++    join public.scenes s on s.run_branch_id = rb.id
++    where pr.story_id = v_story_id
++  ) then
++    raise exception 'story setup is locked after the first generated scene' using errcode = '22023';
++  end if;
++  if tg_op = 'DELETE' then return old; end if;
++  return new;
++end;
++$$;
++
++revoke execute on function public.lw_guard_started_story_setup() from public, anon, authenticated, service_role;
++
++-- The canonical Story commit is server-only in R2. An authenticated browser
++-- can start a Turn but cannot forge provider output, audit metadata, a Scene,
++-- or a runtime Character.
++revoke execute on function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, integer, text,
++  text, integer, integer, bigint, integer
++) from public, anon, authenticated, service_role;
++drop function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, integer, text,
++  text, integer, integer, bigint, integer
++);
++
++create function public.lw_commit_turn(
++  p_turn_id uuid,
++  p_narrative text,
++  p_dialogue jsonb,
++  p_state_change_summary jsonb,
++  p_structured_outcome jsonb,
++  p_next_choices jsonb,
++  p_boundary_kind text,
++  p_canon_candidates jsonb,
++  p_character_memory_candidates jsonb,
++  p_new_character_candidates jsonb,
++  p_generation_attempt_count integer,
++  p_provider text,
++  p_model text,
++  p_input_tokens integer,
++  p_output_tokens integer,
++  p_provider_cost_micros bigint,
++  p_latency_ms integer
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = ''
++as $$
++declare
++  v_turn public.turns%rowtype;
++  v_scene_id uuid;
++  v_next_seq integer;
++  v_fact jsonb;
++  v_memory jsonb;
++  v_candidate jsonb;
++  v_character_id uuid;
++  v_supersedes_fact_id uuid;
++  v_existing_scene public.scenes%rowtype;
++  v_normalized_name text;
++begin
++  if p_boundary_kind not in ('none', 'checkpoint', 'ending') then
++    raise exception 'lw_commit_turn: invalid boundary_kind %', p_boundary_kind using errcode = '22023';
++  end if;
++  if jsonb_array_length(coalesce(p_new_character_candidates, '[]'::jsonb)) > 3 then
++    raise exception 'lw_commit_turn: too many runtime characters' using errcode = '22023';
++  end if;
++  if exists (
++    select 1 from jsonb_array_elements(coalesce(p_character_memory_candidates, '[]'::jsonb)) m
++    group by m ->> 'character_id', m ->> 'fact_key' having count(*) > 1
++  ) then
++    raise exception 'lw_commit_turn: duplicate character memory key' using errcode = '22023';
++  end if;
++
++  select t.* into v_turn from public.turns t where t.id = p_turn_id for update;
++  if not found then raise exception 'lw_commit_turn: turn not found' using errcode = '42501'; end if;
++  if v_turn.status = 'committed' then
++    select * into v_existing_scene from public.scenes where id = v_turn.result_scene_id;
++    return jsonb_build_object(
++      'status', case when v_existing_scene.boundary_kind = 'ending' then 'TERMINAL_ENDING'
++                     when v_existing_scene.boundary_kind = 'checkpoint' then 'EXPLICIT_CHECKPOINT'
++                     else 'CONTINUE_READY' end,
++      'scene', to_jsonb(v_existing_scene.*), 'turn_id', v_turn.id
++    );
++  end if;
++  if v_turn.status != 'generating' then raise exception 'lw_commit_turn: turn is not committable'; end if;
++
++  for v_memory in select * from jsonb_array_elements(coalesce(p_character_memory_candidates, '[]'::jsonb)) loop
++    begin v_character_id := (v_memory ->> 'character_id')::uuid;
++    exception when invalid_text_representation then
++      raise exception 'lw_commit_turn: invalid character_id' using errcode = '22023';
++    end;
++    perform 1 from public.characters c
++    join public.player_runs pr on pr.story_id = c.story_id
++    where c.id = v_character_id and pr.id = v_turn.player_run_id
++      and (c.origin = 'authored' or c.source_scene_id in (
++        select * from public.lw_branch_scene_ids(v_turn.run_branch_id)
++      ));
++    if not found then raise exception 'lw_commit_turn: character is not visible to this branch' using errcode = '22023'; end if;
++  end loop;
++
++  select coalesce(max(seq_in_branch), -1) + 1 into v_next_seq
++  from public.scenes where run_branch_id = v_turn.run_branch_id;
++  insert into public.scenes (
++    run_branch_id, seq_in_branch, parent_scene_id, boundary_kind, narrative,
++    dialogue, state_change_summary, structured_outcome, next_choices, generation_turn_id
++  ) values (
++    v_turn.run_branch_id, v_next_seq, v_turn.source_scene_id, p_boundary_kind, p_narrative,
++    coalesce(p_dialogue, '[]'::jsonb), coalesce(p_state_change_summary, '[]'::jsonb),
++    coalesce(p_structured_outcome, '{}'::jsonb), coalesce(p_next_choices, '[]'::jsonb), v_turn.id
++  ) returning id into v_scene_id;
++
++  for v_candidate in select * from jsonb_array_elements(coalesce(p_new_character_candidates, '[]'::jsonb)) loop
++    v_normalized_name := lower(regexp_replace(btrim(v_candidate ->> 'name'), '\s+', ' ', 'g'));
++    if v_normalized_name = ''
++      or coalesce(char_length(v_candidate ->> 'role'), 0) not between 1 and 500
++      or coalesce(char_length(v_candidate ->> 'description'), 0) not between 1 and 2000
++      or coalesce(char_length(v_candidate ->> 'relationship'), 0) not between 1 and 500
++      or jsonb_typeof(coalesce(v_candidate -> 'aliases', '[]'::jsonb)) != 'array'
++      or jsonb_array_length(coalesce(v_candidate -> 'aliases', '[]'::jsonb)) > 10 then
++      raise exception 'lw_commit_turn: malformed runtime character' using errcode = '22023';
++    end if;
++
++    if not exists (
++      select 1 from public.characters c
++      join public.player_runs pr on pr.story_id = c.story_id
++      where pr.id = v_turn.player_run_id and (
++        c.normalized_name = v_normalized_name
++        or exists (select 1 from unnest(c.aliases) a where lower(regexp_replace(btrim(a), '\s+', ' ', 'g')) = v_normalized_name)
++        or exists (
++          select 1 from jsonb_array_elements_text(coalesce(v_candidate -> 'aliases', '[]'::jsonb)) as ca(alias_value)
++          where lower(regexp_replace(btrim(ca.alias_value), '\s+', ' ', 'g')) = c.normalized_name
++             or exists (select 1 from unnest(c.aliases) a where lower(regexp_replace(btrim(a), '\s+', ' ', 'g')) = lower(regexp_replace(btrim(ca.alias_value), '\s+', ' ', 'g')))
++        )
++      )
++    ) then
++      insert into public.characters (
++        story_id, name, aliases, role, description, story_relationship, origin,
++        source_scene_id, created_by_turn_id, introduced_run_branch_id
++      ) select
++        pr.story_id, v_candidate ->> 'name',
++        array(select jsonb_array_elements_text(coalesce(v_candidate -> 'aliases', '[]'::jsonb))),
++        v_candidate ->> 'role', v_candidate ->> 'description', v_candidate ->> 'relationship',
++        'runtime', v_scene_id, v_turn.id, v_turn.run_branch_id
++      from public.player_runs pr where pr.id = v_turn.player_run_id;
++    end if;
++  end loop;
++
++  for v_fact in select * from jsonb_array_elements(coalesce(p_canon_candidates, '[]'::jsonb)) loop
++    insert into public.canon_facts (
++      player_run_id, scope, run_branch_id, origin, fact_key, fact_text, source_turn_id, source_scene_id
++    ) values (
++      v_turn.player_run_id, coalesce(v_fact ->> 'scope', 'branch'),
++      case when coalesce(v_fact ->> 'scope', 'branch') = 'branch' then v_turn.run_branch_id else null end,
++      'story_scene', v_fact ->> 'fact_key', v_fact ->> 'fact_text', v_turn.id, v_scene_id
++    );
++  end loop;
++
++  for v_memory in select * from jsonb_array_elements(coalesce(p_character_memory_candidates, '[]'::jsonb)) loop
++    v_character_id := (v_memory ->> 'character_id')::uuid;
++    v_supersedes_fact_id := null;
++    select cf.id into v_supersedes_fact_id from public.canon_facts cf
++    where cf.player_run_id = v_turn.player_run_id and cf.character_id = v_character_id
++      and cf.fact_key = v_memory ->> 'fact_key'
++      and cf.source_scene_id in (select * from public.lw_branch_scene_ids(v_turn.run_branch_id))
++      and not exists (
++        select 1 from public.canon_facts newer where newer.supersedes_fact_id = cf.id
++          and newer.source_scene_id in (select * from public.lw_branch_scene_ids(v_turn.run_branch_id))
++      )
++    order by cf.created_at desc, cf.id desc limit 1;
++
++    insert into public.canon_facts (
++      player_run_id, scope, run_branch_id, origin, fact_key, fact_text,
++      source_turn_id, source_scene_id, character_id, memory_type, salience, supersedes_fact_id
++    ) values (
++      v_turn.player_run_id, 'branch', v_turn.run_branch_id, 'story_scene',
++      v_memory ->> 'fact_key', v_memory ->> 'fact_text', v_turn.id, v_scene_id,
++      v_character_id, v_memory ->> 'memory_type', (v_memory ->> 'salience')::smallint, v_supersedes_fact_id
++    );
++  end loop;
++
++  update public.turns set status = 'committed', result_scene_id = v_scene_id,
++    generation_attempt_count = p_generation_attempt_count, provider = p_provider, model = p_model,
++    input_tokens = p_input_tokens, output_tokens = p_output_tokens,
++    provider_cost_micros = p_provider_cost_micros, latency_ms = p_latency_ms,
++    user_allowance_debited = true where id = p_turn_id;
++  update public.player_runs set status = case when p_boundary_kind = 'ending' then 'completed' else status end
++  where id = v_turn.player_run_id;
++
++  insert into public.usage_counters(user_id, usage_date, generation_count)
++  select pr.owner_user_id, (timezone('utc', now()))::date, 1
++  from public.player_runs pr where pr.id = v_turn.player_run_id
++  on conflict (user_id) do update set
++    generation_count = case when public.usage_counters.usage_date = (timezone('utc', now()))::date
++      then public.usage_counters.generation_count + 1 else 1 end,
++    usage_date = (timezone('utc', now()))::date;
++
++  return jsonb_build_object(
++    'status', case when p_boundary_kind = 'ending' then 'TERMINAL_ENDING'
++                   when p_boundary_kind = 'checkpoint' then 'EXPLICIT_CHECKPOINT'
++                   else 'CONTINUE_READY' end,
++    'scene', (select to_jsonb(s.*) from public.scenes s where s.id = v_scene_id),
++    'turn_id', p_turn_id
++  );
++end;
++$$;
++
++revoke execute on function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb, integer,
++  text, text, integer, integer, bigint, integer
++) from public, anon, authenticated;
++grant execute on function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb, integer,
++  text, text, integer, integer, bigint, integer
++) to service_role;
++
++-- Branch-specific thread creation is safe for the owning signed-in player;
++-- message writes and provider accounting remain server-only below.
++create function public.lw_get_or_create_chat_thread(p_player_run_id uuid, p_character_id uuid)
++returns jsonb language plpgsql security definer set search_path = '' as $$
++declare
++  v_caller uuid := (select auth.uid());
++  v_run public.player_runs%rowtype;
++  v_thread public.character_chat_threads%rowtype;
++begin
++  select * into v_run from public.player_runs
++  where id = p_player_run_id and owner_user_id = v_caller;
++  if not found then raise exception 'chat thread: run not owned' using errcode = '42501'; end if;
++  perform 1 from public.characters c where c.id = p_character_id and c.story_id = v_run.story_id
++    and (c.origin = 'authored' or c.source_scene_id in (select * from public.lw_branch_scene_ids(v_run.active_branch_id)));
++  if not found then raise exception 'chat thread: character not visible' using errcode = '22023'; end if;
++  insert into public.character_chat_threads(player_run_id, run_branch_id, character_id)
++  values (v_run.id, v_run.active_branch_id, p_character_id)
++  on conflict (player_run_id, run_branch_id, character_id) do update
++    set updated_at = public.character_chat_threads.updated_at
++  returning * into v_thread;
++  return to_jsonb(v_thread.*);
++end; $$;
++
++revoke execute on function public.lw_get_or_create_chat_thread(uuid, uuid) from public, anon, authenticated;
++grant execute on function public.lw_get_or_create_chat_thread(uuid, uuid) to authenticated;
++
++create function public.lw_start_chat_generation(
++  p_owner_user_id uuid, p_thread_id uuid, p_message_id uuid, p_content text
++) returns jsonb language plpgsql security definer set search_path = '' as $$
++declare v_message public.character_chat_messages%rowtype;
++begin
++  if char_length(btrim(p_content)) not between 1 and 4000 then
++    raise exception 'chat message: invalid content' using errcode = '22023';
++  end if;
++  perform 1 from public.character_chat_threads thread
++  join public.player_runs pr on pr.id = thread.player_run_id
++  where thread.id = p_thread_id and pr.owner_user_id = p_owner_user_id;
++  if not found then raise exception 'chat message: thread not owned' using errcode = '42501'; end if;
++  insert into public.character_chat_messages(id, thread_id, role, content, generation_status)
++  values (p_message_id, p_thread_id, 'player', btrim(p_content), 'pending')
++  on conflict (id) do update set
++    generation_status = case when public.character_chat_messages.generation_status = 'failed' then 'pending' else public.character_chat_messages.generation_status end,
++    error_class = case when public.character_chat_messages.generation_status = 'failed' then null else public.character_chat_messages.error_class end
++  returning * into v_message;
++  if v_message.thread_id != p_thread_id or v_message.role != 'player' then
++    raise exception 'chat message: id collision' using errcode = '22023';
++  end if;
++  return to_jsonb(v_message.*);
++end; $$;
++
++create function public.lw_commit_chat_generation(
++  p_owner_user_id uuid, p_player_message_id uuid, p_character_message_id uuid,
++  p_reply text, p_memory_candidates jsonb, p_provider text, p_model text,
++  p_input_tokens integer, p_output_tokens integer, p_provider_cost_micros bigint, p_latency_ms integer
++) returns jsonb language plpgsql security definer set search_path = '' as $$
++declare v_player public.character_chat_messages%rowtype; v_character public.character_chat_messages%rowtype;
++begin
++  select m.* into v_player from public.character_chat_messages m
++  join public.character_chat_threads thread on thread.id = m.thread_id
++  join public.player_runs pr on pr.id = thread.player_run_id
++  where m.id = p_player_message_id and m.role = 'player' and pr.owner_user_id = p_owner_user_id
++  for update of m;
++  if not found then raise exception 'chat commit: message not owned' using errcode = '42501'; end if;
++  if v_player.generation_status = 'completed' then
++    return (select to_jsonb(m.*) from public.character_chat_messages m where m.reply_to_message_id = v_player.id);
++  end if;
++  if v_player.generation_status != 'pending' then raise exception 'chat commit: not pending'; end if;
++  if char_length(btrim(p_reply)) not between 1 and 4000
++    or jsonb_typeof(coalesce(p_memory_candidates, '[]'::jsonb)) != 'array'
++    or jsonb_array_length(coalesce(p_memory_candidates, '[]'::jsonb)) > 5 then
++    raise exception 'chat commit: malformed output' using errcode = '22023';
++  end if;
++  insert into public.character_chat_messages(
++    id, thread_id, role, content, reply_to_message_id, memory_candidates
++  ) values (
++    p_character_message_id, v_player.thread_id, 'character', btrim(p_reply), v_player.id,
++    coalesce(p_memory_candidates, '[]'::jsonb)
++  ) returning * into v_character;
++  update public.character_chat_messages set generation_status = 'completed', provider = p_provider,
++    model = p_model, input_tokens = p_input_tokens, output_tokens = p_output_tokens,
++    provider_cost_micros = p_provider_cost_micros, latency_ms = p_latency_ms
++  where id = v_player.id;
++  update public.character_chat_threads set updated_at = now() where id = v_player.thread_id;
++  return to_jsonb(v_character.*);
++end; $$;
++
++create function public.lw_fail_chat_generation(
++  p_owner_user_id uuid, p_player_message_id uuid, p_error_class text,
++  p_provider text default null, p_model text default null, p_input_tokens integer default null,
++  p_output_tokens integer default null, p_provider_cost_micros bigint default null, p_latency_ms integer default null
++) returns jsonb language plpgsql security definer set search_path = '' as $$
++declare v_message public.character_chat_messages%rowtype;
++begin
++  if p_error_class not in ('provider_error', 'validation_error', 'transport_error') then
++    raise exception 'chat fail: invalid class' using errcode = '22023';
++  end if;
++  update public.character_chat_messages m set generation_status = 'failed', error_class = p_error_class,
++    provider = p_provider, model = p_model, input_tokens = p_input_tokens, output_tokens = p_output_tokens,
++    provider_cost_micros = p_provider_cost_micros, latency_ms = p_latency_ms
++  from public.character_chat_threads thread, public.player_runs pr
++  where m.id = p_player_message_id and m.role = 'player' and m.thread_id = thread.id
++    and thread.player_run_id = pr.id and pr.owner_user_id = p_owner_user_id
++    and m.generation_status = 'pending'
++  returning m.* into v_message;
++  if not found then raise exception 'chat fail: message not owned or pending' using errcode = '42501'; end if;
++  return to_jsonb(v_message.*);
++end; $$;
++
++revoke execute on function public.lw_start_chat_generation(uuid, uuid, uuid, text) from public, anon, authenticated;
++revoke execute on function public.lw_commit_chat_generation(uuid, uuid, uuid, text, jsonb, text, text, integer, integer, bigint, integer) from public, anon, authenticated;
++revoke execute on function public.lw_fail_chat_generation(uuid, uuid, text, text, text, integer, integer, bigint, integer) from public, anon, authenticated;
++grant execute on function public.lw_start_chat_generation(uuid, uuid, uuid, text) to service_role;
++grant execute on function public.lw_commit_chat_generation(uuid, uuid, uuid, text, jsonb, text, text, integer, integer, bigint, integer) to service_role;
++grant execute on function public.lw_fail_chat_generation(uuid, uuid, text, text, text, integer, integer, bigint, integer) to service_role;
++
++create function public.lw_promote_chat_memory(p_character_message_id uuid, p_candidate_index integer)
++returns jsonb language plpgsql security definer set search_path = '' as $$
++declare
++  v_caller uuid := (select auth.uid());
++  v_thread public.character_chat_threads%rowtype;
++  v_message public.character_chat_messages%rowtype;
++  v_candidate jsonb;
++  v_source_scene_id uuid;
++  v_existing public.canon_facts%rowtype;
++  v_fact public.canon_facts%rowtype;
++begin
++  if p_candidate_index not between 0 and 4 then raise exception 'promotion: invalid candidate' using errcode = '22023'; end if;
++  select m.* into v_message from public.character_chat_messages m where m.id = p_character_message_id and m.role = 'character';
++  if not found then raise exception 'promotion: message not found' using errcode = '22023'; end if;
++  select thread.* into v_thread from public.character_chat_threads thread
++  join public.player_runs pr on pr.id = thread.player_run_id
++  where thread.id = v_message.thread_id and pr.owner_user_id = v_caller
++    and pr.active_branch_id = thread.run_branch_id;
++  if not found then raise exception 'promotion: wrong owner or branch' using errcode = '42501'; end if;
++  v_candidate := v_message.memory_candidates -> p_candidate_index;
++  if v_candidate is null or v_candidate ->> 'fact_key' !~ '^[a-z][a-z0-9_]{1,79}$'
++    or v_candidate ->> 'memory_type' not in ('player_fact','character_fact','relationship_fact','shared_event','promise','discovery')
++    or char_length(v_candidate ->> 'fact_text') not between 1 and 500
++    or (v_candidate ->> 'salience')::integer not between 1 and 5 then
++    raise exception 'promotion: malformed candidate' using errcode = '22023';
++  end if;
++  select * into v_fact from public.canon_facts
++  where source_chat_message_id = p_character_message_id and source_chat_candidate_index = p_candidate_index;
++  if found then return to_jsonb(v_fact.*); end if;
++  select scene_id into v_source_scene_id
++  from public.lw_branch_scene_ids(v_thread.run_branch_id) with ordinality as visible(scene_id, ord)
++  order by ord desc limit 1;
++  if v_source_scene_id is null then raise exception 'promotion: branch has no Scene' using errcode = '22023'; end if;
++  select cf.* into v_existing from public.canon_facts cf
++  where cf.player_run_id = v_thread.player_run_id and cf.character_id = v_thread.character_id
++    and cf.fact_key = v_candidate ->> 'fact_key'
++    and cf.source_scene_id in (select * from public.lw_branch_scene_ids(v_thread.run_branch_id))
++    and (cf.origin = 'story_scene' or cf.run_branch_id = v_thread.run_branch_id)
++    and not exists (select 1 from public.canon_facts newer where newer.supersedes_fact_id = cf.id
++      and newer.source_scene_id in (select * from public.lw_branch_scene_ids(v_thread.run_branch_id)))
++  order by cf.created_at desc, cf.id desc limit 1;
++  insert into public.canon_facts(
++    player_run_id, scope, run_branch_id, origin, fact_key, fact_text, source_scene_id,
++    character_id, memory_type, salience, supersedes_fact_id,
++    source_chat_message_id, source_chat_candidate_index
++  ) values (
++    v_thread.player_run_id, 'branch', v_thread.run_branch_id, 'character_chat',
++    v_candidate ->> 'fact_key', v_candidate ->> 'fact_text', v_source_scene_id,
++    v_thread.character_id, v_candidate ->> 'memory_type', (v_candidate ->> 'salience')::smallint,
++    v_existing.id, p_character_message_id, p_candidate_index
++  ) returning * into v_fact;
++  return to_jsonb(v_fact.*);
++end; $$;
++
++revoke execute on function public.lw_promote_chat_memory(uuid, integer) from public, anon, authenticated;
++grant execute on function public.lw_promote_chat_memory(uuid, integer) to authenticated;
++
++-- Reading state now exposes only branch-visible canonical Characters and a
++-- human-sized alternate-path label input; no chat transcript is mixed in.
++create or replace function public.lw_get_run_state(p_player_run_id uuid)
++returns jsonb language plpgsql security definer stable set search_path = '' as $$
++declare v_caller uuid := (select auth.uid()); v_run public.player_runs%rowtype; v_scene_id uuid; v_branch_seq integer;
++begin
++  select * into v_run from public.player_runs where id = p_player_run_id and owner_user_id = v_caller;
++  if not found then raise exception 'lw_get_run_state: run not found or not owned by caller' using errcode = '42501'; end if;
++  select branch_seq into v_branch_seq from public.run_branches where id = v_run.active_branch_id;
++  select scene_id into v_scene_id from public.lw_branch_scene_ids(v_run.active_branch_id) with ordinality as t(scene_id, ord)
++  order by ord desc limit 1;
++  return jsonb_build_object(
++    'player_run', to_jsonb(v_run.*), 'run_branch_id', v_run.active_branch_id, 'branch_seq', v_branch_seq,
++    'status', case when v_scene_id is null then 'CONTINUE_READY' else (
++      select case s.boundary_kind when 'ending' then 'TERMINAL_ENDING' when 'checkpoint' then 'EXPLICIT_CHECKPOINT' else 'CONTINUE_READY' end
++      from public.scenes s where s.id = v_scene_id) end,
++    'scene', (select to_jsonb(s.*) from public.scenes s where s.id = v_scene_id),
++    'scenes', coalesce((select jsonb_agg(to_jsonb(s.*) order by visible.ord)
++      from public.lw_branch_scene_ids(v_run.active_branch_id) with ordinality as visible(scene_id, ord)
++      join public.scenes s on s.id = visible.scene_id), '[]'::jsonb),
++    'story_title', (select st.title from public.stories st where st.id = v_run.story_id),
++    'story_premise', (select st.premise from public.stories st where st.id = v_run.story_id),
++    'content_language', (select st.content_language from public.stories st where st.id = v_run.story_id),
++    'characters', coalesce((select jsonb_agg(jsonb_build_object(
++      'id', c.id, 'name', c.name, 'role', c.role, 'relationship', c.story_relationship,
++      'description', c.description, 'origin', c.origin
++    ) order by c.created_at, c.id) from public.characters c
++      where c.story_id = v_run.story_id and (c.origin = 'authored' or c.source_scene_id in (
++        select * from public.lw_branch_scene_ids(v_run.active_branch_id)
++      ))), '[]'::jsonb)
++  );
++end; $$;
++
++revoke execute on function public.lw_get_run_state(uuid) from public, anon, authenticated;
++grant execute on function public.lw_get_run_state(uuid) to authenticated;
+diff --git a/supabase/migrations/20260811085819_lw_w3_r2_allowance_double_debit_repair.sql b/supabase/migrations/20260811085819_lw_w3_r2_allowance_double_debit_repair.sql
+new file mode 100644
+index 0000000..c44e3ff
+--- /dev/null
++++ b/supabase/migrations/20260811085819_lw_w3_r2_allowance_double_debit_repair.sql
+@@ -0,0 +1,231 @@
++-- LW-W3-R2-R1 — forward-only repair for Story allowance double-debit and
++-- Character Chat message-id/content idempotency.
++--
++-- The already-applied W3-R2 migration extended lw_commit_turn for runtime
++-- Characters but accidentally restored the old commit-time usage counter
++-- increment. lw_precheck_and_start_turn already reserves exactly one unit,
++-- and lw_fail_turn releases that reservation. Successful commit must only
++-- materialize canonical output and provider accounting; it must not debit the
++-- Story allowance again.
++
++create or replace function public.lw_commit_turn(
++  p_turn_id uuid,
++  p_narrative text,
++  p_dialogue jsonb,
++  p_state_change_summary jsonb,
++  p_structured_outcome jsonb,
++  p_next_choices jsonb,
++  p_boundary_kind text,
++  p_canon_candidates jsonb,
++  p_character_memory_candidates jsonb,
++  p_new_character_candidates jsonb,
++  p_generation_attempt_count integer,
++  p_provider text,
++  p_model text,
++  p_input_tokens integer,
++  p_output_tokens integer,
++  p_provider_cost_micros bigint,
++  p_latency_ms integer
++)
++returns jsonb
++language plpgsql
++security definer
++set search_path = ''
++as $$
++declare
++  v_turn public.turns%rowtype;
++  v_scene_id uuid;
++  v_next_seq integer;
++  v_fact jsonb;
++  v_memory jsonb;
++  v_candidate jsonb;
++  v_character_id uuid;
++  v_supersedes_fact_id uuid;
++  v_existing_scene public.scenes%rowtype;
++  v_normalized_name text;
++begin
++  if p_boundary_kind not in ('none', 'checkpoint', 'ending') then
++    raise exception 'lw_commit_turn: invalid boundary_kind %', p_boundary_kind using errcode = '22023';
++  end if;
++  if jsonb_array_length(coalesce(p_new_character_candidates, '[]'::jsonb)) > 3 then
++    raise exception 'lw_commit_turn: too many runtime characters' using errcode = '22023';
++  end if;
++  if exists (
++    select 1 from jsonb_array_elements(coalesce(p_character_memory_candidates, '[]'::jsonb)) m
++    group by m ->> 'character_id', m ->> 'fact_key' having count(*) > 1
++  ) then
++    raise exception 'lw_commit_turn: duplicate character memory key' using errcode = '22023';
++  end if;
++
++  select t.* into v_turn from public.turns t where t.id = p_turn_id for update;
++  if not found then raise exception 'lw_commit_turn: turn not found' using errcode = '42501'; end if;
++  if v_turn.status = 'committed' then
++    select * into v_existing_scene from public.scenes where id = v_turn.result_scene_id;
++    return jsonb_build_object(
++      'status', case when v_existing_scene.boundary_kind = 'ending' then 'TERMINAL_ENDING'
++                     when v_existing_scene.boundary_kind = 'checkpoint' then 'EXPLICIT_CHECKPOINT'
++                     else 'CONTINUE_READY' end,
++      'scene', to_jsonb(v_existing_scene.*), 'turn_id', v_turn.id
++    );
++  end if;
++  if v_turn.status != 'generating' then raise exception 'lw_commit_turn: turn is not committable'; end if;
++
++  for v_memory in select * from jsonb_array_elements(coalesce(p_character_memory_candidates, '[]'::jsonb)) loop
++    begin v_character_id := (v_memory ->> 'character_id')::uuid;
++    exception when invalid_text_representation then
++      raise exception 'lw_commit_turn: invalid character_id' using errcode = '22023';
++    end;
++    perform 1 from public.characters c
++    join public.player_runs pr on pr.story_id = c.story_id
++    where c.id = v_character_id and pr.id = v_turn.player_run_id
++      and (c.origin = 'authored' or c.source_scene_id in (
++        select * from public.lw_branch_scene_ids(v_turn.run_branch_id)
++      ));
++    if not found then raise exception 'lw_commit_turn: character is not visible to this branch' using errcode = '22023'; end if;
++  end loop;
++
++  select coalesce(max(seq_in_branch), -1) + 1 into v_next_seq
++  from public.scenes where run_branch_id = v_turn.run_branch_id;
++  insert into public.scenes (
++    run_branch_id, seq_in_branch, parent_scene_id, boundary_kind, narrative,
++    dialogue, state_change_summary, structured_outcome, next_choices, generation_turn_id
++  ) values (
++    v_turn.run_branch_id, v_next_seq, v_turn.source_scene_id, p_boundary_kind, p_narrative,
++    coalesce(p_dialogue, '[]'::jsonb), coalesce(p_state_change_summary, '[]'::jsonb),
++    coalesce(p_structured_outcome, '{}'::jsonb), coalesce(p_next_choices, '[]'::jsonb), v_turn.id
++  ) returning id into v_scene_id;
++
++  for v_candidate in select * from jsonb_array_elements(coalesce(p_new_character_candidates, '[]'::jsonb)) loop
++    v_normalized_name := lower(regexp_replace(btrim(v_candidate ->> 'name'), '\s+', ' ', 'g'));
++    if v_normalized_name = ''
++      or coalesce(char_length(v_candidate ->> 'role'), 0) not between 1 and 500
++      or coalesce(char_length(v_candidate ->> 'description'), 0) not between 1 and 2000
++      or coalesce(char_length(v_candidate ->> 'relationship'), 0) not between 1 and 500
++      or jsonb_typeof(coalesce(v_candidate -> 'aliases', '[]'::jsonb)) != 'array'
++      or jsonb_array_length(coalesce(v_candidate -> 'aliases', '[]'::jsonb)) > 10 then
++      raise exception 'lw_commit_turn: malformed runtime character' using errcode = '22023';
++    end if;
++
++    if not exists (
++      select 1 from public.characters c
++      join public.player_runs pr on pr.story_id = c.story_id
++      where pr.id = v_turn.player_run_id and (
++        c.normalized_name = v_normalized_name
++        or exists (select 1 from unnest(c.aliases) a where lower(regexp_replace(btrim(a), '\s+', ' ', 'g')) = v_normalized_name)
++        or exists (
++          select 1 from jsonb_array_elements_text(coalesce(v_candidate -> 'aliases', '[]'::jsonb)) as ca(alias_value)
++          where lower(regexp_replace(btrim(ca.alias_value), '\s+', ' ', 'g')) = c.normalized_name
++             or exists (select 1 from unnest(c.aliases) a where lower(regexp_replace(btrim(a), '\s+', ' ', 'g')) = lower(regexp_replace(btrim(ca.alias_value), '\s+', ' ', 'g')))
++        )
++      )
++    ) then
++      insert into public.characters (
++        story_id, name, aliases, role, description, story_relationship, origin,
++        source_scene_id, created_by_turn_id, introduced_run_branch_id
++      ) select
++        pr.story_id, v_candidate ->> 'name',
++        array(select jsonb_array_elements_text(coalesce(v_candidate -> 'aliases', '[]'::jsonb))),
++        v_candidate ->> 'role', v_candidate ->> 'description', v_candidate ->> 'relationship',
++        'runtime', v_scene_id, v_turn.id, v_turn.run_branch_id
++      from public.player_runs pr where pr.id = v_turn.player_run_id;
++    end if;
++  end loop;
++
++  for v_fact in select * from jsonb_array_elements(coalesce(p_canon_candidates, '[]'::jsonb)) loop
++    insert into public.canon_facts (
++      player_run_id, scope, run_branch_id, origin, fact_key, fact_text, source_turn_id, source_scene_id
++    ) values (
++      v_turn.player_run_id, coalesce(v_fact ->> 'scope', 'branch'),
++      case when coalesce(v_fact ->> 'scope', 'branch') = 'branch' then v_turn.run_branch_id else null end,
++      'story_scene', v_fact ->> 'fact_key', v_fact ->> 'fact_text', v_turn.id, v_scene_id
++    );
++  end loop;
++
++  for v_memory in select * from jsonb_array_elements(coalesce(p_character_memory_candidates, '[]'::jsonb)) loop
++    v_character_id := (v_memory ->> 'character_id')::uuid;
++    v_supersedes_fact_id := null;
++    select cf.id into v_supersedes_fact_id from public.canon_facts cf
++    where cf.player_run_id = v_turn.player_run_id and cf.character_id = v_character_id
++      and cf.fact_key = v_memory ->> 'fact_key'
++      and cf.source_scene_id in (select * from public.lw_branch_scene_ids(v_turn.run_branch_id))
++      and not exists (
++        select 1 from public.canon_facts newer where newer.supersedes_fact_id = cf.id
++          and newer.source_scene_id in (select * from public.lw_branch_scene_ids(v_turn.run_branch_id))
++      )
++    order by cf.created_at desc, cf.id desc limit 1;
++
++    insert into public.canon_facts (
++      player_run_id, scope, run_branch_id, origin, fact_key, fact_text,
++      source_turn_id, source_scene_id, character_id, memory_type, salience, supersedes_fact_id
++    ) values (
++      v_turn.player_run_id, 'branch', v_turn.run_branch_id, 'story_scene',
++      v_memory ->> 'fact_key', v_memory ->> 'fact_text', v_turn.id, v_scene_id,
++      v_character_id, v_memory ->> 'memory_type', (v_memory ->> 'salience')::smallint, v_supersedes_fact_id
++    );
++  end loop;
++
++  update public.turns set status = 'committed', result_scene_id = v_scene_id,
++    generation_attempt_count = p_generation_attempt_count, provider = p_provider, model = p_model,
++    input_tokens = p_input_tokens, output_tokens = p_output_tokens,
++    provider_cost_micros = p_provider_cost_micros, latency_ms = p_latency_ms,
++    user_allowance_debited = true where id = p_turn_id;
++  update public.player_runs set status = case when p_boundary_kind = 'ending' then 'completed' else status end
++  where id = v_turn.player_run_id;
++
++  -- The allowance unit was atomically reserved by lw_precheck_and_start_turn.
++  -- Do not touch usage_counters here: success consumes that one reservation,
++  -- and the committed-turn early return above remains allowance-idempotent.
++
++  return jsonb_build_object(
++    'status', case when p_boundary_kind = 'ending' then 'TERMINAL_ENDING'
++                   when p_boundary_kind = 'checkpoint' then 'EXPLICIT_CHECKPOINT'
++                   else 'CONTINUE_READY' end,
++    'scene', (select to_jsonb(s.*) from public.scenes s where s.id = v_scene_id),
++    'turn_id', p_turn_id
++  );
++end;
++$$;
++
++revoke execute on function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb, integer,
++  text, text, integer, integer, bigint, integer
++) from public, anon, authenticated;
++grant execute on function public.lw_commit_turn(
++  uuid, text, jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb, integer,
++  text, text, integer, integer, bigint, integer
++) to service_role;
++
++-- A repeated Chat message id is idempotent only when it represents the exact
++-- same persisted player message. Reject mismatched content before the caller
++-- can generate against text that is not the canonical database record.
++create or replace function public.lw_start_chat_generation(
++  p_owner_user_id uuid, p_thread_id uuid, p_message_id uuid, p_content text
++) returns jsonb language plpgsql security definer set search_path = '' as $$
++declare v_message public.character_chat_messages%rowtype;
++begin
++  if char_length(btrim(p_content)) not between 1 and 4000 then
++    raise exception 'chat message: invalid content' using errcode = '22023';
++  end if;
++  perform 1 from public.character_chat_threads thread
++  join public.player_runs pr on pr.id = thread.player_run_id
++  where thread.id = p_thread_id and pr.owner_user_id = p_owner_user_id;
++  if not found then raise exception 'chat message: thread not owned' using errcode = '42501'; end if;
++  insert into public.character_chat_messages(id, thread_id, role, content, generation_status)
++  values (p_message_id, p_thread_id, 'player', btrim(p_content), 'pending')
++  on conflict (id) do update set
++    generation_status = case when public.character_chat_messages.generation_status = 'failed' then 'pending' else public.character_chat_messages.generation_status end,
++    error_class = case when public.character_chat_messages.generation_status = 'failed' then null else public.character_chat_messages.error_class end
++  returning * into v_message;
++  if v_message.thread_id != p_thread_id or v_message.role != 'player' then
++    raise exception 'chat message: id collision' using errcode = '22023';
++  end if;
++  if v_message.content is distinct from btrim(p_content) then
++    raise exception 'chat message: idempotency content mismatch' using errcode = '22023';
++  end if;
++  return to_jsonb(v_message.*);
++end; $$;
++
++revoke execute on function public.lw_start_chat_generation(uuid, uuid, uuid, text)
++  from public, anon, authenticated;
++grant execute on function public.lw_start_chat_generation(uuid, uuid, uuid, text)
++  to service_role;
+diff --git a/supabase/tests/lw_w3_r2_allowance_regression.sql b/supabase/tests/lw_w3_r2_allowance_regression.sql
+new file mode 100644
+index 0000000..c0860d7
+--- /dev/null
++++ b/supabase/tests/lw_w3_r2_allowance_regression.sql
+@@ -0,0 +1,217 @@
++-- Deterministic rollback-only integration contract for LW-W3-R2-R1.
++-- Run against the linked DEV project with:
++--   npx supabase db query --linked --file supabase/tests/lw_w3_r2_allowance_regression.sql
++
++begin;
++
++do $probe$
++declare
++  v_owner uuid := gen_random_uuid();
++  v_success_turn uuid := gen_random_uuid();
++  v_failed_turn uuid := gen_random_uuid();
++  v_exhausted_turn uuid := gen_random_uuid();
++  v_player_message uuid := gen_random_uuid();
++  v_character_message uuid := gen_random_uuid();
++  v_run uuid;
++  v_character uuid;
++  v_thread uuid;
++  v_result jsonb;
++  v_generation_count integer;
++  v_scene_count integer;
++  v_mismatch_rejected boolean := false;
++begin
++  insert into auth.users(
++    id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
++  ) values (
++    v_owner, 'authenticated', 'authenticated', 'lw-w3-r2-r1-rollback@example.invalid',
++    '{"provider":"email","providers":["email"]}'::jsonb,
++    '{"display_name":"Allowance Repair Probe"}'::jsonb,
++    now(), now()
++  );
++  perform set_config('request.jwt.claim.sub', v_owner::text, true);
++
++  -- Start from deterministic counter N = 7.
++  insert into public.usage_counters(user_id, usage_date, generation_count)
++  values (v_owner, (timezone('utc', now()))::date, 7);
++
++  v_result := public.lw_precheck_and_start_turn(
++    v_success_turn,
++    null,
++    'start',
++    null,
++    null,
++    jsonb_build_object(
++      'premise', 'Rollback-only allowance repair probe.',
++      'player_role', 'archivist',
++      'content_language', 'en',
++      'genre', 'mystery',
++      'story_mode', 'narrative',
++      'starting_character', jsonb_build_object(
++        'name', 'Mira Probe',
++        'aliases', jsonb_build_array('Probe Mira'),
++        'role', 'keeper',
++        'description', 'Synthetic rollback-only Character.',
++        'relationship', 'wary ally'
++      )
++    )
++  );
++  if v_result ->> 'status' != 'proceed' then
++    raise exception 'successful precheck did not proceed: %', v_result;
++  end if;
++  v_run := (v_result ->> 'player_run_id')::uuid;
++  select generation_count into v_generation_count
++  from public.usage_counters where user_id = v_owner;
++  if v_generation_count != 8 then
++    raise exception 'successful precheck expected N+1=8, got %', v_generation_count;
++  end if;
++
++  v_result := public.lw_commit_turn(
++    v_success_turn,
++    'The archive doors open.',
++    '[]'::jsonb,
++    '[]'::jsonb,
++    '{}'::jsonb,
++    '[]'::jsonb,
++    'none',
++    '[]'::jsonb,
++    '[]'::jsonb,
++    '[]'::jsonb,
++    1,
++    'fake',
++    'allowance-regression-probe',
++    1,
++    1,
++    0,
++    1
++  );
++  select generation_count into v_generation_count
++  from public.usage_counters where user_id = v_owner;
++  if v_generation_count != 8 then
++    raise exception 'successful commit double-debited allowance: expected 8, got %', v_generation_count;
++  end if;
++  select count(*) into v_scene_count
++  from public.scenes s
++  join public.run_branches rb on rb.id = s.run_branch_id
++  where rb.player_run_id = v_run;
++  if v_scene_count != 1 then
++    raise exception 'successful commit expected one Scene, got %', v_scene_count;
++  end if;
++
++  -- The same committed-turn request is a no-op for Scene and allowance state.
++  perform public.lw_commit_turn(
++    v_success_turn,
++    'Ignored duplicate payload.',
++    '[]'::jsonb,
++    '[]'::jsonb,
++    '{}'::jsonb,
++    '[]'::jsonb,
++    'none',
++    '[]'::jsonb,
++    '[]'::jsonb,
++    '[]'::jsonb,
++    2,
++    'fake',
++    'ignored-duplicate',
++    2,
++    2,
++    99,
++    2
++  );
++  select generation_count into v_generation_count
++  from public.usage_counters where user_id = v_owner;
++  if v_generation_count != 8 then
++    raise exception 'duplicate commit changed allowance: expected 8, got %', v_generation_count;
++  end if;
++  select count(*) into v_scene_count
++  from public.scenes s
++  join public.run_branches rb on rb.id = s.run_branch_id
++  where rb.player_run_id = v_run;
++  if v_scene_count != 1 then
++    raise exception 'duplicate commit created another Scene';
++  end if;
++
++  -- A provider/generation failure releases the precheck reservation.
++  v_result := public.lw_precheck_and_start_turn(
++    v_failed_turn, v_run, 'custom_action', null, 'Trigger a synthetic failure.', null
++  );
++  if v_result ->> 'status' != 'proceed' then
++    raise exception 'failed-turn precheck did not proceed: %', v_result;
++  end if;
++  select generation_count into v_generation_count
++  from public.usage_counters where user_id = v_owner;
++  if v_generation_count != 9 then
++    raise exception 'failed-turn precheck expected 9, got %', v_generation_count;
++  end if;
++  perform public.lw_fail_turn(v_failed_turn, 'transport_failure', 1, 5);
++  select generation_count into v_generation_count
++  from public.usage_counters where user_id = v_owner;
++  if v_generation_count != 8 then
++    raise exception 'failed generation did not release reservation: expected 8, got %', v_generation_count;
++  end if;
++
++  -- Exhaustion neither reserves another unit nor creates generation state.
++  update public.usage_counters set generation_count = 30 where user_id = v_owner;
++  v_result := public.lw_precheck_and_start_turn(
++    v_exhausted_turn, v_run, 'custom_action', null, 'Must not generate.', null
++  );
++  if v_result ->> 'status' != 'ALLOWANCE_EXHAUSTED' then
++    raise exception 'expected ALLOWANCE_EXHAUSTED, got %', v_result;
++  end if;
++  select generation_count into v_generation_count
++  from public.usage_counters where user_id = v_owner;
++  if v_generation_count != 30 or exists(select 1 from public.turns where id = v_exhausted_turn) then
++    raise exception 'allowance exhaustion mutated counter or created a Turn';
++  end if;
++  update public.usage_counters set generation_count = 8 where user_id = v_owner;
++
++  -- Chat start + successful reply remains outside Story allowance accounting.
++  select c.id into v_character
++  from public.characters c
++  join public.player_runs pr on pr.story_id = c.story_id
++  where pr.id = v_run
++  order by c.created_at, c.id
++  limit 1;
++  v_thread := (public.lw_get_or_create_chat_thread(v_run, v_character) ->> 'id')::uuid;
++  perform public.lw_start_chat_generation(v_owner, v_thread, v_player_message, 'Canonical player message.');
++  perform public.lw_start_chat_generation(v_owner, v_thread, v_player_message, 'Canonical player message.');
++  begin
++    perform public.lw_start_chat_generation(v_owner, v_thread, v_player_message, 'Different provider prompt.');
++  exception when sqlstate '22023' then
++    v_mismatch_rejected := true;
++  end;
++  if not v_mismatch_rejected then
++    raise exception 'mismatched Chat message-id reuse was not rejected';
++  end if;
++  if (select content from public.character_chat_messages where id = v_player_message) != 'Canonical player message.' then
++    raise exception 'mismatched Chat retry changed canonical content';
++  end if;
++  perform public.lw_commit_chat_generation(
++    v_owner,
++    v_player_message,
++    v_character_message,
++    'Synthetic in-character reply.',
++    '[]'::jsonb,
++    'fake',
++    'allowance-regression-probe',
++    2,
++    3,
++    0,
++    1
++  );
++  select generation_count into v_generation_count
++  from public.usage_counters where user_id = v_owner;
++  if v_generation_count != 8 then
++    raise exception 'Character Chat mutated Story allowance: expected 8, got %', v_generation_count;
++  end if;
++end
++$probe$;
++
++rollback;
++
++select
++  'ALLOWANCE_REGRESSION_ROLLBACK_ONLY_PASS' as result,
++  'N=7; precheck=8; commit=8; duplicate_commit=8' as successful_story,
++  'precheck=9; fail=8' as failed_story,
++  'at_cap=30; exhausted=30; no_turn=true' as exhausted_story,
++  'before=8; chat_start_and_commit=8' as character_chat,
++  'same_id_same_content=accepted; same_id_different_content=rejected' as chat_idempotency;
+diff --git a/tests/e2e/roleplay-chat.spec.ts b/tests/e2e/roleplay-chat.spec.ts
+new file mode 100644
+index 0000000..3dbb862
+--- /dev/null
++++ b/tests/e2e/roleplay-chat.spec.ts
+@@ -0,0 +1,143 @@
++import { expect, test, type Page } from "@playwright/test";
++
++const RUN_ID = "11111111-1111-4111-8111-111111111111";
++const BRANCH_ID = "22222222-2222-4222-8222-222222222222";
++const CHARACTER_ID = "33333333-3333-4333-8333-333333333333";
++const THREAD_ID = "44444444-4444-4444-8444-444444444444";
++const SUPABASE_PROJECT_REF = new URL(
++  process.env.EXPO_PUBLIC_SUPABASE_URL ?? "https://sfarcofvqfeobtcizxyv.supabase.co",
++).hostname.split(".")[0];
++
++type MockChatMessage = {
++  id: string;
++  role: "player" | "character";
++  content: string;
++  generation_status: "pending" | "completed" | "failed" | null;
++  error_class: "provider_error" | "validation_error" | "transport_error" | null;
++  memory_candidates: { memory_type: string; fact_key: string; fact_text: string; salience: number }[];
++  created_at: string;
++};
++
++const opening = {
++  id: "55555555-5555-4555-8555-555555555555", run_branch_id: BRANCH_ID, seq_in_branch: 0,
++  boundary_kind: "none", narrative: "Rain moves softly over the archive roof.\n\nMira waits beside the locked stacks, giving the silence room to mean something.",
++  dialogue: [{ speaker: "Mira", line: "You came back for the truth, not the key." }],
++  state_change_summary: [], next_choices: [], structured_outcome: {},
++};
++const current = {
++  id: "66666666-6666-4666-8666-666666666666", run_branch_id: BRANCH_ID, seq_in_branch: 1,
++  boundary_kind: "checkpoint", narrative: "The hidden stair opens beneath your hand.\n\nBelow, a warm light traces names that no living archivist remembers.",
++  dialogue: [{ speaker: "Mira", line: "If we descend, we carry what we learn." }],
++  state_change_summary: ["The hidden stair is open"],
++  next_choices: [{ id: "descend", label: "Descend with Mira" }, { id: "wait", label: "Ask what she fears" }],
++  structured_outcome: {},
++};
++
++async function installSignedInMocks(page: Page) {
++  await page.addInitScript((storageKey) => {
++    localStorage.setItem(storageKey, JSON.stringify({
++      access_token: "synthetic-e2e-access-token",
++      refresh_token: "synthetic-e2e-refresh-token",
++      token_type: "bearer",
++      expires_in: 999999999,
++      expires_at: 4102444800,
++      user: { id: "77777777-7777-4777-8777-777777777777", aud: "authenticated", role: "authenticated", email: "e2e@example.invalid", is_anonymous: false },
++    }));
++  }, `sb-${SUPABASE_PROJECT_REF}-auth-token`);
++
++  await page.route("**/rest/v1/rpc/lw_get_run_state", async (route) => {
++    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
++      run_branch_id: BRANCH_ID, branch_seq: 1, status: "EXPLICIT_CHECKPOINT", scene: current,
++      scenes: [opening, current], story_title: "The Archive Below", story_premise: "Every promise leaves a room behind.",
++      content_language: "vi",
++      characters: [{ id: CHARACTER_ID, name: "Mira", role: "Archive keeper", relationship: "A wary ally", description: "She remembers the cost of every sealed door.", origin: "authored" }],
++    }) });
++  });
++
++  let chatMessages: MockChatMessage[] = [{
++    id: "88888888-8888-4888-8888-888888888888", role: "character", content: "Tôi vẫn nhớ nơi bạn đã giấu chiếc chìa khóa.",
++    generation_status: null, error_class: null, memory_candidates: [{ memory_type: "player_fact", fact_key: "player_hid_key", fact_text: "Bạn đã giấu chiếc chìa khóa dưới bậc đá.", salience: 5 }], created_at: "2026-08-11T00:00:00Z",
++  }];
++  await page.route("**/functions/v1/character-chat", async (route) => {
++    const request = route.request();
++    const body = request.postDataJSON() as Record<string, unknown>;
++    if (body.action === "send") {
++      await new Promise((resolve) => setTimeout(resolve, 180));
++      chatMessages = [...chatMessages,
++        { id: body.message_id as string, role: "player", content: body.content as string, generation_status: "completed", error_class: null, memory_candidates: [], created_at: "2026-08-11T00:01:00Z" },
++        { id: "99999999-9999-4999-8999-999999999999", role: "character", content: "Ta nghe thấy. Nhưng lời thú nhận này vẫn chỉ ở giữa chúng ta.", generation_status: null, error_class: null, memory_candidates: [], created_at: "2026-08-11T00:01:01Z" },
++      ];
++      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
++      return;
++    }
++    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
++      thread: { id: THREAD_ID, player_run_id: RUN_ID, run_branch_id: BRANCH_ID, character_id: CHARACTER_ID },
++      character: { id: CHARACTER_ID, name: "Mira", role: "Archive keeper", description: "She remembers the cost of every sealed door.", storyRelationship: "A wary ally", aliases: [] },
++      content_language: "vi", messages: chatMessages,
++    }) });
++  });
++
++  await page.route("**/functions/v1/submit-turn", async (route) => {
++    await new Promise((resolve) => setTimeout(resolve, 180));
++    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "CONTINUE_READY", turn_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", scene: { ...current, id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", seq_in_branch: 2, boundary_kind: "none", narrative: "The archive answers without closing the path.", next_choices: [] } }) });
++  });
++  await page.route("**/functions/v1/replay-branch", async (route) => {
++    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ run_branch_id: BRANCH_ID, scene: current }) });
++  });
++  await page.route("**/rest/v1/rpc/lw_promote_chat_memory", async (route) => {
++    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }) });
++  });
++}
++
++test.beforeEach(async ({ page }) => {
++  await installSignedInMocks(page);
++});
++
++test("Story reader remains editorial, long-session safe, and duplicate-submit resistant", async ({ page }, testInfo) => {
++  const consoleErrors: string[] = [];
++  page.on("console", (message) => { if (message.type() === "error" || message.type() === "warning") consoleErrors.push(message.text()); });
++  let submits = 0;
++  page.on("request", (request) => { if (request.url().includes("/functions/v1/submit-turn")) submits += 1; });
++  await page.goto(`/play/${RUN_ID}`);
++  await expect(page.getByRole("heading", { name: "The Archive Below" })).toBeVisible();
++  await expect(page.getByText("Rain moves softly over the archive roof.")).toBeVisible();
++  await expect(page.getByText("The hidden stair opens beneath your hand.")).toBeVisible();
++  await expect(page.getByText("Alternate path", { exact: true })).toBeVisible();
++  await expect(page.getByRole("link", { name: /Characters/ })).toBeVisible();
++  await expect(page.getByRole("button", { name: "Replay from here" })).toBeVisible();
++  await page.getByRole("heading", { name: "The Archive Below" }).scrollIntoViewIfNeeded();
++  await page.screenshot({ path: testInfo.outputPath("story.png"), fullPage: false });
++
++  const composer = page.getByPlaceholder("Or write your own action…");
++  await composer.fill("A very long deliberate action. ".repeat(80));
++  await expect(composer).toHaveJSProperty("scrollWidth", await composer.evaluate((element) => element.clientWidth));
++  await page.getByRole("button", { name: "Send" }).click();
++  await page.getByRole("button", { name: "Send" }).click({ force: true }).catch(() => undefined);
++  await expect.poll(() => submits).toBe(1);
++  await expect(page.getByText("The archive answers without closing the path.")).toBeVisible();
++
++  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
++  expect(consoleErrors).toEqual([]);
++});
++
++test("Character directory and branch-bound Chat persist across reload", async ({ page }, testInfo) => {
++  const consoleErrors: string[] = [];
++  page.on("console", (message) => { if (message.type() === "error" || message.type() === "warning") consoleErrors.push(message.text()); });
++  await page.goto(`/play/${RUN_ID}/characters`);
++  await expect(page.getByRole("heading", { name: "Characters" })).toBeVisible();
++  await page.getByRole("button", { name: "Talk to character" }).click();
++  await expect(page.getByRole("heading", { name: "Mira" })).toBeVisible();
++  await expect(page.getByText("This conversation is private to this story path.", { exact: false })).toBeVisible();
++  await expect(page.getByText("Tôi vẫn nhớ nơi bạn đã giấu chiếc chìa khóa.")).toBeVisible();
++  await expect(page.getByRole("button", { name: "Remember in story" })).toBeVisible();
++
++  const composer = page.getByPlaceholder("Write to this character…");
++  await composer.fill("Tôi đã đánh tráo chiếc chìa khóa.");
++  await page.getByRole("button", { name: "Send" }).click();
++  await expect(page.getByText("Ta nghe thấy. Nhưng lời thú nhận này vẫn chỉ ở giữa chúng ta.")).toBeVisible();
++  await page.reload();
++  await expect(page.getByText("Ta nghe thấy. Nhưng lời thú nhận này vẫn chỉ ở giữa chúng ta.")).toBeVisible();
++  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
++  expect(consoleErrors).toEqual([]);
++  await page.screenshot({ path: testInfo.outputPath("character-chat.png"), fullPage: true });
++});

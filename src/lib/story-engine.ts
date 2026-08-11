@@ -1,4 +1,7 @@
 import { getSupabaseClient } from "@/lib/supabase";
+import { toCamelScene } from "./story-engine-response";
+
+export { toCamelScene } from "./story-engine-response";
 
 /**
  * Client-side wrapper around the M2 story engine's server boundary
@@ -31,22 +34,8 @@ export type PlayState =
   | { status: "CONTINUE_READY" | "EXPLICIT_CHECKPOINT" | "TERMINAL_ENDING"; scene: SceneDto; turnId: string }
   | { status: "GENERATION_FAILED"; turnId: string; errorClass: string }
   | { status: "ALLOWANCE_EXHAUSTED"; resetAt: string }
+  | { status: "BETA_CAPACITY_REACHED"; resetAt: string }
   | { status: "in_flight"; turnId: string };
-
-function toCamelScene(raw: Record<string, unknown> | null): SceneDto | null {
-  if (!raw) return null;
-  return {
-    id: raw.id as string,
-    runBranchId: raw.run_branch_id as string,
-    seqInBranch: raw.seq_in_branch as number,
-    boundaryKind: raw.boundary_kind as SceneDto["boundaryKind"],
-    narrative: raw.narrative as string,
-    dialogue: (raw.dialogue as SceneDto["dialogue"]) ?? [],
-    stateChangeSummary: (raw.state_change_summary as string[]) ?? [],
-    nextChoices: (raw.next_choices as SceneDto["nextChoices"]) ?? [],
-    structuredOutcome: (raw.structured_outcome as Record<string, unknown>) ?? {},
-  };
-}
 
 async function functionsUrl(path: string): Promise<string> {
   const base = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -96,18 +85,23 @@ export interface SubmitTurnArgs {
 
 export async function submitTurn(args: SubmitTurnArgs): Promise<PlayState & { playerRunId?: string }> {
   const token = await requireAccessToken();
-  const response = await fetch(await functionsUrl("submit-turn"), {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({
-      turn_id: args.turnId,
-      player_run_id: args.playerRunId,
-      action_type: args.actionType,
-      selected_choice_id: args.selectedChoiceId ?? null,
-      raw_action: args.rawAction ?? null,
-      story_setup: args.storySetup ?? null,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(await functionsUrl("submit-turn"), {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        turn_id: args.turnId,
+        player_run_id: args.playerRunId,
+        action_type: args.actionType,
+        selected_choice_id: args.selectedChoiceId ?? null,
+        raw_action: args.rawAction ?? null,
+        story_setup: args.storySetup ?? null,
+      }),
+    });
+  } catch {
+    throw new Error("network_error");
+  }
 
   const json = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
@@ -115,14 +109,18 @@ export async function submitTurn(args: SubmitTurnArgs): Promise<PlayState & { pl
   }
 
   const status = json.status as string;
+  const turnId = (json.turnId ?? json.turn_id) as string;
   if (status === "CONTINUE_READY" || status === "EXPLICIT_CHECKPOINT" || status === "TERMINAL_ENDING") {
-    return { status, scene: toCamelScene(json.scene as Record<string, unknown>)!, turnId: json.turn_id as string };
+    return { status, scene: toCamelScene(json.scene as Record<string, unknown>)!, turnId };
   }
   if (status === "GENERATION_FAILED") {
-    return { status, turnId: json.turn_id as string, errorClass: json.error_class as string };
+    return { status, turnId, errorClass: (json.errorClass ?? json.error_class) as string };
   }
   if (status === "ALLOWANCE_EXHAUSTED") {
-    return { status, resetAt: json.reset_at as string };
+    return { status, resetAt: (json.resetAt ?? json.reset_at) as string };
+  }
+  if (status === "BETA_CAPACITY_REACHED") {
+    return { status, resetAt: (json.resetAt ?? json.reset_at) as string };
   }
   if (status === "committed") {
     // Idempotent replay of an already-committed turn (precheck short-circuit).
@@ -130,10 +128,10 @@ export async function submitTurn(args: SubmitTurnArgs): Promise<PlayState & { pl
     return {
       status: scene.boundaryKind === "ending" ? "TERMINAL_ENDING" : scene.boundaryKind === "checkpoint" ? "EXPLICIT_CHECKPOINT" : "CONTINUE_READY",
       scene,
-      turnId: json.turn_id as string,
+      turnId,
     };
   }
-  return { status: "in_flight", turnId: json.turn_id as string };
+  return { status: "in_flight", turnId };
 }
 
 export async function replayFromScene(playerRunId: string, sourceSceneId: string): Promise<{ runBranchId: string; scene: SceneDto }> {

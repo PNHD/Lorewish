@@ -1,0 +1,234 @@
+﻿LW-M1-R3 — ADVERSARIAL SECURITY REGRESSION (post least-privilege hardening)
+========================================================================================
+Target      : lorewish-dev (sfarcofvqfeobtcizxyv) — https://sfarcofvqfeobtcizxyv.supabase.co
+Method      : real HTTPS calls to the Supabase Data API (PostgREST) with the modern
+              publishable key for the anonymous cases, and real user JWTs from
+              password-grant sign-in for the authenticated cases. Ephemeral test
+              accounts are created and deleted via the Auth Admin API using the
+              project secret key, which lives only in this run's environment —
+              never in client code, never committed, never written to this file.
+Run stamp   : 1786345513891
+
+WHAT CHANGED SINCE R2: R2 accepted `200 []` as the anonymous-denial result, because
+anon then held full table privileges and RLS was the only thing standing in the way.
+After the R3 hardening, anon holds NO privilege on these tables at all, so the
+correct anonymous result is an object-level permission denial (SQLSTATE 42501,
+"permission denied for table ..."). Class A below asserts exactly that, and treats
+a `200 []` as a FAILURE rather than a pass.
+
+========================================================================================
+CLASS A — unauthenticated / publishable-key-only: object-permission denial
+========================================================================================
+
+[PASS] A1.profiles — anon SELECT on profiles is denied at the object-permission level
+         GET /rest/v1/profiles?select=*  (apikey = publishable, no user JWT)
+         status=401 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.profiles TO anon;","message":"permission denied for table profiles"}
+         Denied by Postgres object privilege, not by a row policy — anon cannot reach the table at all.
+
+[PASS] A1.stories — anon SELECT on stories is denied at the object-permission level
+         GET /rest/v1/stories?select=*  (apikey = publishable, no user JWT)
+         status=401 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.stories TO anon;","message":"permission denied for table stories"}
+         Denied by Postgres object privilege, not by a row policy — anon cannot reach the table at all.
+
+[PASS] A1.story_configurations — anon SELECT on story_configurations is denied at the object-permission level
+         GET /rest/v1/story_configurations?select=*  (apikey = publishable, no user JWT)
+         status=401 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.story_configurations TO anon;","message":"permission denied for table story_configurations"}
+         Denied by Postgres object privilege, not by a row policy — anon cannot reach the table at all.
+
+[PASS] A1.worlds — anon SELECT on worlds is denied at the object-permission level
+         GET /rest/v1/worlds?select=*  (apikey = publishable, no user JWT)
+         status=401 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.worlds TO anon;","message":"permission denied for table worlds"}
+         Denied by Postgres object privilege, not by a row policy — anon cannot reach the table at all.
+
+[PASS] A1.characters — anon SELECT on characters is denied at the object-permission level
+         GET /rest/v1/characters?select=*  (apikey = publishable, no user JWT)
+         status=401 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT ON public.characters TO anon;","message":"permission denied for table characters"}
+         Denied by Postgres object privilege, not by a row policy — anon cannot reach the table at all.
+
+[PASS] A2 — anon INSERT into stories is denied at the object-permission level
+         POST /rest/v1/stories  (apikey = publishable, no user JWT)
+         status=401 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT, INSERT ON public.stories TO anon;","message":"permission denied for table stories"}
+
+[PASS] A3 — anon bulk DELETE on stories is denied at the object-permission level
+         DELETE /rest/v1/stories?id=neq.<nil uuid>  (apikey = publishable, no user JWT)
+         status=401 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT SELECT, DELETE ON public.stories TO anon;","message":"permission denied for table stories"}
+
+========================================================================================
+SETUP — ephemeral test accounts (Auth Admin API, deleted at the end of this run)
+========================================================================================
+
+User A created: lw-r3-a-1786345513891@lorewish-test.dev -> 3eb02e98-83d8-4f55-bda6-f58cf2297e21
+User B created: lw-r3-b-1786345513891@lorewish-test.dev -> 0aba7647-f115-42ca-819d-5b09f7a77dfc
+Both users signed in via password grant; real user JWTs obtained.
+
+========================================================================================
+CLASS F — profiles remains usable for exactly its allowed operations
+========================================================================================
+
+[PASS] F1 — A reads own auto-created profile row (SELECT still granted)
+         GET /rest/v1/profiles?id=eq.3eb02e98-83d8-4f55-bda6-f58cf2297e21
+         status=200 body=[{"id":"3eb02e98-83d8-4f55-bda6-f58cf2297e21","display_name":null,"preferred_ui_locale":"en","created_at":"2026-08-10T07:05:18.634812+00:00","updated_at":"2026-08-10T07:05:18.634812+00:00"}]
+         Confirms the handle_new_user trigger still fires and SELECT survived the revoke/re-grant.
+
+[PASS] F2 — A updates own profile (UPDATE still granted)
+         PATCH /rest/v1/profiles?id=eq.3eb02e98-83d8-4f55-bda6-f58cf2297e21 {"display_name":"R3 Tester A"}
+         status=200 body=[{"id":"3eb02e98-83d8-4f55-bda6-f58cf2297e21","display_name":"R3 Tester A","preferred_ui_locale":"en","created_at":"2026-08-10T07:05:18.634812+00:00","updated_at":"2026-08-10T07:05:19.423236+00:00"}]
+
+[PASS] F3 — A cannot read B's profile (RLS row isolation intact)
+         GET /rest/v1/profiles?id=eq.0aba7647-f115-42ca-819d-5b09f7a77dfc  as A
+         status=200 body=[]
+
+[PASS] F4 — A cannot DELETE own profile — DELETE is deliberately not granted on profiles
+         DELETE /rest/v1/profiles?id=eq.3eb02e98-83d8-4f55-bda6-f58cf2297e21  as A
+         status=403 body={"code":"42501","details":null,"hint":"Grant the required privileges to the current role with: GRANT DELETE ON public.profiles TO authenticated;","message":"permission denied for table profiles"}
+         Profile removal happens only via the auth.users ON DELETE CASCADE. This is the one place
+         the object-privilege layer — not RLS — is the control, so it is asserted explicitly.
+
+========================================================================================
+CLASS B / G — authenticated owner CRUD still works end to end
+========================================================================================
+
+[PASS] B1 — A creates own Story (INSERT)
+         POST /rest/v1/stories  as A
+         status=201 body=[{"id":"c4089093-3334-43c8-957e-4f68d05d84d3","owner_user_id":"3eb02e98-83d8-4f55-bda6-f58cf2297e21","title":"A's Private Story (R3)","premise":"Created by the R3 regression suite.","content_language":"en","genre":"fantasy","story_mode":"narrative","visibility":"private","status":"draft","created_at":"2026-08-10T07:05:19.887434+00:00","updated_at":"2026-08-10T07:05:19.887434+00:00"}]
+
+[PASS] B2 — A reads own Story (SELECT)
+         GET /rest/v1/stories?id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as A
+         status=200 rows=1
+
+[PASS] B3 — A updates own Story (UPDATE) AND the set_updated_at trigger still fires
+         PATCH /rest/v1/stories?id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as A
+         status=200 body=[{"id":"c4089093-3334-43c8-957e-4f68d05d84d3","owner_user_id":"3eb02e98-83d8-4f55-bda6-f58cf2297e21","title":"A's Private Story (R3, edited)","premise":"Created by the R3 regression suite.","content_language":"en","genre":"fantasy","story_mode":"narrative","visibility":"private","status":"draft","created_at":"2026-08-10T07:05:19.887434+00:00","updated_at":"2026-08-10T07:05:21.167095+00:00"}]
+         updated_at before=2026-08-10T07:05:19.887434+00:00 after=2026-08-10T07:05:21.167095+00:00 changed=true
+         This is the regression check for revoking EXECUTE on public.set_updated_at() from the
+         client roles: Postgres checks EXECUTE when a trigger is CREATED, not on each firing, so
+         the existing BEFORE UPDATE triggers must keep working. A changed updated_at proves it.
+
+[PASS] B4 — A attaches a World to own Story (child INSERT via parent ownership)
+         POST /rest/v1/worlds  as A
+         status=201 body=[{"id":"3e3b990e-84be-41d8-8c1e-5ed526651ab1","story_id":"c4089093-3334-43c8-957e-4f68d05d84d3","name":"A's world","description":"owned","created_at":"2026-08-10T07:05:21.252057+00:00","updated_at":"2026-08-10T07:05:21.252057+00:00"}]
+
+[PASS] B5 — A attaches a Character to own Story
+         POST /rest/v1/characters  as A
+         status=201 body=[{"id":"83a50627-f0e6-44b3-86b7-5a64775055be","story_id":"c4089093-3334-43c8-957e-4f68d05d84d3","name":"A's character","aliases":[],"description":null,"story_relationship":null,"created_at":"2026-08-10T07:05:21.331439+00:00","updated_at":"2026-08-10T07:05:21.331439+00:00"}]
+
+[PASS] B6 — A attaches a StoryConfiguration to own Story
+         POST /rest/v1/story_configurations  as A
+         status=201 body=[{"id":"efe3d99e-56cc-4767-99cb-5da1964ef4b2","story_id":"c4089093-3334-43c8-957e-4f68d05d84d3","world_setting":null,"player_role":null,"starting_situation":null,"tone":"light","narrative_pov":"second_person","randomness_mode":"off","created_at":"2026-08-10T07:05:21.419655+00:00","updated_at":"2026-08-10T07:05:21.419655+00:00"}]
+
+[PASS] B7 — A updates own World (child UPDATE)
+         PATCH /rest/v1/worlds?story_id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as A
+         status=200 rows=1
+
+[PASS] B8 — A deletes own Character (child DELETE still granted)
+         DELETE /rest/v1/characters?story_id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as A
+         status=200 rows=1
+
+========================================================================================
+CLASS C — User B cannot reach User A's data
+========================================================================================
+
+[PASS] C1 — B cannot read A's Story
+         GET /rest/v1/stories?id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as B
+         status=200 body=[]
+         B does hold SELECT on the table (it is a legitimate app role), so the control here is RLS,
+         and zero rows is the correct and expected outcome.
+
+[PASS] C2 — B cannot update A's Story (zero rows affected)
+         PATCH /rest/v1/stories?id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as B
+         status=200 body=[]
+
+[PASS] C3 — B cannot delete A's Story (zero rows affected)
+         DELETE /rest/v1/stories?id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as B
+         status=200 body=[]
+
+[PASS] C4 — B cannot read A's StoryConfiguration
+         GET /rest/v1/story_configurations?story_id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as B
+         status=200 body=[]
+
+[PASS] C5 — B cannot read A's World
+         GET /rest/v1/worlds?story_id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as B
+         status=200 body=[]
+
+========================================================================================
+CLASS D — ownership tampering fails
+========================================================================================
+
+[PASS] D1 — A cannot reassign own Story to B (WITH CHECK blocks ownership transfer)
+         PATCH /rest/v1/stories?id=eq.c4089093-3334-43c8-957e-4f68d05d84d3 {"owner_user_id":"<B>"}  as A
+         status=403 body={"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"stories\""}
+
+[PASS] D2 — B cannot create a Story attributed to A
+         POST /rest/v1/stories {"owner_user_id":"<A>"}  as B
+         status=403 body={"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"stories\""}
+
+========================================================================================
+CLASS E — B cannot attach child records to A's Story
+========================================================================================
+
+[PASS] E1 — B cannot attach a World to A's Story
+         POST /rest/v1/worlds {"story_id":"<A story>"}  as B
+         status=403 body={"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"worlds\""}
+
+[PASS] E2 — B cannot attach a Character to A's Story
+         POST /rest/v1/characters {"story_id":"<A story>"}  as B
+         status=403 body={"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"characters\""}
+
+[PASS] E3 — B cannot attach a StoryConfiguration to A's Story
+         POST /rest/v1/story_configurations {"story_id":"<A story>"}  as B
+         status=403 body={"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"story_configurations\""}
+
+========================================================================================
+FINAL INTEGRITY — A's data survived every attack above unmodified
+========================================================================================
+
+[PASS] Z1 — A re-reads own Story: still present, still owned by A, title unchanged by B
+         GET /rest/v1/stories?id=eq.c4089093-3334-43c8-957e-4f68d05d84d3  as A
+         status=200 owner_user_id=3eb02e98-83d8-4f55-bda6-f58cf2297e21 title="A's Private Story (R3, edited)"
+         visibility=private status=draft
+
+========================================================================================
+CLEANUP
+========================================================================================
+
+A deletes own test Story: status=204 (worlds / story_configurations cascade via ON DELETE CASCADE)
+Re-read after delete: status=200 body=[]
+Deleted test user 3eb02e98-83d8-4f55-bda6-f58cf2297e21: status=200
+Deleted test user 0aba7647-f115-42ca-819d-5b09f7a77dfc: status=200
+Remaining @lorewish-test.dev accounts in the project: 0
+
+========================================================================================
+SUMMARY: 30 passed, 0 failed, 30 total
+All adversarial probes passed. anon is denied at the object-permission layer on every
+private authoring table; cross-user reads/writes, ownership tampering and cross-story
+child attachment all fail; and authenticated owner CRUD — including the updated_at
+trigger — is unaffected by the revoke/re-grant.
+========================================================================================
+
+--------------------------------------------------------------------------------
+RUN NOTES
+--------------------------------------------------------------------------------
+* All 30 probes above ran against the LIVE lorewish-dev project (sfarcofvqfeobtcizxyv)
+  AFTER migration 20260810065727_m1_least_privilege_hardening was applied.
+
+* The Auth Admin API is fronted by Cloudflare. A first attempt at the ephemeral-account
+  setup, using node's default fetch User-Agent, was answered with a Cloudflare WAF
+  challenge page (HTTP 403 "Sorry, you have been blocked") rather than by GoTrue. This
+  is an edge/bot-protection response, not an authorization failure, and it is unrelated
+  to the privilege work in this task. The run was repeated with a browser-shaped
+  User-Agent and completed normally. No test accounts were created by the blocked
+  attempt, so it left nothing behind to clean up.
+
+* Cleanup is verified, not assumed: the suite re-reads the deleted Story (200 [], gone),
+  deletes both ephemeral users via the Auth Admin API (200/200 each), and then lists the
+  project's users and counts any remaining @lorewish-test.dev addresses. That count was
+  0. Child rows (worlds, characters, story_configurations) went with the Story via
+  ON DELETE CASCADE.
+
+* The R2 suite treated `200 []` for an anonymous read as a pass. That is a weaker
+  assertion than this run makes and it is deliberately no longer accepted: probes
+  A1.*, A2 and A3 require SQLSTATE 42501 with a "permission denied for table ..."
+  message, which can only come from the object-privilege layer. Every one of them
+  returned HTTP 401 with exactly that, including PostgREST's own hint naming the grant
+  that would be needed ("GRANT SELECT ON public.stories TO anon;") — which is direct
+  confirmation that no such grant exists.

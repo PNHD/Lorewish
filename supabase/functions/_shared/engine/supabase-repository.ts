@@ -358,17 +358,28 @@ export class SupabaseTurnRepository implements TurnRepository {
 
   async failTurn(args: {
     turnId: string;
-    errorClass: "output_blocked" | "unusable_output" | "transport_failure";
+    errorClass: "output_blocked" | "unusable_output" | "transport_failure" | "capacity_reached";
     generationAttemptCount: number;
     costMicros: number;
   }): Promise<FailOutcome> {
-    const { data, error } = await this.userClient.rpc("lw_fail_turn", {
+    const rpc = args.errorClass === "capacity_reached"
+      ? this.serviceClient.rpc("lw_fail_turn_capacity", {
+          p_turn_id: args.turnId,
+          p_generation_attempt_count: args.generationAttemptCount,
+          p_provider_cost_micros: args.costMicros,
+        })
+      : this.userClient.rpc("lw_fail_turn", {
       p_turn_id: args.turnId,
       p_error_class: args.errorClass,
       p_generation_attempt_count: args.generationAttemptCount,
       p_provider_cost_micros: args.costMicros,
-    });
+      });
+    const { data, error } = await rpc;
     if (error) throwTypedRpcError("lw_fail_turn", error);
-    return { status: "GENERATION_FAILED", turnId: data.turn_id, errorClass: data.error_class };
+    return {
+      status: "GENERATION_FAILED",
+      turnId: data.turn_id,
+      errorClass: args.errorClass,
+    };
   }
 }

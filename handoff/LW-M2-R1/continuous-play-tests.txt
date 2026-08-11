@@ -1,0 +1,24 @@
+Copied — turn-pipeline.test.ts IS the Continuous Play Contract test suite (PRECHECK/GENERATING/VALIDATING/COMMITTING/RESOLVED state machine); see also context-tests.txt for the bounded-context CONTEXT category.
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mE:/AIProjects/Lorewish[39m
+
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22ma valid turn transition (start) produces CONTINUE_READY or EXPLICIT_CHECKPOINT with a committed scene[32m 13[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22man invalid transition (choice id not offered by the current scene) is rejected before any generation[32m 2[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mresubmitting the same turn_id is idempotent: exactly one Scene, same result returned[32m 1[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22matomic failure leaves the current scene unchanged: both attempts fail, no scene is committed[32m 3[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22ma quality-gate failure runs exactly one repair attempt, and a passing repair commits with attempt_count=2[32m 1[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mboundary_kind=ending is set only by an explicit trigger, never inferred (terminal ending is explicit only)[32m 3[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mcheckpoint behavior: a checkpoint-flagged turn resolves to EXPLICIT_CHECKPOINT, not an ending[32m 1[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22msuccessful commit advances the run: the branch gains a new scene at the next sequence[32m 1[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mALLOWANCE_EXHAUSTED is returned without any generation attempt or scene write[32m 0[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mbranch replay ('Replay from here') creates a separate branch, not a mutation of the original[32m 1[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mbranch-scoped canon does not leak into a sibling branch[32m 1[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mrun-scoped canon is visible from every branch of the run[32m 0[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22mmalformed structured output (fails schema validation, not just the quality gate) resolves GENERATION_FAILED[32m 1[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts[2m > [22mturn pipeline — DOMAIN test category (CONTINUOUS_PLAY_CONTRACT.md)[2m > [22ma forked branch inherits the parent's history up to (and including) the fork point[32m 0[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m14 passed[39m[22m[90m (14)[39m
+[2m   Start at [22m 19:37:41
+[2m   Duration [22m 1.19s[2m (transform 190ms, setup 0ms, collect 257ms, tests 29ms, environment 0ms, prepare 347ms)[22m
+

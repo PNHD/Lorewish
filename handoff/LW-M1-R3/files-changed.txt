@@ -1,0 +1,18 @@
+﻿LW-M1-R3 — files changed between the R2 baseline f97dd28 and FINAL IMPLEMENTATION_HEAD ec45f664d2541ea26d548b29832eb854a4b05c23.
+
+=== git diff --stat f97dd28..HEAD ===
+ .github/workflows/ci.yml                           |  74 +++-
+ CURRENT_WORK.md                                    | 406 +++++++++++++++++++++
+ docs/AGENT_TOOLING.md                              |  29 +-
+ docs/DEV_ENVIRONMENT.md                            | 177 +++++++++
+ docs/TECHNICAL_ARCHITECTURE.md                     |  25 ++
+ ...20260810065727_m1_least_privilege_hardening.sql | 119 ++++++
+ 6 files changed, 828 insertions(+), 2 deletions(-)
+
+=== git diff --name-status f97dd28..HEAD ===
+M	.github/workflows/ci.yml
+M	CURRENT_WORK.md
+M	docs/AGENT_TOOLING.md
+M	docs/DEV_ENVIRONMENT.md
+M	docs/TECHNICAL_ARCHITECTURE.md
+A	supabase/migrations/20260810065727_m1_least_privilege_hardening.sql

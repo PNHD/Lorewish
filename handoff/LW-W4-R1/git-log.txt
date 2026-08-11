@@ -1,0 +1,20 @@
+b284b15 Merge LW-W3-R2 roleplay UX and branch-bound Character Chat
+855c2ad fix: prevent Story allowance double debit
+cc215cd test: derive Supabase session key in E2E
+5d69839 fix: preserve dynamic Pages routes
+8d52f83 feat: add branch-bound character chat
+4e99f10 Merge LW-W3-R1 advanced setup and durable character memory
+8fd64fe fix: expose setup field ids on web
+81a3a97 ci: enforce web-first validation
+87d98f2 feat: add advanced setup and character memory
+3c73c14 Merge LW-M2-R3 DeepSeek Flash controlled alpha
+b88cb72 docs(m2): finalize closeout evidence
+48217de fix(alpha): align rollout gate with general audience policy
+b590ae4 docs(m2): record DeepSeek alpha evidence
+80b0819 fix(db): use supported JSONB key check
+c84f5bb feat(m2): harden DeepSeek alpha generation
+4eb5350 Merge LW-M2 Story Engine + Real Provider Bakeoff
+d1f74f1 docs: LW-M2-R2 live bakeoff results (real Gemini/DeepSeek data)
+9e76978 fix: disable DeepSeek thinking mode — was silently zeroing narrative output
+56e6006 fix: a non-transport provider throw no longer crashes submitTurn/bakeoff
+82c90e9 fix: Gemini adapter undercounted output tokens (thinking tokens ignored)

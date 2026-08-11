@@ -21,6 +21,7 @@ import {
   type StructuredGenerationResult,
 } from "./types.ts";
 import { ProviderOutputError, ProviderTransportError } from "./types.ts";
+import { BetaCapacityReachedError } from "./provider-budget.ts";
 
 export interface SubmitTurnRequest {
   turnId: string;
@@ -35,6 +36,7 @@ export type SubmitTurnResult =
   | { status: "CONTINUE_READY" | "EXPLICIT_CHECKPOINT" | "TERMINAL_ENDING"; scene: unknown; turnId: string }
   | { status: "GENERATION_FAILED"; turnId: string; errorClass: string }
   | { status: "ALLOWANCE_EXHAUSTED"; resetAt: string }
+  | { status: "BETA_CAPACITY_REACHED"; resetAt: string }
   | { status: "in_flight"; turnId: string };
 
 /** Provider call result plus whatever validation/quality-gate outcome it produced, for one attempt. */
@@ -43,6 +45,7 @@ async function attemptGeneration(
   contextInput: Parameters<typeof assembleContext>[0]
 ): Promise<
   | { ok: true; result: StructuredGenerationResult; metadata: { provider: string; model: string; inputTokens: number; outputTokens: number; costMicros: number; latencyMs: number } }
+  | { ok: false; errorClass: "capacity_reached"; resetAt: string; metadata: null }
   | {
       ok: false;
       errorClass: "output_blocked" | "unusable_output" | "transport_failure";
@@ -57,6 +60,14 @@ async function attemptGeneration(
   try {
     raw = await provider.generateTurn(context);
   } catch (err) {
+    if (err instanceof BetaCapacityReachedError) {
+      return {
+        ok: false,
+        errorClass: "capacity_reached",
+        resetAt: err.resetAt,
+        metadata: null,
+      };
+    }
     if (err instanceof ProviderTransportError) {
       return {
         ok: false,
@@ -173,7 +184,18 @@ export async function submitTurn(
   };
 
   let attempt = await attemptGeneration(provider, baseContextInput);
-  let attemptCount = 1;
+  let attemptCount = 0;
+
+  if (!attempt.ok && attempt.errorClass === "capacity_reached") {
+    await repo.failTurn({
+      turnId: request.turnId,
+      errorClass: "capacity_reached",
+      generationAttemptCount: 0,
+      costMicros: 0,
+    });
+    return { status: "BETA_CAPACITY_REACHED", resetAt: attempt.resetAt };
+  }
+  attemptCount += 1;
 
   if (!attempt.ok) {
     accumulate(attempt.metadata);
@@ -181,7 +203,6 @@ export async function submitTurn(
       // "At most one transparent automatic retry, transport-level failures
       // only, under the same key" (CONTINUOUS_PLAY_CONTRACT.md §8).
       attempt = await attemptGeneration(provider, baseContextInput);
-      attemptCount += 1;
     } else {
       // Quality-gate / moderation failure: at most one automatic repair
       // (NARRATIVE_QUALITY_CONTRACT.md §D), with the failure reason fed back.
@@ -189,8 +210,18 @@ export async function submitTurn(
         ...baseContextInput,
         repairReason: attempt.repairInstruction,
       });
-      attemptCount += 1;
     }
+
+    if (!attempt.ok && attempt.errorClass === "capacity_reached") {
+      await repo.failTurn({
+        turnId: request.turnId,
+        errorClass: "capacity_reached",
+        generationAttemptCount: attemptCount,
+        costMicros: totalCost,
+      });
+      return { status: "BETA_CAPACITY_REACHED", resetAt: attempt.resetAt };
+    }
+    attemptCount += 1;
   }
 
   if (!attempt.ok) {

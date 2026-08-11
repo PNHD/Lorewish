@@ -17,7 +17,7 @@ import {
 import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
 import { useAppTheme } from "@/theme/use-app-theme";
 
-type SendError = "provider_error" | "transport_error" | "validation_error" | null;
+type SendError = "provider_error" | "transport_error" | "validation_error" | "chat_allowance_exhausted" | "beta_capacity_reached" | "network_error" | null;
 
 export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId: string; characterId: string }) {
   const { status: authStatus } = useAuth();
@@ -64,7 +64,12 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
       await load();
     } catch (sendFailure) {
       const code = (sendFailure as Error).message as SendError;
-      setSendError(code === "validation_error" || code === "transport_error" || code === "provider_error" ? code : "provider_error");
+      setSendError(
+        code === "validation_error" || code === "transport_error" || code === "provider_error"
+          || code === "chat_allowance_exhausted" || code === "beta_capacity_reached" || code === "network_error"
+          ? code
+          : "provider_error",
+      );
       await load().catch(() => undefined);
     } finally {
       setSending(false);
@@ -137,8 +142,14 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
           {sending && <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}><ActivityIndicator /><ThemedText variant="caption" color="secondary">{t("chat.sending")}</ThemedText></View>}
           {sendError && (
             <View accessibilityLiveRegion="polite" style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.sm }}>
-              <ThemedText variant="label" color="danger">{sendError === "validation_error" ? t("chat.validationError") : t("chat.providerError")}</ThemedText>
-              {sendError !== "validation_error" && <Pressable accessibilityRole="button" onPress={() => void send()}><ThemedText variant="label">{t("chat.retry")}</ThemedText></Pressable>}
+              <ThemedText variant="label" color="danger">{
+                sendError === "validation_error" ? t("chat.validationError")
+                  : sendError === "chat_allowance_exhausted" ? t("chat.allowanceExhausted")
+                    : sendError === "beta_capacity_reached" ? t("chat.betaCapacity")
+                      : sendError === "network_error" ? t("chat.networkError")
+                        : t("chat.providerError")
+              }</ThemedText>
+              {sendError !== "validation_error" && sendError !== "chat_allowance_exhausted" && sendError !== "beta_capacity_reached" && <Pressable accessibilityRole="button" onPress={() => void send()}><ThemedText variant="label">{t("chat.retry")}</ThemedText></Pressable>}
             </View>
           )}
         </ScrollView>

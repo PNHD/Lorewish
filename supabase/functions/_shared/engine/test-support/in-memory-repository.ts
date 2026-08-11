@@ -503,7 +503,7 @@ export class InMemoryTurnRepository implements TurnRepository {
 
   async failTurn(args: {
     turnId: string;
-    errorClass: "output_blocked" | "unusable_output" | "transport_failure";
+    errorClass: "output_blocked" | "unusable_output" | "transport_failure" | "capacity_reached";
     generationAttemptCount: number;
     costMicros: number;
   }): Promise<FailOutcome> {

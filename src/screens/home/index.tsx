@@ -52,7 +52,7 @@ export function HomeScreen() {
             {t("home.subheading")}
           </ThemedText>
 
-          <Link href="/preview" asChild>
+          <Link href="/play" asChild>
             <Pressable
               accessibilityRole="button"
               style={({ pressed }) => ({
@@ -64,15 +64,15 @@ export function HomeScreen() {
               })}
             >
               <ThemedText variant="label" color="onAccent">
-                {t("home.previewCta")}
+                {t("home.newStoryCta")}
               </ThemedText>
             </Pressable>
           </Link>
           <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>
-            {t("home.previewCaption")}
+            {t("home.newStoryCaption")}
           </ThemedText>
 
-          <Link href="/play" asChild>
+          <Link href="/preview" asChild>
             <Pressable
               accessibilityRole="button"
               style={({ pressed }) => ({
@@ -85,11 +85,11 @@ export function HomeScreen() {
                 opacity: pressed ? interactiveState.pressedOpacity : 1,
               })}
             >
-              <ThemedText variant="label">{t("home.newStoryCta")}</ThemedText>
+              <ThemedText variant="label">{t("home.previewCta")}</ThemedText>
             </Pressable>
           </Link>
           <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>
-            {t("home.newStoryCaption")}
+            {t("home.previewCaption")}
           </ThemedText>
         </View>
 

@@ -37,11 +37,16 @@ async function requireAccessToken() {
 async function chatRequest(body: Record<string, unknown>) {
   const base = process.env.EXPO_PUBLIC_SUPABASE_URL;
   if (!base) throw new Error("Missing EXPO_PUBLIC_SUPABASE_URL");
-  const response = await fetch(`${base}/functions/v1/character-chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${await requireAccessToken()}` },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${base}/functions/v1/character-chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${await requireAccessToken()}` },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("network_error");
+  }
   const result = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
     const error = new Error((result.error as string) ?? `character-chat failed with HTTP ${response.status}`);

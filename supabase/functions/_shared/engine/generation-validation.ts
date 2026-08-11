@@ -1,4 +1,5 @@
 import { moderateOutputText } from "./moderation.ts";
+import { storyDialogueHasAddressTermDrift } from "./address-terms.ts";
 import { runQualityGate, type QualityFailureCode } from "./quality-gate.ts";
 import {
   StructuredGenerationResultSchema,
@@ -7,7 +8,7 @@ import {
   type StructuredGenerationResult,
 } from "./types.ts";
 
-export type GenerationQualityFailure = QualityFailureCode | "character_identity_missing" | "character_memory_unknown" | "runtime_character_duplicate";
+export type GenerationQualityFailure = QualityFailureCode | "address_terms_drift" | "character_identity_missing" | "character_memory_unknown" | "runtime_character_duplicate";
 
 export type SanitizedGenerationFailureClass =
   | "invalid_json"
@@ -125,6 +126,17 @@ export function evaluateGeneratedResult(
       qualityFailures: ["runtime_character_duplicate"],
       schemaIssues: [],
       repairInstruction: "new_character_candidates duplicated an existing canonical name or alias; omit existing characters and do not fuzzy-merge identities",
+    };
+  }
+
+  if (language === "vi" && storyDialogueHasAddressTermDrift(parsed.data.dialogue, availableCharacters)) {
+    return {
+      ok: false,
+      failureClass: "quality_gate",
+      pipelineErrorClass: "unusable_output",
+      qualityFailures: ["address_terms_drift"],
+      schemaIssues: [],
+      repairInstruction: "Vietnamese address terms drifted; rewrite every participant dialogue line using exactly the configured player-self/player-to-character/character-self/character-to-player terms and no substitute pronouns",
     };
   }
 

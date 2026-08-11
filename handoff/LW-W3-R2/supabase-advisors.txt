@@ -1,0 +1,31 @@
+LW-W3-R2-R1 SUPABASE ADVISORS
+Project: sfarcofvqfeobtcizxyv
+Checked after migration 20260811085819 on 2026-08-11
+
+SECURITY
+
+PASS - repaired canonical functions
+- lw_commit_turn is not reported as authenticated executable.
+- lw_start_chat_generation is not reported as authenticated executable.
+- Direct grant verification: public=false, anon=false, authenticated=false, service_role=true for both.
+- Both functions pin search_path="".
+
+INFO rls_enabled_no_policy
+- public.alpha_generation_access has RLS and no policies by design; unchanged by this repair.
+
+WARN authenticated_security_definer_function_executable
+- Existing ownership-checked authenticated capabilities:
+  - lw_get_or_create_chat_thread
+  - lw_get_run_state
+  - lw_precheck_and_start_turn
+  - lw_promote_chat_memory
+  - lw_replay_from_scene
+- Pre-existing lw_fail_turn remains authenticated executable and ownership checked.
+- No new warning was introduced by the repair migration.
+
+PERFORMANCE (unchanged informational findings)
+- Unindexed foreign keys: player_runs_active_branch_id_fkey, scenes_parent_scene_id_fkey, turns_result_scene_id_fkey, turns_source_scene_id_fkey.
+- Fresh/low-traffic unused indexes remain reported for Character Chat/runtime Character/canon-fact paths.
+
+DB LINT
+- npx supabase db lint --linked --level error: PASS; no schema errors.

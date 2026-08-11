@@ -88,6 +88,7 @@ export function Composer({ value, onChangeText, onSend, placeholder, sendLabel, 
     >
       <TextInput
         ref={inputRef}
+        nativeID="lorewish-composer"
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}

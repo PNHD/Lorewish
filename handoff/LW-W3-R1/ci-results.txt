@@ -1,0 +1,29 @@
+GitHub Actions
+
+PR run: 31467635828
+URL: https://github.com/PNHD/Lorewish/actions/runs/31467635828
+Head: 8fd64fef6de4fd02c70e5a899f17cafe7e24635b
+Event: pull_request
+Conclusion: SUCCESS
+
+Web / JS checks: SUCCESS
+- npm ci
+- typecheck
+- lint
+- 110 tests
+- web export
+- Chromium install
+- browser E2E
+
+Android (preview APK): SKIPPED
+iOS Simulator (build, install, launch): SKIPPED
+
+Push run: 31467598845, attempt 2
+Conclusion: SUCCESS
+Web / JS checks: SUCCESS
+Android: SKIPPED
+iOS: SKIPPED
+
+The first push attempt was concurrency-cancelled when the PR event superseded it. It was rerun as web-only attempt 2 so the final PR check rollup is clean.
+
+Final PR mergeStateStatus: CLEAN

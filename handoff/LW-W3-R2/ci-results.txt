@@ -1,0 +1,23 @@
+LW-W3-R2-R1 GITHUB CI
+
+Draft PR: https://github.com/PNHD/Lorewish/pull/5
+Exact repair head: 855c2ad5cd8b7affd9397be5fb5fb5b013fa100f
+
+Run 31476638310 (pull_request)
+- URL: https://github.com/PNHD/Lorewish/actions/runs/31476638310
+- Conclusion: SUCCESS
+- Web / JS checks: SUCCESS
+  - checkout/setup: PASS
+  - npm ci: PASS
+  - typecheck: PASS
+  - lint: PASS
+  - Story engine unit tests: PASS
+  - production web export: PASS
+  - Chromium install: PASS
+  - browser E2E: PASS
+- Android (preview APK): SKIPPED by web-first policy
+- iOS Simulator: SKIPPED by web-first policy
+
+Duplicate push-event run 31476632761 was cancelled by the workflow concurrency group when the pull_request run took ownership. It did not fail a gate.
+
+PR state after CI: OPEN, DRAFT, NOT MERGED.
