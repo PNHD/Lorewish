@@ -79,6 +79,23 @@ const RESULT_TOOL_SCHEMA = {
         required: ["scope", "fact_key", "fact_text"],
       },
     },
+    character_memory_candidates: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          character_id: { type: "string" },
+          memory_type: {
+            type: "string",
+            enum: ["player_fact", "character_fact", "relationship_fact", "shared_event", "promise", "discovery"],
+          },
+          fact_key: { type: "string" },
+          fact_text: { type: "string" },
+          salience: { type: "integer", minimum: 1, maximum: 5 },
+        },
+        required: ["character_id", "memory_type", "fact_key", "fact_text", "salience"],
+      },
+    },
     next_choices: {
       type: "array",
       items: {
@@ -130,6 +147,28 @@ export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
         additionalProperties: false,
       },
     },
+    character_memory_candidates: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          character_id: { type: "string", format: "uuid" },
+          memory_type: {
+            type: "string",
+            enum: ["player_fact", "character_fact", "relationship_fact", "shared_event", "promise", "discovery"],
+          },
+          fact_key: {
+            type: "string",
+            pattern: "^[a-z][a-z0-9_]{1,79}$",
+            description: "Stable conflict key. Reuse the same key when a later fact supersedes an earlier state.",
+          },
+          fact_text: { type: "string" },
+          salience: { type: "integer", minimum: 1, maximum: 5 },
+        },
+        required: ["character_id", "memory_type", "fact_key", "fact_text", "salience"],
+        additionalProperties: false,
+      },
+    },
     next_choices: {
       type: "array",
       items: {
@@ -165,6 +204,7 @@ export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
     "dialogue",
     "state_changes",
     "canon_candidates",
+    "character_memory_candidates",
     "next_choices",
     "boundary_kind",
     "structured_outcome",
@@ -172,7 +212,7 @@ export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-function buildPrompt(context: NarrativeContext): { system: string; user: string } {
+export function buildPrompt(context: NarrativeContext): { system: string; user: string } {
   const langName = context.contentLanguage.startsWith("vi") ? "Vietnamese" : "English";
   const system = [
     `You are the narrative engine for Lorewish, an interactive fiction app.`,
@@ -180,6 +220,7 @@ function buildPrompt(context: NarrativeContext): { system: string; user: string 
     `Avoid generic AI-narration cliches ("little did you know", "the air was thick with tension", "a sense of unease washed over you") unless the scene genuinely warrants them.`,
     `Never break character, never mention being an AI, never use meta-commentary.`,
     `Every canon_candidates fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$, even when writing Vietnamese. Never put diacritics, spaces, or punctuation in fact_key.`,
+    `Character memory is canonical structured state, not a transcript. Emit character_memory_candidates only for durable, relevant facts. Copy character_id exactly from CHARACTER IDENTITY. Reuse fact_key when a relationship/state fact supersedes an earlier one. Never emit configured address terms as memory updates.`,
     `boundary_kind must be "ending" ONLY for a genuine, deliberate story conclusion — never because the scene is merely well-paced or you are unsure how to continue. Default to "none".`,
     `Prohibited copy in any language: "to be continued" or any equivalent phrase.`,
     context.repairReason
@@ -195,11 +236,16 @@ function buildPrompt(context: NarrativeContext): { system: string; user: string 
 
   const canonLines = context.canonFacts.map((f) => `- (${f.scope}) ${f.factText}`).join("\n");
 
+  const memoryLines = context.characterMemories
+    .map((memory) => `- [${memory.memoryType}; salience=${memory.salience}] ${memory.characterName}: ${memory.factText}`)
+    .join("\n");
+
   const characterLines = context.characters
     .map((character) => {
       const identity = [
-        character.name,
+        `${character.name} (character_id=${character.id})`,
         character.aliases.length ? `aliases: ${character.aliases.join(", ")}` : "",
+        character.role ? `role: ${character.role}` : "",
         character.description ? `identity/role: ${character.description}` : "",
         character.storyRelationship ? `relationship: ${character.storyRelationship}` : "",
       ]
@@ -216,20 +262,26 @@ function buildPrompt(context: NarrativeContext): { system: string; user: string 
     .join("\n");
 
   const user = [
-    `Genre: ${context.genre}. Story mode: ${context.storyMode}. Content language: ${context.contentLanguage}.`,
-    `Premise: ${context.premise}`,
-    context.worldSetting ? `World/setting: ${context.worldSetting}` : "",
-    context.playerRole ? `Player role: ${context.playerRole}` : "",
-    context.tone ? `Tone: ${context.tone}` : "",
-    context.olderHistorySummary ? `Earlier history: ${context.olderHistorySummary}` : "",
-    historyLines ? `Recent scenes:\n${historyLines}` : "",
-    canonLines ? `Known facts:\n${canonLines}` : "",
+    `STORY CONFIG\nGenre: ${context.genre}\nStory mode: ${context.storyMode}\nContent language: ${context.contentLanguage}\nPremise: ${context.premise}${context.worldSetting ? `\nWorld/setting: ${context.worldSetting}` : ""}${context.tone ? `\nTone: ${context.tone}` : ""}${context.narrativePov ? `\nNarrative POV: ${context.narrativePov}` : ""}`,
+    `PLAYER IDENTITY\nRole: ${context.playerRole ?? "unspecified"}${context.playerName ? `\nName: ${context.playerName}` : ""}${context.playerDescription ? `\nDescription: ${context.playerDescription}` : ""}`,
     characterLines
-      ? `Configured canonical starting characters (preserve these identities; do not silently replace them with invented characters):\n${characterLines}`
-      : "",
+      ? `CHARACTER IDENTITY\nPreserve these authored identities; never silently replace them with invented NPCs.\n${characterLines}`
+      : "CHARACTER IDENTITY\nNo authored starting character.",
+    context.characters.some((character) => character.addressTerms)
+      ? `ADDRESS TERMS\nConfigured terms are immutable authoring data for this turn. Preserve speaker/target directionality.\n${context.characters
+          .filter((character) => character.addressTerms)
+          .map((character) => {
+            const terms = character.addressTerms!;
+            return `- ${character.name}: player self=${terms.speakerSelfReference}; player addresses character=${terms.speakerAddressesTargetAs}; character self=${terms.targetSelfReference}; character addresses player=${terms.targetAddressesSpeakerAs}`;
+          })
+          .join("\n")}`
+      : "ADDRESS TERMS\nNo configured address terms.",
+    `RECENT SCENES\n${context.olderHistorySummary ? `${context.olderHistorySummary}\n` : ""}${historyLines || "No prior scenes."}`,
+    `RELEVANT CHARACTER MEMORY\n${memoryLines || "No relevant durable character memory yet."}`,
+    `CANON FACTS\n${canonLines || "No additional canon facts yet."}`,
     context.actionType === "start"
-      ? "Generate the opening scene for this story."
-      : `Player action (${context.actionType}): ${context.selectedChoiceLabel ?? context.playerAction}`,
+      ? "PLAYER ACTION\nGenerate the opening scene for this story."
+      : `PLAYER ACTION\nType: ${context.actionType}\nAction: ${context.selectedChoiceLabel ?? context.playerAction}`,
     "Return 2-4 meaningfully distinct next choices unless this is a true ending.",
   ]
     .filter(Boolean)
@@ -379,7 +431,7 @@ function parseProviderJson(
  * for this adapter, describing that same shape in plain JSON-Schema-shaped text.
  */
 const DEEPSEEK_SCHEMA_INSTRUCTION = `Respond with ONLY a single JSON object — no markdown code fences, no commentary before or after — matching exactly this shape:
-{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
+{"narrative": string, "dialogue": [{"speaker": string, "line": string}], "state_changes": [string], "canon_candidates": [{"scope": "run"|"branch", "fact_key": string, "fact_text": string}], "character_memory_candidates": [{"character_id": uuid, "memory_type": "player_fact"|"character_fact"|"relationship_fact"|"shared_event"|"promise"|"discovery", "fact_key": string, "fact_text": string, "salience": 1|2|3|4|5}], "next_choices": [{"id": string, "label": string}], "boundary_kind": "none"|"checkpoint"|"ending", "structured_outcome": {}}
 "narrative" and "boundary_kind" are required. Every other field must still be present — use an empty array/object when there is nothing to report, never omit the key.`;
 
 /**

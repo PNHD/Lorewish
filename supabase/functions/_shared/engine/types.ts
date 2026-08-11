@@ -50,6 +50,30 @@ export const CanonCandidateSchema = z.object({
 });
 export type CanonCandidate = z.infer<typeof CanonCandidateSchema>;
 
+export const CharacterMemoryTypeSchema = z.enum([
+  "player_fact",
+  "character_fact",
+  "relationship_fact",
+  "shared_event",
+  "promise",
+  "discovery",
+]);
+export type CharacterMemoryType = z.infer<typeof CharacterMemoryTypeSchema>;
+
+/**
+ * Character-scoped durable memory proposed by the same validated generation
+ * call as the Scene. `fact_key` is the deterministic conflict/supersession
+ * key; the database resolves it only against facts visible in this branch.
+ */
+export const CharacterMemoryCandidateSchema = z.object({
+  character_id: z.string().uuid(),
+  memory_type: CharacterMemoryTypeSchema,
+  fact_key: z.string().regex(/^[a-z][a-z0-9_]{1,79}$/),
+  fact_text: z.string().min(1).max(500),
+  salience: z.number().int().min(1).max(5).default(3),
+});
+export type CharacterMemoryCandidate = z.infer<typeof CharacterMemoryCandidateSchema>;
+
 /** Light Roll outcome (ADVENTURE mode only) — server decides the roll, never the model. */
 export const StructuredOutcomeSchema = z
   .object({
@@ -64,15 +88,31 @@ export const StructuredOutcomeSchema = z
  * database — this schema, and the quality gate in quality-gate.ts, sit
  * between provider output and lw_commit_turn.
  */
-export const StructuredGenerationResultSchema = z.object({
-  narrative: z.string().min(1).max(8000),
-  dialogue: z.array(DialogueLineSchema).max(20).default([]),
-  state_changes: z.array(StateChangeItemSchema).max(10).default([]),
-  canon_candidates: z.array(CanonCandidateSchema).max(10).default([]),
-  next_choices: z.array(ChoiceOptionSchema).min(0).max(4).default([]),
-  boundary_kind: BoundaryKindSchema.default("none"),
-  structured_outcome: StructuredOutcomeSchema.default({}),
-});
+export const StructuredGenerationResultSchema = z
+  .object({
+    narrative: z.string().min(1).max(8000),
+    dialogue: z.array(DialogueLineSchema).max(20).default([]),
+    state_changes: z.array(StateChangeItemSchema).max(10).default([]),
+    canon_candidates: z.array(CanonCandidateSchema).max(10).default([]),
+    character_memory_candidates: z.array(CharacterMemoryCandidateSchema).max(10).default([]),
+    next_choices: z.array(ChoiceOptionSchema).min(0).max(4).default([]),
+    boundary_kind: BoundaryKindSchema.default("none"),
+    structured_outcome: StructuredOutcomeSchema.default({}),
+  })
+  .superRefine((result, ctx) => {
+    const keys = new Set<string>();
+    result.character_memory_candidates.forEach((candidate, index) => {
+      const key = `${candidate.character_id}:${candidate.fact_key}`;
+      if (keys.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["character_memory_candidates", index, "fact_key"],
+          message: "duplicate character memory key in one generation result",
+        });
+      }
+      keys.add(key);
+    });
+  });
 export type StructuredGenerationResult = z.infer<
   typeof StructuredGenerationResultSchema
 >;
@@ -94,20 +134,28 @@ export type AddressTerms = z.infer<typeof AddressTermsSchema>;
 export const StartingCharacterSchema = z
   .object({
     name: z.string().min(1).max(200),
-    identity: z.string().min(1).max(1000),
+    role: z.string().min(1).max(500),
+    description: z.string().max(2000).optional(),
     relationship: z.string().min(1).max(500),
+    aliases: z.array(z.string().min(1).max(200)).max(10).default([]),
     addressTerms: AddressTermsSchema.optional(),
   })
   .strict();
 export type StartingCharacter = z.infer<typeof StartingCharacterSchema>;
 
-/** Minimal M2-R3 turn-1 bootstrap only; advanced setup remains M3. */
+/** Quick Start defaults and Advanced Setup share this canonical input shape. */
 export const StorySetupSchema = z
   .object({
-    premise: z.string().min(1).max(5000),
+    premise: z.string().min(1).max(4000),
     genre: z.string().min(1).max(80),
     contentLanguage: ContentLanguageSchema,
     storyMode: z.enum(["narrative", "adventure"]),
+    worldSetting: z.string().max(4000).optional(),
+    tone: z.enum(["light", "balanced", "dark"]).default("balanced"),
+    narrativePov: z.enum(["first_person", "second_person", "third_person"]).default("second_person"),
+    playerRole: z.string().min(1).max(1000),
+    playerName: z.string().max(200).optional(),
+    playerDescription: z.string().max(2000).optional(),
     startingCharacter: StartingCharacterSchema.optional(),
   })
   .strict();
@@ -124,15 +172,30 @@ export interface ContextScene {
 }
 
 export interface ContextCanonFact {
+  id: string;
   scope: "run" | "branch";
   factKey: string;
   factText: string;
   createdAt: string;
 }
 
+export interface ContextCharacterMemory {
+  id: string;
+  characterId: string;
+  characterName: string;
+  memoryType: CharacterMemoryType;
+  factKey: string;
+  factText: string;
+  salience: number;
+  supersedesFactId: string | null;
+  createdAt: string;
+}
+
 export interface ContextCharacter {
+  id: string;
   name: string;
   aliases: string[];
+  role: string | null;
   description: string | null;
   storyRelationship: string | null;
   /** Present only when contentLanguage calls for it (NARRATIVE_QUALITY_CONTRACT.md §C). */
@@ -147,12 +210,15 @@ export interface NarrativeContext {
   premise: string;
   worldSetting: string | null;
   playerRole: string | null;
+  playerName: string | null;
+  playerDescription: string | null;
   tone: "light" | "balanced" | "dark" | null;
   narrativePov: "first_person" | "second_person" | "third_person" | null;
   characters: ContextCharacter[];
   recentScenes: ContextScene[];
   /** Older branch history beyond the recent-scene budget, summarized (DOMAIN_MODEL.md §7). */
   olderHistorySummary: string | null;
+  characterMemories: ContextCharacterMemory[];
   canonFacts: ContextCanonFact[];
   actionType: ActionType;
   playerAction: string | null;

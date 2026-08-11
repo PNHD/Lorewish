@@ -21,11 +21,14 @@ function baseContext(): NarrativeContext {
     premise: "A test premise.",
     worldSetting: null,
     playerRole: null,
+    playerName: null,
+    playerDescription: null,
     tone: null,
     narrativePov: "second_person",
     characters: [],
     recentScenes: [],
     olderHistorySummary: null,
+    characterMemories: [],
     canonFacts: [],
     actionType: "custom_action",
     playerAction: "push the door",
@@ -327,8 +330,10 @@ describe("DeepSeekNarrativeProvider — successful parse + accounting", () => {
     context.actionType = "start";
     context.characters = [
       {
+        id: "00000000-0000-4000-8000-000000000001",
         name: "Tướng Lâm Vũ",
         aliases: ["Tướng quân"],
+        role: "tướng biên phòng",
         description: "vị tướng biên phòng",
         storyRelationship: "người chặn đoàn hộ tống",
         addressTerms: {

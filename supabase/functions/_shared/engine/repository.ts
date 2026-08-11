@@ -11,6 +11,7 @@ import type {
   BoundaryKind,
   ContextCanonFact,
   ContextCharacter,
+  ContextCharacterMemory,
   ContextScene,
   StorySetup,
   StructuredGenerationResult,
@@ -61,11 +62,14 @@ export interface ContextInputs {
   premise: string;
   worldSetting: string | null;
   playerRole: string | null;
+  playerName: string | null;
+  playerDescription: string | null;
   tone: "light" | "balanced" | "dark" | null;
   narrativePov: "first_person" | "second_person" | "third_person" | null;
   characters: ContextCharacter[];
   allScenesOldestFirst: ContextScene[];
   allCanonFacts: ContextCanonFact[];
+  allCharacterMemories: ContextCharacterMemory[];
 }
 
 /**

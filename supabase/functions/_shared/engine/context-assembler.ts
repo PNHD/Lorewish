@@ -24,13 +24,15 @@ import type {
   ContentLanguage,
   ContextCanonFact,
   ContextCharacter,
+  ContextCharacterMemory,
   ContextScene,
   NarrativeContext,
 } from "./types.ts";
 
 export const CONTEXT_BUDGET = {
   maxRecentScenes: 3,
-  maxCanonFacts: 12,
+  maxCharacterMemories: 12,
+  maxCanonFacts: 8,
 } as const;
 
 export interface AssembleContextInput {
@@ -40,6 +42,8 @@ export interface AssembleContextInput {
   premise: string;
   worldSetting: string | null;
   playerRole: string | null;
+  playerName: string | null;
+  playerDescription: string | null;
   tone: "light" | "balanced" | "dark" | null;
   narrativePov: "first_person" | "second_person" | "third_person" | null;
   characters: ContextCharacter[];
@@ -47,6 +51,8 @@ export interface AssembleContextInput {
   allScenesOldestFirst: ContextScene[];
   /** All canon facts already scoped to this run+branch (isolation already applied by the caller). */
   allCanonFacts: ContextCanonFact[];
+  /** Visible, current character memories after branch ancestry resolution. */
+  allCharacterMemories: ContextCharacterMemory[];
   actionType: ActionType;
   playerAction: string | null;
   selectedChoiceLabel: string | null;
@@ -71,6 +77,44 @@ function rankCanonFacts(facts: ContextCanonFact[], budget: number): ContextCanon
     .slice(0, budget);
 }
 
+function rankCharacterMemories(
+  memories: ContextCharacterMemory[],
+  characters: ContextCharacter[],
+  recentScenes: ContextScene[],
+  budget: number
+): ContextCharacterMemory[] {
+  const recentSurface = recentScenes
+    .flatMap((scene) => [scene.narrative, ...scene.dialogue.flatMap((line) => [line.speaker, line.line])])
+    .join("\n")
+    .toLocaleLowerCase();
+  const involvedCharacterIds = new Set(
+    characters
+      .filter((character) =>
+        [character.name, ...character.aliases].some((identity) =>
+          recentSurface.includes(identity.toLocaleLowerCase())
+        )
+      )
+      .map((character) => character.id)
+  );
+  const typePriority = (memory: ContextCharacterMemory) => {
+    if (memory.memoryType === "promise") return 2;
+    if (memory.memoryType === "relationship_fact") return 1;
+    return 0;
+  };
+
+  return [...memories]
+    .sort((a, b) => {
+      const involvedDelta = Number(involvedCharacterIds.has(b.characterId)) - Number(involvedCharacterIds.has(a.characterId));
+      if (involvedDelta !== 0) return involvedDelta;
+      const typeDelta = typePriority(b) - typePriority(a);
+      if (typeDelta !== 0) return typeDelta;
+      if (a.salience !== b.salience) return b.salience - a.salience;
+      const timeDelta = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return timeDelta !== 0 ? timeDelta : a.id.localeCompare(b.id);
+    })
+    .slice(0, budget);
+}
+
 export function assembleContext(input: AssembleContextInput): NarrativeContext {
   const recentScenes = input.allScenesOldestFirst.slice(-CONTEXT_BUDGET.maxRecentScenes);
   const olderScenes = input.allScenesOldestFirst.slice(
@@ -85,6 +129,8 @@ export function assembleContext(input: AssembleContextInput): NarrativeContext {
     premise: input.premise,
     worldSetting: input.worldSetting,
     playerRole: input.playerRole,
+    playerName: input.playerName,
+    playerDescription: input.playerDescription,
     tone: input.tone,
     narrativePov: input.narrativePov,
     // Identity state is never truncated — the entire P4 consistency
@@ -92,6 +138,12 @@ export function assembleContext(input: AssembleContextInput): NarrativeContext {
     characters: input.characters,
     recentScenes,
     olderHistorySummary: summarizeOlderScenes(olderScenes, input.contentLanguage),
+    characterMemories: rankCharacterMemories(
+      input.allCharacterMemories,
+      input.characters,
+      recentScenes,
+      CONTEXT_BUDGET.maxCharacterMemories
+    ),
     canonFacts: rankCanonFacts(input.allCanonFacts, CONTEXT_BUDGET.maxCanonFacts),
     actionType: input.actionType,
     playerAction: input.playerAction,

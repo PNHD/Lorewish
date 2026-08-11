@@ -27,6 +27,7 @@ interface Run {
   activeBranchId: string;
   status: "active" | "completed";
   storySetup: StorySetup;
+  startingCharacterId: string | null;
 }
 
 interface Branch {
@@ -69,6 +70,10 @@ interface CanonFact {
   factText: string;
   sourceSceneId: string | null;
   createdAt: string;
+  characterId?: string;
+  memoryType?: "player_fact" | "character_fact" | "relationship_fact" | "shared_event" | "promise" | "discovery";
+  salience?: number;
+  supersedesFactId?: string | null;
 }
 
 export class InMemoryTurnRepository implements TurnRepository {
@@ -168,7 +173,13 @@ export class InMemoryTurnRepository implements TurnRepository {
       runId = randomUUID();
       branchId = randomUUID();
       this.branches.set(branchId, { id: branchId, runId, parentBranchId: null, forkSceneId: null, branchSeq: 0 });
-      this.runs.set(runId, { id: runId, activeBranchId: branchId, status: "active", storySetup: args.storySetup });
+      this.runs.set(runId, {
+        id: runId,
+        activeBranchId: branchId,
+        status: "active",
+        storySetup: args.storySetup,
+        startingCharacterId: args.storySetup.startingCharacter ? randomUUID() : null,
+      });
     } else {
       const run = this.runs.get(runId);
       // Mirrors lw_precheck_and_start_turn's "run not found or not owned by
@@ -251,9 +262,15 @@ export class InMemoryTurnRepository implements TurnRepository {
       };
     });
 
-    const runScope = this.canonFacts.filter((f) => f.runId === playerRunId && f.scope === "run");
+    const runScope = this.canonFacts.filter((f) => f.runId === playerRunId && f.scope === "run" && !f.characterId);
     const branchScope = this.canonFacts.filter(
-      (f) => f.runId === playerRunId && f.scope === "branch" && f.sourceSceneId && sceneIds.includes(f.sourceSceneId)
+      (f) => f.runId === playerRunId && f.scope === "branch" && !f.characterId && f.sourceSceneId && sceneIds.includes(f.sourceSceneId)
+    );
+    const visibleMemories = this.canonFacts.filter(
+      (f) => f.runId === playerRunId && Boolean(f.characterId) && f.sourceSceneId && sceneIds.includes(f.sourceSceneId)
+    );
+    const supersededMemoryIds = new Set(
+      visibleMemories.map((memory) => memory.supersedesFactId).filter((id): id is string => Boolean(id))
     );
 
     return {
@@ -261,16 +278,20 @@ export class InMemoryTurnRepository implements TurnRepository {
       genre: run.storySetup.genre,
       storyMode: run.storySetup.storyMode,
       premise: run.storySetup.premise,
-      worldSetting: null,
-      playerRole: null,
-      tone: null,
-      narrativePov: null,
+      worldSetting: run.storySetup.worldSetting ?? null,
+      playerRole: run.storySetup.playerRole,
+      playerName: run.storySetup.playerName ?? null,
+      playerDescription: run.storySetup.playerDescription ?? null,
+      tone: run.storySetup.tone,
+      narrativePov: run.storySetup.narrativePov,
       characters: run.storySetup.startingCharacter
         ? [
             {
+              id: run.startingCharacterId!,
               name: run.storySetup.startingCharacter.name,
-              aliases: [],
-              description: run.storySetup.startingCharacter.identity,
+              aliases: run.storySetup.startingCharacter.aliases,
+              role: run.storySetup.startingCharacter.role,
+              description: run.storySetup.startingCharacter.description ?? null,
               storyRelationship: run.storySetup.startingCharacter.relationship,
               addressTerms: run.storySetup.startingCharacter.addressTerms,
             },
@@ -278,11 +299,25 @@ export class InMemoryTurnRepository implements TurnRepository {
         : [],
       allScenesOldestFirst,
       allCanonFacts: [...runScope, ...branchScope].map((f) => ({
+        id: f.id,
         scope: f.scope,
         factKey: f.factKey,
         factText: f.factText,
         createdAt: f.createdAt,
       })),
+      allCharacterMemories: visibleMemories
+        .filter((memory) => !supersededMemoryIds.has(memory.id))
+        .map((memory) => ({
+          id: memory.id,
+          characterId: memory.characterId!,
+          characterName: run.storySetup.startingCharacter?.name ?? "Unknown character",
+          memoryType: memory.memoryType!,
+          factKey: memory.factKey,
+          factText: memory.factText,
+          salience: memory.salience!,
+          supersedesFactId: memory.supersedesFactId ?? null,
+          createdAt: memory.createdAt,
+        })),
     };
   }
 
@@ -309,6 +344,13 @@ export class InMemoryTurnRepository implements TurnRepository {
       };
     }
     if (turn.status !== "generating") throw new Error(`turn ${args.turnId} is not committable (status=${turn.status})`);
+    if (
+      args.result.character_memory_candidates.some(
+        (candidate) => candidate.character_id !== this.runs.get(turn.runId)?.startingCharacterId
+      )
+    ) {
+      throw new Error("character memory references a character outside this run's Story");
+    }
 
     const existingSeqs = [...this.scenes.values()].filter((s) => s.branchId === turn.branchId).map((s) => s.seqInBranch);
     const nextSeq = existingSeqs.length ? Math.max(...existingSeqs) + 1 : 0;
@@ -336,6 +378,37 @@ export class InMemoryTurnRepository implements TurnRepository {
         factText: candidate.fact_text,
         sourceSceneId: sceneId,
         createdAt: new Date().toISOString(),
+      });
+    }
+
+    for (const candidate of args.result.character_memory_candidates) {
+      const visibleSceneIds = this.resolveBranchSceneIds(turn.branchId);
+      const visibleForKey = this.canonFacts
+        .filter(
+          (fact) =>
+            fact.runId === turn.runId &&
+            fact.characterId === candidate.character_id &&
+            fact.factKey === candidate.fact_key &&
+            fact.sourceSceneId &&
+            visibleSceneIds.includes(fact.sourceSceneId)
+        );
+      const alreadySuperseded = new Set(
+        visibleForKey.map((fact) => fact.supersedesFactId).filter((id): id is string => Boolean(id))
+      );
+      const previous = visibleForKey.filter((fact) => !alreadySuperseded.has(fact.id)).at(-1);
+      this.canonFacts.push({
+        id: randomUUID(),
+        runId: turn.runId,
+        scope: "branch",
+        branchId: turn.branchId,
+        factKey: candidate.fact_key,
+        factText: candidate.fact_text,
+        sourceSceneId: sceneId,
+        createdAt: new Date(Date.now() + this.canonFacts.length).toISOString(),
+        characterId: candidate.character_id,
+        memoryType: candidate.memory_type,
+        salience: candidate.salience,
+        supersedesFactId: previous?.id ?? null,
       });
     }
 

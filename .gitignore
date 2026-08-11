@@ -73,6 +73,8 @@ Desktop.ini
 
 # Testing
 coverage/
+playwright-report/
+test-results/
 
 # Generated handoff archives (source of truth is handoff/, not the zip)
 Lorewish_*_handoff.zip

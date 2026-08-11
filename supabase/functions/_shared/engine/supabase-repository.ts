@@ -101,11 +101,19 @@ export class SupabaseTurnRepository implements TurnRepository {
             genre: args.storySetup.genre,
             content_language: args.storySetup.contentLanguage,
             story_mode: args.storySetup.storyMode,
+            world_setting: args.storySetup.worldSetting ?? null,
+            tone: args.storySetup.tone,
+            narrative_pov: args.storySetup.narrativePov,
+            player_role: args.storySetup.playerRole,
+            player_name: args.storySetup.playerName ?? null,
+            player_description: args.storySetup.playerDescription ?? null,
             starting_character: args.storySetup.startingCharacter
               ? {
                   name: args.storySetup.startingCharacter.name,
-                  identity: args.storySetup.startingCharacter.identity,
+                  role: args.storySetup.startingCharacter.role,
+                  description: args.storySetup.startingCharacter.description ?? null,
                   relationship: args.storySetup.startingCharacter.relationship,
+                  aliases: args.storySetup.startingCharacter.aliases,
                   address_terms: args.storySetup.startingCharacter.addressTerms
                     ? {
                         speaker_self_reference:
@@ -226,12 +234,36 @@ export class SupabaseTurnRepository implements TurnRepository {
         ).data ?? []
       : [];
 
-    const allCanonFacts: ContextCanonFact[] = [...(runScopeFacts ?? []), ...branchScopeFacts].map((f) => ({
-      scope: f.scope,
-      factKey: f.fact_key,
-      factText: f.fact_text,
-      createdAt: f.created_at,
-    }));
+    const visibleFacts = [...(runScopeFacts ?? []), ...branchScopeFacts];
+    const allCanonFacts: ContextCanonFact[] = visibleFacts
+      .filter((fact) => !fact.character_id)
+      .map((f) => ({
+        id: f.id,
+        scope: f.scope,
+        factKey: f.fact_key,
+        factText: f.fact_text,
+        createdAt: f.created_at,
+      }));
+
+    const supersededMemoryIds = new Set(
+      visibleFacts
+        .map((fact) => fact.supersedes_fact_id as string | null)
+        .filter((id): id is string => Boolean(id))
+    );
+    const characterNameById = new Map((characters ?? []).map((character) => [character.id as string, character.name as string]));
+    const allCharacterMemories = visibleFacts
+      .filter((fact) => fact.character_id && !supersededMemoryIds.has(fact.id as string))
+      .map((fact) => ({
+        id: fact.id as string,
+        characterId: fact.character_id as string,
+        characterName: characterNameById.get(fact.character_id as string) ?? "Unknown character",
+        memoryType: fact.memory_type,
+        factKey: fact.fact_key,
+        factText: fact.fact_text,
+        salience: fact.salience,
+        supersedesFactId: fact.supersedes_fact_id ?? null,
+        createdAt: fact.created_at,
+      }));
 
     const allScenesOldestFirst: ContextScene[] = sceneRows.map((s) => ({
       seqInBranch: s.seq_in_branch as number,
@@ -245,8 +277,10 @@ export class SupabaseTurnRepository implements TurnRepository {
     const contextCharacters: ContextCharacter[] = (characters ?? []).map((c) => {
       const terms = c.address_terms as Record<string, string> | null;
       return {
+        id: c.id,
         name: c.name,
         aliases: c.aliases ?? [],
+        role: c.role ?? null,
         description: c.description,
         storyRelationship: c.story_relationship,
         addressTerms: terms
@@ -267,11 +301,14 @@ export class SupabaseTurnRepository implements TurnRepository {
       premise: story?.premise ?? "",
       worldSetting: config?.world_setting ?? null,
       playerRole: config?.player_role ?? null,
+      playerName: config?.player_name ?? null,
+      playerDescription: config?.player_description ?? null,
       tone: (config?.tone as "light" | "balanced" | "dark" | null) ?? null,
       narrativePov: (config?.narrative_pov as ContextInputs["narrativePov"]) ?? null,
       characters: contextCharacters,
       allScenesOldestFirst,
       allCanonFacts,
+      allCharacterMemories,
     };
   }
 
@@ -295,6 +332,7 @@ export class SupabaseTurnRepository implements TurnRepository {
       p_next_choices: args.result.next_choices,
       p_boundary_kind: args.result.boundary_kind,
       p_canon_candidates: args.result.canon_candidates,
+      p_character_memory_candidates: args.result.character_memory_candidates,
       p_generation_attempt_count: args.generationAttemptCount,
       p_provider: args.provider,
       p_model: args.model,

@@ -32,6 +32,7 @@ export function LanguageSwitcher() {
             key={option.value}
             accessibilityRole="radio"
             accessibilityState={{ selected }}
+            aria-checked={selected}
             onPress={() => setLocale(option.value)}
             style={{
               paddingVertical: spacing.xs,

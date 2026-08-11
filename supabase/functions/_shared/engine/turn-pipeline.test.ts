@@ -16,6 +16,9 @@ function startArgs(overrides: Partial<Parameters<typeof submitTurn>[2]> = {}) {
       genre: "fantasy",
       contentLanguage: "en",
       storyMode: "narrative" as const,
+      tone: "balanced" as const,
+      narrativePov: "second_person" as const,
+      playerRole: "wandering healer",
     },
     ...overrides,
   };

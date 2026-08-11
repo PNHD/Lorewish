@@ -15,6 +15,7 @@ function scene(seq: number): AssembleContextInput["allScenesOldestFirst"][number
 
 function fact(key: string, daysAgo: number, scope: "run" | "branch" = "run") {
   return {
+    id: `fact-${key}`,
     scope,
     factKey: key,
     factText: `Fact ${key}`,
@@ -30,11 +31,14 @@ function baseInput(overrides: Partial<AssembleContextInput> = {}): AssembleConte
     premise: "A quiet village hides a secret.",
     worldSetting: null,
     playerRole: null,
+    playerName: null,
+    playerDescription: null,
     tone: null,
     narrativePov: null,
     characters: [],
     allScenesOldestFirst: [],
     allCanonFacts: [],
+    allCharacterMemories: [],
     actionType: "custom_action",
     playerAction: "look around",
     selectedChoiceLabel: null,
@@ -75,10 +79,29 @@ describe("bounded context assembler — CONTEXT test category", () => {
     );
   });
 
+  it("bounds character memory and prioritizes unresolved promises, relationship state, and salience", () => {
+    const memories = Array.from({ length: 20 }, (_, index) => ({
+      id: `memory-${index}`,
+      characterId: "character-1",
+      characterName: "Mira",
+      memoryType: (index === 19 ? "promise" : index === 18 ? "relationship_fact" : "shared_event") as "promise" | "relationship_fact" | "shared_event",
+      factKey: `memory_key_${index}`,
+      factText: `Memory ${index}`,
+      salience: index % 5 + 1,
+      supersedesFactId: null,
+      createdAt: new Date(index * 1000).toISOString(),
+    }));
+    const ctx = assembleContext(baseInput({ allCharacterMemories: memories }));
+    expect(ctx.characterMemories).toHaveLength(CONTEXT_BUDGET.maxCharacterMemories);
+    expect(ctx.characterMemories.slice(0, 2).map((memory) => memory.memoryType)).toEqual(["promise", "relationship_fact"]);
+  });
+
   it("never truncates structured character identity, even under budget pressure", () => {
     const characters = Array.from({ length: 25 }, (_, i) => ({
+      id: `character-${i}`,
       name: `Character ${i}`,
       aliases: [],
+      role: null,
       description: null,
       storyRelationship: null,
     }));

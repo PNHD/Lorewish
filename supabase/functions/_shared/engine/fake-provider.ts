@@ -141,6 +141,7 @@ export class FakeNarrativeProvider implements NarrativeProvider {
                 },
               ]
             : [],
+        character_memory_candidates: [],
         next_choices: boundary_kind === "ending" ? [] : buildChoices(context.contentLanguage, seed),
         boundary_kind,
         structured_outcome: {},
