@@ -1,8 +1,0 @@
-﻿LW-M1-R3 — Supabase advisors, run against lorewish-dev (sfarcofvqfeobtcizxyv) after the least-privilege hardening migration.
-
-
-=== SECURITY (supabase db advisors --linked --type security --level info) ===
-{"results":[],"message":"db advisors"}
-
-=== PERFORMANCE (supabase db advisors --linked --type performance --level info) ===
-{"results":[],"message":"db advisors"}
