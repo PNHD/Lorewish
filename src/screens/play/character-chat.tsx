@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
 import { Composer } from "@/components/composer";
+import { BackLink, ScreenHeaderBar } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
 import {
@@ -94,14 +95,12 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.xs }}>
-          <Pressable accessibilityRole="link" onPress={() => router.replace(`/play/${playerRunId}`)}>
-            <ThemedText variant="label" color="secondary">{"‹ "}{t("chat.backToStory")}</ThemedText>
-          </Pressable>
+        <ScreenHeaderBar>
+          <BackLink label={t("chat.backToStory")} onPress={() => router.replace(`/play/${playerRunId}`)} />
           <ThemedText variant="heading" accessibilityRole="header">{chat?.character.name ?? t("chat.heading")}</ThemedText>
           {chat?.character.storyRelationship && <ThemedText variant="caption" color="secondary">{chat.character.storyRelationship}</ThemedText>}
           <ThemedText variant="caption" color="secondary">{t("chat.nonCanonicalNotice")}</ThemedText>
-        </View>
+        </ScreenHeaderBar>
 
         <ScrollView
           ref={scrollRef}

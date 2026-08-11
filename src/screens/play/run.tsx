@@ -12,6 +12,7 @@ import { ReplayLink } from "@/components/reading/replay-link";
 import { StorySceneSection } from "@/components/reading/story-scene-section";
 import { Composer } from "@/components/composer";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { BackLink, ScreenHeaderBar, ScreenHeaderRow } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
 import { getRunState, newTurnId, replayFromScene, submitTurn, type SceneDto } from "@/lib/story-engine";
@@ -203,26 +204,12 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.sm,
-          paddingBottom: spacing.sm,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        }}
-      >
-        <Pressable accessibilityRole="link" onPress={() => router.push("/")}>
-          <ThemedText variant="label" color="secondary">
-            {"‹ "}
-            {t("play.backToHome")}
-          </ThemedText>
-        </Pressable>
-        <LanguageSwitcher />
-      </View>
+      <ScreenHeaderBar>
+        <ScreenHeaderRow>
+          <BackLink label={t("play.backToHome")} onPress={() => router.push("/")} />
+          <LanguageSwitcher />
+        </ScreenHeaderRow>
+      </ScreenHeaderBar>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">

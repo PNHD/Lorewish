@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
+import { BackLink, ScreenHeaderBar } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
 import { getRunState, type RunStateDto } from "@/lib/story-engine";
@@ -39,11 +40,9 @@ export function CharacterDirectoryScreen({ playerRunId }: { playerRunId: string 
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, padding: spacing.lg }}>
-        <Pressable accessibilityRole="link" onPress={() => router.replace(`/play/${playerRunId}`)}>
-          <ThemedText variant="label" color="secondary">{"‹ "}{t("characters.backToStory")}</ThemedText>
-        </Pressable>
-      </View>
+      <ScreenHeaderBar>
+        <BackLink label={t("characters.backToStory")} onPress={() => router.replace(`/play/${playerRunId}`)} />
+      </ScreenHeaderBar>
       <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.xl }}>
         <View style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center", gap: spacing.sm }}>
           <ThemedText variant="display" accessibilityRole="header">{t("characters.heading")}</ThemedText>

@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { type AuthErrorCode, useAuth } from "@/auth/auth-context";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ScreenHeaderBar, ScreenHeaderRow } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
 import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
@@ -247,26 +248,17 @@ export function AccountScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.sm,
-          paddingBottom: spacing.sm,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        }}
-      >
-        <Link href="/" accessibilityRole="link">
-          <ThemedText variant="label" color="secondary">
-            {"‹ "}
-            {t("account.backToHome")}
-          </ThemedText>
-        </Link>
-        <LanguageSwitcher />
-      </View>
+      <ScreenHeaderBar>
+        <ScreenHeaderRow>
+          <Link href="/" accessibilityRole="link">
+            <ThemedText variant="label" color="secondary">
+              {"‹ "}
+              {t("account.backToHome")}
+            </ThemedText>
+          </Link>
+          <LanguageSwitcher />
+        </ScreenHeaderRow>
+      </ScreenHeaderBar>
 
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl }}>
         <View style={{ maxWidth: readingWidth.maxContentWidth, width: "100%", gap: spacing.xl }}>

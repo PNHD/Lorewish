@@ -12,6 +12,7 @@ import { PlayStateBadge } from "@/components/reading/play-state-badge";
 import { StateChangePanel } from "@/components/reading/state-change-panel";
 import { Composer } from "@/components/composer";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { ScreenHeaderBar, ScreenHeaderRow } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { previewFixtures } from "@/content/preview";
 import { useTranslation } from "@/i18n";
@@ -85,26 +86,17 @@ export function PreviewScreen() {
         behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: spacing.lg,
-            paddingTop: spacing.sm,
-            paddingBottom: spacing.sm,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          }}
-        >
-          <Link href="/" accessibilityRole="link">
-            <ThemedText variant="label" color="secondary">
-              {"‹ "}
-              {t("preview.backToHome")}
-            </ThemedText>
-          </Link>
-          <LanguageSwitcher />
-        </View>
+        <ScreenHeaderBar>
+          <ScreenHeaderRow>
+            <Link href="/" accessibilityRole="link">
+              <ThemedText variant="label" color="secondary">
+                {"‹ "}
+                {t("preview.backToHome")}
+              </ThemedText>
+            </Link>
+            <LanguageSwitcher />
+          </ScreenHeaderRow>
+        </ScreenHeaderBar>
 
         <ScrollView
           contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg, flexGrow: 1 }}

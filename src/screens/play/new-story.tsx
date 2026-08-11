@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { BackLink, ScreenHeaderBar, ScreenHeaderRow } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { AdvancedSetupForm } from "@/features/story-setup/advanced-setup-form";
 import {
@@ -111,12 +112,12 @@ export function NewStoryScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Pressable accessibilityRole="link" onPress={() => router.push("/")}>
-          <ThemedText variant="label" color="secondary">{"‹ "}{t("play.backToHome")}</ThemedText>
-        </Pressable>
-        <LanguageSwitcher />
-      </View>
+      <ScreenHeaderBar>
+        <ScreenHeaderRow>
+          <BackLink label={t("play.backToHome")} onPress={() => router.push("/")} />
+          <LanguageSwitcher />
+        </ScreenHeaderRow>
+      </ScreenHeaderBar>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.xl }}>
