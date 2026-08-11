@@ -19,6 +19,9 @@ import { submitTurn } from "../_shared/engine/turn-pipeline.ts";
 import { SupabaseTurnRepository } from "../_shared/engine/supabase-repository.ts";
 import { selectProvider } from "../_shared/engine/providers.ts";
 import { mapRepositoryErrorToHttpStatus } from "../_shared/engine/repository.ts";
+import { authorizeAlphaProvider, mapAlphaAccessError } from "../_shared/engine/alpha-access.ts";
+import { SupabaseAlphaAccessGate } from "../_shared/engine/supabase-alpha-access.ts";
+import { ActionTypeSchema, StorySetupSchema } from "../_shared/engine/types.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -57,7 +60,14 @@ Deno.serve(async (req) => {
   }
 
   const req_ = body as Record<string, unknown>;
-  if (typeof req_.turn_id !== "string" || typeof req_.action_type !== "string") {
+  const actionType = ActionTypeSchema.safeParse(req_.action_type);
+  const storySetup = req_.story_setup == null ? null : StorySetupSchema.safeParse(req_.story_setup);
+  if (
+    typeof req_.turn_id !== "string" ||
+    !actionType.success ||
+    (storySetup !== null && !storySetup.success) ||
+    (actionType.success && actionType.data === "start" && storySetup === null)
+  ) {
     return new Response(JSON.stringify({ error: "missing_required_fields" }), {
       status: 400,
       headers: { ...CORS_HEADERS, "content-type": "application/json" },
@@ -74,17 +84,22 @@ Deno.serve(async (req) => {
     });
   }
 
-  const repo = new SupabaseTurnRepository(supabaseUrl, anonKey, userJwt, serviceRoleKey);
-  const provider = selectProvider({ get: (k) => Deno.env.get(k) });
-
   try {
+    const gate = new SupabaseAlphaAccessGate(supabaseUrl, anonKey, serviceRoleKey);
+    const provider = await authorizeAlphaProvider(gate, userJwt, () => {
+      if (!Deno.env.get("LOREWISH_NARRATIVE_PROVIDER")) {
+        throw new Error("LOREWISH_NARRATIVE_PROVIDER is required for the AI alpha");
+      }
+      return selectProvider({ get: (k) => Deno.env.get(k) });
+    });
+    const repo = new SupabaseTurnRepository(supabaseUrl, anonKey, userJwt, serviceRoleKey);
     const result = await submitTurn(repo, provider, {
       turnId: req_.turn_id as string,
       playerRunId: (req_.player_run_id as string) ?? null,
-      actionType: req_.action_type as "start" | "choice" | "custom_action",
+      actionType: actionType.data,
       selectedChoiceId: (req_.selected_choice_id as string) ?? null,
       rawAction: (req_.raw_action as string) ?? null,
-      storySetup: (req_.story_setup as SubmitStorySetup) ?? null,
+      storySetup: storySetup?.success ? storySetup.data : null,
     });
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -101,17 +116,11 @@ Deno.serve(async (req) => {
     // supabase/functions/_shared/engine/repository.ts,
     // mapRepositoryErrorToHttpStatus.
     console.error("[submit-turn] error", err);
-    const { status, body } = mapRepositoryErrorToHttpStatus(err);
+    const mappedAlpha = mapAlphaAccessError(err);
+    const { status, body } = mappedAlpha ?? mapRepositoryErrorToHttpStatus(err);
     return new Response(JSON.stringify(body), {
       status,
       headers: { ...CORS_HEADERS, "content-type": "application/json" },
     });
   }
 });
-
-interface SubmitStorySetup {
-  premise: string;
-  genre: string;
-  contentLanguage: string;
-  storyMode: "narrative" | "adventure";
-}

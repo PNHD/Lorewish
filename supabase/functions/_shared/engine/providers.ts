@@ -50,8 +50,8 @@
  * logged, loaded only via an explicit env-file mechanism.
  */
 
-import type { NarrativeContext, NarrativeProvider, ProviderCallResult } from "./types.ts";
-import { ProviderTransportError } from "./types.ts";
+import type { NarrativeContext, NarrativeProvider, ProviderCallMetadata, ProviderCallResult } from "./types.ts";
+import { ProviderOutputError, ProviderTransportError } from "./types.ts";
 import { FakeNarrativeProvider } from "./fake-provider.ts";
 
 const RESULT_TOOL_SCHEMA = {
@@ -93,6 +93,85 @@ const RESULT_TOOL_SCHEMA = {
   required: ["narrative", "boundary_kind"],
 } as const;
 
+/**
+ * DeepSeek strict-tool schemas require every property of every object to be
+ * required and `additionalProperties:false`. This provider-side schema is
+ * deliberately stricter than transport JSON while remaining a subset of
+ * StructuredGenerationResultSchema. Lorewish still re-validates with Zod.
+ */
+export const DEEPSEEK_STRICT_RESULT_SCHEMA = {
+  type: "object",
+  properties: {
+    narrative: { type: "string" },
+    dialogue: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { speaker: { type: "string" }, line: { type: "string" } },
+        required: ["speaker", "line"],
+        additionalProperties: false,
+      },
+    },
+    state_changes: { type: "array", items: { type: "string" } },
+    canon_candidates: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          scope: { type: "string", enum: ["run", "branch"] },
+          fact_key: {
+            type: "string",
+            pattern: "^[a-z][a-z0-9_]{1,79}$",
+            description: "ASCII lowercase snake_case only, even when the story language is Vietnamese.",
+          },
+          fact_text: { type: "string" },
+        },
+        required: ["scope", "fact_key", "fact_text"],
+        additionalProperties: false,
+      },
+    },
+    next_choices: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { id: { type: "string" }, label: { type: "string" } },
+        required: ["id", "label"],
+        additionalProperties: false,
+      },
+    },
+    boundary_kind: { type: "string", enum: ["none", "checkpoint", "ending"] },
+    structured_outcome: {
+      anyOf: [
+        {
+          type: "object",
+          properties: { rolled: { type: "boolean" } },
+          required: ["rolled"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            rolled: { type: "boolean" },
+            band: { type: "string", enum: ["success", "partial", "fail"] },
+          },
+          required: ["rolled", "band"],
+          additionalProperties: false,
+        },
+      ],
+    },
+  },
+  required: [
+    "narrative",
+    "dialogue",
+    "state_changes",
+    "canon_candidates",
+    "next_choices",
+    "boundary_kind",
+    "structured_outcome",
+  ],
+  additionalProperties: false,
+} as const;
+
 function buildPrompt(context: NarrativeContext): { system: string; user: string } {
   const langName = context.contentLanguage.startsWith("vi") ? "Vietnamese" : "English";
   const system = [
@@ -100,6 +179,7 @@ function buildPrompt(context: NarrativeContext): { system: string; user: string 
     `Write directly in natural, native ${langName} — never translate from another language, never produce literal machine-translation-style phrasing.`,
     `Avoid generic AI-narration cliches ("little did you know", "the air was thick with tension", "a sense of unease washed over you") unless the scene genuinely warrants them.`,
     `Never break character, never mention being an AI, never use meta-commentary.`,
+    `Every canon_candidates fact_key must be ASCII lowercase snake_case matching ^[a-z][a-z0-9_]{1,79}$, even when writing Vietnamese. Never put diacritics, spaces, or punctuation in fact_key.`,
     `boundary_kind must be "ending" ONLY for a genuine, deliberate story conclusion — never because the scene is merely well-paced or you are unsure how to continue. Default to "none".`,
     `Prohibited copy in any language: "to be continued" or any equivalent phrase.`,
     context.repairReason
@@ -115,6 +195,26 @@ function buildPrompt(context: NarrativeContext): { system: string; user: string 
 
   const canonLines = context.canonFacts.map((f) => `- (${f.scope}) ${f.factText}`).join("\n");
 
+  const characterLines = context.characters
+    .map((character) => {
+      const identity = [
+        character.name,
+        character.aliases.length ? `aliases: ${character.aliases.join(", ")}` : "",
+        character.description ? `identity/role: ${character.description}` : "",
+        character.storyRelationship ? `relationship: ${character.storyRelationship}` : "",
+      ]
+        .filter(Boolean)
+        .join("; ");
+      if (!character.addressTerms) return `- ${identity}`;
+      const terms = character.addressTerms;
+      return (
+        `- ${identity}; configured address terms: ` +
+        `speaker self=${terms.speakerSelfReference}, speaker addresses character=${terms.speakerAddressesTargetAs}, ` +
+        `character self=${terms.targetSelfReference}, character addresses speaker=${terms.targetAddressesSpeakerAs}`
+      );
+    })
+    .join("\n");
+
   const user = [
     `Genre: ${context.genre}. Story mode: ${context.storyMode}. Content language: ${context.contentLanguage}.`,
     `Premise: ${context.premise}`,
@@ -124,6 +224,9 @@ function buildPrompt(context: NarrativeContext): { system: string; user: string 
     context.olderHistorySummary ? `Earlier history: ${context.olderHistorySummary}` : "",
     historyLines ? `Recent scenes:\n${historyLines}` : "",
     canonLines ? `Known facts:\n${canonLines}` : "",
+    characterLines
+      ? `Configured canonical starting characters (preserve these identities; do not silently replace them with invented characters):\n${characterLines}`
+      : "",
     context.actionType === "start"
       ? "Generate the opening scene for this story."
       : `Player action (${context.actionType}): ${context.selectedChoiceLabel ?? context.playerAction}`,
@@ -231,16 +334,38 @@ export class OpenAiNarrativeProvider implements NarrativeProvider {
 
 /**
  * Pricing per 1M tokens — re-verified against https://api-docs.deepseek.com/quick_start/pricing
- * on 2026-08-10 (docs/NARRATIVE_MODEL_EVALUATION.md §8). `inputCacheHit` is DeepSeek's documented
- * 98%-discounted rate for prompt tokens served from their prompt cache; only `deepseek-v4-flash`
- * has that discount independently documented — `deepseek-v4-pro`'s cache-hit rate is not
- * separately published, so it is conservatively treated as equal to its cache-miss rate rather
- * than assumed to also get a discount that was never confirmed.
+ * on 2026-08-11 (docs/NARRATIVE_MODEL_EVALUATION.md §8). `inputCacheHit` is DeepSeek's documented
+ * cache-discounted rate for prompt tokens served from their prompt cache.
  */
 const DEEPSEEK_PRICING_USD_PER_1M: Record<string, { inputCacheMiss: number; inputCacheHit: number; output: number }> = {
   "deepseek-v4-flash": { inputCacheMiss: 0.14, inputCacheHit: 0.0028, output: 0.28 },
-  "deepseek-v4-pro": { inputCacheMiss: 0.435, inputCacheHit: 0.435, output: 0.87 },
+  "deepseek-v4-pro": { inputCacheMiss: 0.435, inputCacheHit: 0.003625, output: 0.87 },
 };
+
+export type DeepSeekStructuredOutputMode = "json_object" | "strict_tool";
+
+function parseProviderJson(
+  content: string,
+  finishReason: unknown,
+  metadata: ProviderCallMetadata
+): unknown {
+  const trimmed = content.trim();
+  // Serialization-only hardening: accept exactly one complete Markdown JSON
+  // fence and nothing before/after it. Never search prose for a JSON-looking
+  // substring or invent absent semantic fields.
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fenced ? fenced[1].trim() : trimmed;
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const failureKind = finishReason === "length" ? "truncated_json" : "invalid_json";
+    throw new ProviderOutputError(
+      `deepseek response content was not valid JSON (${failureKind})`,
+      failureKind,
+      metadata
+    );
+  }
+}
 
 /**
  * DeepSeek's `response_format: {type: "json_object"}` guarantees syntactically valid JSON but,
@@ -268,10 +393,15 @@ export class DeepSeekNarrativeProvider implements NarrativeProvider {
   readonly id = "deepseek";
   private readonly apiKey: string;
   private readonly model: string;
+  private readonly structuredOutputMode: DeepSeekStructuredOutputMode;
   private readonly pricing: { inputCacheMiss: number; inputCacheHit: number; output: number };
   private readonly timeoutMs = 30_000;
 
-  constructor(apiKey: string, model = "deepseek-v4-pro") {
+  constructor(
+    apiKey: string,
+    model = "deepseek-v4-flash",
+    options: { structuredOutputMode?: DeepSeekStructuredOutputMode } = {}
+  ) {
     const pricing = DEEPSEEK_PRICING_USD_PER_1M[model];
     if (!pricing) {
       throw new Error(
@@ -281,6 +411,11 @@ export class DeepSeekNarrativeProvider implements NarrativeProvider {
     }
     this.apiKey = apiKey;
     this.model = model;
+    // DeepSeek's beta strict-tool mode was prototyped live in LW-M2-R3, but
+    // still emitted malformed function arguments for both Flash and Pro.
+    // Official JSON object mode was more stable for this workload; Lorewish's
+    // Zod schema remains authoritative for shape and semantics.
+    this.structuredOutputMode = options.structuredOutputMode ?? "json_object";
     this.pricing = pricing;
   }
 
@@ -293,7 +428,12 @@ export class DeepSeekNarrativeProvider implements NarrativeProvider {
 
     let response: Response;
     try {
-      response = await fetch("https://api.deepseek.com/chat/completions", {
+      const strictTool = this.structuredOutputMode === "strict_tool";
+      response = await fetch(
+        strictTool
+          ? "https://api.deepseek.com/beta/chat/completions"
+          : "https://api.deepseek.com/chat/completions",
+        {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -303,11 +443,29 @@ export class DeepSeekNarrativeProvider implements NarrativeProvider {
         body: JSON.stringify({
           model: this.model,
           messages: [
-            { role: "system", content: `${system}\n\n${DEEPSEEK_SCHEMA_INSTRUCTION}` },
+            {
+              role: "system",
+              content: strictTool ? system : `${system}\n\n${DEEPSEEK_SCHEMA_INSTRUCTION}`,
+            },
             { role: "user", content: user },
           ],
           max_tokens: 2048,
-          response_format: { type: "json_object" },
+          ...(strictTool
+            ? {
+                tools: [
+                  {
+                    type: "function",
+                    function: {
+                      name: "emit_story_turn",
+                      description: "Emit one Lorewish structured story turn.",
+                      strict: true,
+                      parameters: DEEPSEEK_STRICT_RESULT_SCHEMA,
+                    },
+                  },
+                ],
+                tool_choice: { type: "function", function: { name: "emit_story_turn" } },
+              }
+            : { response_format: { type: "json_object" } }),
           // LW-M2-R2 fix, found live: DeepSeek's V4 models default to a
           // "thinking" mode whose reasoning tokens are drawn from the same
           // max_tokens budget as the visible answer (confirmed via
@@ -324,38 +482,39 @@ export class DeepSeekNarrativeProvider implements NarrativeProvider {
           // zero usable output with it left at its default).
           thinking: { type: "disabled" },
         }),
-      });
+      }
+      );
     } catch (err) {
       if ((err as Error).name === "AbortError") {
-        throw new ProviderTransportError(`deepseek request timed out after ${this.timeoutMs}ms`);
+        throw new ProviderTransportError(
+          `deepseek request timed out after ${this.timeoutMs}ms`,
+          "timeout"
+        );
       }
-      throw new ProviderTransportError(`deepseek fetch failed: ${(err as Error).message}`);
+      throw new ProviderTransportError(
+        `deepseek fetch failed: ${(err as Error).message}`,
+        "provider_transport"
+      );
     } finally {
       clearTimeout(timeout);
     }
 
     if (response.status >= 500 || response.status === 429) {
-      throw new ProviderTransportError(`deepseek transport error: HTTP ${response.status}`);
+      throw new ProviderTransportError(
+        `deepseek transport error: HTTP ${response.status}`,
+        "provider_http"
+      );
     }
     if (!response.ok) {
       // Provider error body only — never the key, which is never included in
       // any request/response body to begin with.
-      throw new Error(`deepseek API error: HTTP ${response.status} ${await response.text()}`);
+      throw new ProviderTransportError(
+        `deepseek API error: HTTP ${response.status} ${await response.text()}`,
+        "provider_http"
+      );
     }
 
     const body = await response.json();
-    const content = body?.choices?.[0]?.message?.content;
-    if (typeof content !== "string") {
-      throw new Error("deepseek response contained no usable message content");
-    }
-
-    let parsedResult: unknown;
-    try {
-      parsedResult = JSON.parse(content);
-    } catch {
-      throw new Error("deepseek response content was not valid JSON");
-    }
-
     const latencyMs = Math.round(performance.now() - started);
     const usage = body?.usage ?? {};
     const cacheHitTokens = usage.prompt_cache_hit_tokens ?? 0;
@@ -370,17 +529,38 @@ export class DeepSeekNarrativeProvider implements NarrativeProvider {
         cacheMissTokens * this.pricing.inputCacheMiss +
         outputTokens * this.pricing.output
     );
+    const metadata: ProviderCallMetadata = {
+      provider: this.id,
+      model: this.model,
+      inputTokens,
+      outputTokens,
+      cacheHitTokens,
+      cacheMissTokens,
+      costMicros,
+      latencyMs,
+    };
+
+    const message = body?.choices?.[0]?.message;
+    const finishReason = body?.choices?.[0]?.finish_reason;
+    const content =
+      this.structuredOutputMode === "strict_tool"
+        ? message?.tool_calls?.find(
+            (call: { function?: { name?: string } }) => call?.function?.name === "emit_story_turn"
+          )?.function?.arguments
+        : message?.content;
+    if (typeof content !== "string") {
+      throw new ProviderOutputError(
+        `deepseek response contained no usable ${this.structuredOutputMode === "strict_tool" ? "tool arguments" : "message content"}`,
+        "provider_response",
+        metadata
+      );
+    }
+
+    const parsedResult = parseProviderJson(content, finishReason, metadata);
 
     return {
       result: parsedResult,
-      metadata: {
-        provider: this.id,
-        model: this.model,
-        inputTokens,
-        outputTokens,
-        costMicros,
-        latencyMs,
-      },
+      metadata,
     };
   }
 }
@@ -549,7 +729,15 @@ export function selectProvider(env: { get(key: string): string | undefined }): N
   if (configured === "deepseek") {
     const key = env.get("DEEPSEEK_API_KEY");
     if (!key) throw new Error("LOREWISH_NARRATIVE_PROVIDER=deepseek but DEEPSEEK_API_KEY is not set");
-    return new DeepSeekNarrativeProvider(key, env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-pro");
+    const mode = env.get("LOREWISH_DEEPSEEK_STRUCTURED_OUTPUT") ?? "json_object";
+    if (mode !== "json_object" && mode !== "strict_tool") {
+      throw new Error(`Unsupported LOREWISH_DEEPSEEK_STRUCTURED_OUTPUT mode: ${mode}`);
+    }
+    return new DeepSeekNarrativeProvider(
+      key,
+      env.get("LOREWISH_NARRATIVE_MODEL") ?? "deepseek-v4-flash",
+      { structuredOutputMode: mode }
+    );
   }
 
   console.warn(

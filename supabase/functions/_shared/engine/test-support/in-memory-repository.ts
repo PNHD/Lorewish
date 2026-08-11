@@ -11,14 +11,13 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ActionType, BoundaryKind, StructuredGenerationResult } from "../types.ts";
+import type { ActionType, BoundaryKind, StorySetup, StructuredGenerationResult } from "../types.ts";
 import type {
   CommitOutcome,
   ContextInputs,
   FailOutcome,
   PrecheckOutcome,
   SceneRow,
-  StorySetup,
   TurnRepository,
 } from "../repository.ts";
 import { RepositoryForbiddenError, RepositoryValidationError } from "../repository.ts";
@@ -80,6 +79,22 @@ export class InMemoryTurnRepository implements TurnRepository {
   canonFacts: CanonFact[] = [];
   private dailyCap = 30;
   private generationCount = 0;
+  commitHistory: {
+    turnId: string;
+    generationAttemptCount: number;
+    provider: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    costMicros: number;
+    latencyMs: number;
+  }[] = [];
+  failHistory: {
+    turnId: string;
+    errorClass: string;
+    generationAttemptCount: number;
+    costMicros: number;
+  }[] = [];
   /** Test hook: force ALLOWANCE_EXHAUSTED without submitting 30 turns. */
   forceAllowanceExhausted = false;
 
@@ -146,6 +161,7 @@ export class InMemoryTurnRepository implements TurnRepository {
 
     let runId = args.playerRunId;
     let branchId: string;
+    let selectedChoiceLabel: string | null = null;
 
     if (!runId) {
       if (!args.storySetup) throw new Error("storySetup required to start a new run");
@@ -178,6 +194,7 @@ export class InMemoryTurnRepository implements TurnRepository {
       if (!valid) {
         throw new RepositoryValidationError(`selected_choice_id ${args.selectedChoiceId} is not a current choice`);
       }
+      selectedChoiceLabel = scene.nextChoices.find((c) => c.id === args.selectedChoiceId)?.label ?? null;
     }
 
     if (this.forceAllowanceExhausted || this.generationCount >= this.dailyCap) {
@@ -209,7 +226,14 @@ export class InMemoryTurnRepository implements TurnRepository {
       errorClass: null,
     });
 
-    return { status: "proceed", turnId: args.turnId, playerRunId: runId, runBranchId: branchId, sourceSceneId };
+    return {
+      status: "proceed",
+      turnId: args.turnId,
+      playerRunId: runId,
+      runBranchId: branchId,
+      sourceSceneId,
+      selectedChoiceLabel,
+    };
   }
 
   async loadContextInputs(playerRunId: string, runBranchId: string): Promise<ContextInputs> {
@@ -241,7 +265,17 @@ export class InMemoryTurnRepository implements TurnRepository {
       playerRole: null,
       tone: null,
       narrativePov: null,
-      characters: [],
+      characters: run.storySetup.startingCharacter
+        ? [
+            {
+              name: run.storySetup.startingCharacter.name,
+              aliases: [],
+              description: run.storySetup.startingCharacter.identity,
+              storyRelationship: run.storySetup.startingCharacter.relationship,
+              addressTerms: run.storySetup.startingCharacter.addressTerms,
+            },
+          ]
+        : [],
       allScenesOldestFirst,
       allCanonFacts: [...runScope, ...branchScope].map((f) => ({
         scope: f.scope,
@@ -263,6 +297,7 @@ export class InMemoryTurnRepository implements TurnRepository {
     costMicros: number;
     latencyMs: number;
   }): Promise<CommitOutcome> {
+    this.commitHistory.push({ ...args });
     const turn = this.turns.get(args.turnId);
     if (!turn) throw new Error("turn not found");
     if (turn.status === "committed") {
@@ -325,12 +360,17 @@ export class InMemoryTurnRepository implements TurnRepository {
     generationAttemptCount: number;
     costMicros: number;
   }): Promise<FailOutcome> {
+    this.failHistory.push({ ...args });
     const turn = this.turns.get(args.turnId);
     if (!turn) throw new Error("turn not found");
     if (turn.status === "committed") throw new Error("cannot fail a committed turn");
     turn.status = "failed";
     turn.errorClass = args.errorClass;
     return { status: "GENERATION_FAILED", turnId: turn.id, errorClass: args.errorClass };
+  }
+
+  getGenerationCount(): number {
+    return this.generationCount;
   }
 
   /** Test helper: "Replay from here", mirroring lw_replay_from_scene. */

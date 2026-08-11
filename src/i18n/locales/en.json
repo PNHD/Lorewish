@@ -85,6 +85,7 @@
     "editActionButton": "Edit my action",
     "allowanceExhaustedHeading": "You've used today's free generations",
     "allowanceExhaustedBody": "Your story stays here exactly as it is. Come back after the reset to continue.",
+    "alphaAccessRequired": "Real AI play is currently limited to approved alpha testers.",
     "backToHome": "Back to Home"
   }
 }

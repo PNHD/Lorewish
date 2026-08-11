@@ -203,6 +203,7 @@ function detectAbruptPseudoEnding(text: string, boundaryKind: string): boolean {
 
 function detectMalformedChoices(result: StructuredGenerationResult): boolean {
   if (result.boundary_kind === "ending") return false; // no choices expected at a true ending
+  if (result.next_choices.length < 2 || result.next_choices.length > 4) return true;
   const ids = result.next_choices.map((c) => c.id);
   const uniqueIds = new Set(ids);
   if (uniqueIds.size !== ids.length) return true; // duplicate choice ids

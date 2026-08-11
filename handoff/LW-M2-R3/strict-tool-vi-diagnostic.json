@@ -1,0 +1,109 @@
+{
+  "campaign": "LW-M2-R3_DEEPSEEK_FLASH_SOAK",
+  "generatedAt": "2026-08-11T01:16:13.359Z",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "repairModel": "deepseek-v4-flash",
+  "structuredOutputMode": "strict_tool",
+  "thinkingMode": "disabled",
+  "syntheticOnly": true,
+  "hardCostCapUsd": 1,
+  "estimatedUpperBoundUsd": 0.00509376,
+  "summary": {
+    "initialGenerations": 2,
+    "initialPass": 2,
+    "schemaValidRate": 1,
+    "qualityGatePassRate": 1,
+    "repairRequired": 0,
+    "repairRate": 0,
+    "repairSuccess": 0,
+    "finalPass": 2,
+    "finalFailure": 0,
+    "finalFailureRate": 0,
+    "inputTokens": 2369,
+    "outputTokens": 1984,
+    "cacheHitTokens": 2304,
+    "cacheMissTokens": 65,
+    "actualCostMicros": 571,
+    "actualCostUsd": 0.000571,
+    "latency": {
+      "minMs": 9923,
+      "medianMs": 9923,
+      "p95Ms": 9936,
+      "maxMs": 9936
+    },
+    "providerHttpErrors": 0,
+    "timeouts": 0,
+    "failureClassesInitial": {},
+    "failureClassesRepair": {}
+  },
+  "byLanguage": {
+    "vi": {
+      "initialGenerations": 2,
+      "initialPass": 2,
+      "repairRequired": 0,
+      "finalPass": 2,
+      "finalFailure": 0
+    }
+  },
+  "byGenre": {
+    "fantasy": {
+      "initialGenerations": 1,
+      "initialPass": 1,
+      "repairRequired": 0,
+      "finalPass": 1,
+      "finalFailure": 0
+    },
+    "adventure": {
+      "initialGenerations": 1,
+      "initialPass": 1,
+      "repairRequired": 0,
+      "finalPass": 1,
+      "finalFailure": 0
+    }
+  },
+  "attempts": [
+    {
+      "caseId": "vi-fantasy-01",
+      "run": 1,
+      "attempt": "initial",
+      "language": "vi",
+      "genre": "fantasy",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1194,
+      "outputTokens": 1000,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 42,
+      "costMicros": 289,
+      "latencyMs": 9936,
+      "schemaValid": true,
+      "qualityGatePassed": true,
+      "qualityFailures": [],
+      "schemaIssues": [],
+      "passed": true,
+      "failureClass": null
+    },
+    {
+      "caseId": "vi-adventure-01",
+      "run": 1,
+      "attempt": "initial",
+      "language": "vi",
+      "genre": "adventure",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1175,
+      "outputTokens": 984,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 23,
+      "costMicros": 282,
+      "latencyMs": 9923,
+      "schemaValid": true,
+      "qualityGatePassed": true,
+      "qualityFailures": [],
+      "schemaIssues": [],
+      "passed": true,
+      "failureClass": null
+    }
+  ]
+}

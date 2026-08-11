@@ -122,6 +122,19 @@ Item 1 must precede items 5 and 6. Nothing else here has a hard ordering constra
   graceful allowance exhaustion. These are contract-compliance checks, not rates — each either
   passes or does not. *(Added by LW-M0-R3.)*
 
+## Future subtask — AUTH / GUEST ACCESS *(deferred from LW-M2-R3)*
+
+- **Goal**: preserve guest-first onboarding while deliberately designing the abuse, cost, consent,
+  and account-linking boundary before any public real-AI inference is enabled.
+- **Scope**: decide a limited guest AI allowance; guest-to-account upgrade/linking; cross-device
+  persistence; Google and Apple sign-in; email/magic-link fallback; Facebook only if product
+  evidence justifies it; guest abuse/rate-limit strategy; account recovery; privacy/consent UX.
+- **Current state**: `USER_AUTH_UX_DEFERRED`, `SOCIAL_AUTH_DEFERRED`, and
+  `PUBLIC_REAL_AI_BROWSER_E2E_DEFERRED`. The existing `alpha_generation_access` table is retained as
+  `DEFERRED_AUTH_INFRASTRUCTURE`, not as a public access mechanism or age-verification table.
+- **Exclusions**: no part of this subtask is implemented by LW-M2-R3. In particular, no shared
+  browser password, client secret, bypass token, public anonymous DeepSeek route, or social login.
+
 ## M3 — Character Memory + Roleplay
 
 - **Goal**: full MVP scope reached — [MVP_SPEC.md](MVP_SPEC.md) is completely implemented.

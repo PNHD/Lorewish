@@ -91,6 +91,28 @@ export const AddressTermsSchema = z.object({
 });
 export type AddressTerms = z.infer<typeof AddressTermsSchema>;
 
+export const StartingCharacterSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    identity: z.string().min(1).max(1000),
+    relationship: z.string().min(1).max(500),
+    addressTerms: AddressTermsSchema.optional(),
+  })
+  .strict();
+export type StartingCharacter = z.infer<typeof StartingCharacterSchema>;
+
+/** Minimal M2-R3 turn-1 bootstrap only; advanced setup remains M3. */
+export const StorySetupSchema = z
+  .object({
+    premise: z.string().min(1).max(5000),
+    genre: z.string().min(1).max(80),
+    contentLanguage: ContentLanguageSchema,
+    storyMode: z.enum(["narrative", "adventure"]),
+    startingCharacter: StartingCharacterSchema.optional(),
+  })
+  .strict();
+export type StorySetup = z.infer<typeof StorySetupSchema>;
+
 /** A single prior scene, trimmed to what context assembly needs. */
 export interface ContextScene {
   seqInBranch: number;
@@ -144,20 +166,49 @@ export interface ProviderCallMetadata {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  cacheHitTokens?: number;
+  cacheMissTokens?: number;
   costMicros: number;
   latencyMs: number;
 }
 
 export interface ProviderCallResult {
-  result: StructuredGenerationResult;
+  /** Provider payload before Lorewish's authoritative Zod validation. */
+  result: unknown;
   metadata: ProviderCallMetadata;
 }
 
 /** Raised by a provider adapter for a transport-level failure (timeout, 5xx, connection reset). */
 export class ProviderTransportError extends Error {
-  constructor(message: string) {
+  readonly failureKind: "timeout" | "provider_http" | "provider_transport";
+
+  constructor(
+    message: string,
+    failureKind: "timeout" | "provider_http" | "provider_transport" = "provider_transport"
+  ) {
     super(message);
     this.name = "ProviderTransportError";
+    this.failureKind = failureKind;
+  }
+}
+
+/**
+ * A billed provider call completed, but its structured payload could not be
+ * parsed. Metadata is retained so failed/repair calls are still costed.
+ */
+export class ProviderOutputError extends Error {
+  readonly failureKind: "invalid_json" | "truncated_json" | "provider_response";
+  readonly metadata: ProviderCallMetadata;
+
+  constructor(
+    message: string,
+    failureKind: "invalid_json" | "truncated_json" | "provider_response",
+    metadata: ProviderCallMetadata
+  ) {
+    super(message);
+    this.name = "ProviderOutputError";
+    this.failureKind = failureKind;
+    this.metadata = metadata;
   }
 }
 

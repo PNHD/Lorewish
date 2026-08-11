@@ -1,0 +1,911 @@
+{
+  "campaign": "LW-M2-R3_DEEPSEEK_FLASH_CONTINUITY",
+  "generatedAt": "2026-08-11T01:59:59.078Z",
+  "model": "deepseek-v4-flash",
+  "repairModel": "deepseek-v4-pro",
+  "structuredOutputMode": "strict_tool",
+  "thinkingMode": "disabled",
+  "syntheticOnly": true,
+  "sequences": 8,
+  "enSequences": 4,
+  "viSequences": 4,
+  "continuationTurns": 18,
+  "sequencePass": 5,
+  "sequenceFailure": 3,
+  "providerCalls": 34,
+  "repairCalls": 6,
+  "inputTokens": 57140,
+  "outputTokens": 37289,
+  "cacheHitTokens": 28928,
+  "cacheMissTokens": 28212,
+  "actualCostMicros": 22966,
+  "actualCostUsd": 0.022966,
+  "providerHttpErrors": 0,
+  "timeouts": 0,
+  "results": [
+    {
+      "sequence": 1,
+      "caseId": "en-fantasy-01",
+      "language": "en",
+      "genre": "fantasy",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 2
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 2
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": false,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The road to Thornwood ends at a gate that wasn't always there.\n\nYou notice the iron first — black, freshly forged, the bars set so close together a child couldn't squeeze through. Beyond it, the village huddles in the late-afternoon light: ",
+        "You hold her gaze and let the pack slip from your shoulder — the worn leather one with the stains that don't wash out, the one that smells of comfrey and bitterroot no matter how many miles you put behind you. You've done this a hundred tim"
+      ]
+    },
+    {
+      "sequence": 2,
+      "caseId": "en-romance-01",
+      "language": "en",
+      "genre": "romance",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 2
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": false,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The morning fog rolls off the bay like a slow tide, and you catch the salt on your tongue before you even reach the door of The Cormorant's Rest. The sign swings on one loose hinge — been that way since before the inheritance papers landed ",
+        "You don't dignify the leather roll with a glance. Not yet. Instead you walk past him — close enough to catch the faint, clean scent of bergamot and the sharper note of someone who got here at dawn — and stop at the counter where your knives"
+      ]
+    },
+    {
+      "sequence": 3,
+      "caseId": "en-adventure-01",
+      "language": "en",
+      "genre": "adventure",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": true,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The engine's cough is unmistakable — a metallic hiccup that rattles through the hull before the outboard settles back into its grumble, then sputters again, missing a beat. You're standing at the bow, salt spray beading on your jacket, the ",
+        "You don't look at the storm — not yet. You look at the reef, at the way the water turns from indigo to that bruised teal, and you think about everything you came out here for. The trading ship. The cargo. The whole expedition riding on a wo"
+      ]
+    },
+    {
+      "sequence": 4,
+      "caseId": "en-fantasy-01",
+      "language": "en",
+      "genre": "fantasy",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 2
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": false,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "The road to Amberford winds through a thin wood of silver birch, their leaves shivering in a breeze that tastes of early autumn. You've followed this track since dawn, guided by rumour and the ache in your feet — rumour of a village that ha",
+        "A bird calls somewhere in the birches—a thrush, unhurried, as if it has all day and knows it. You let the silence settle between you and the gatekeeper before you answer. Her grey eyes don't move from your face, patient as stone.\n\n\"I'm a he"
+      ]
+    },
+    {
+      "sequence": 5,
+      "caseId": "vi-fantasy-01",
+      "language": "vi",
+      "genre": "fantasy",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "GENERATION_FAILED",
+          "calls": 2
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "EXPLICIT_CHECKPOINT",
+          "calls": 2
+        }
+      ],
+      "checks": {
+        "continuation_1_no_partial_commit": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": true,
+        "configuredAddressTermsSurface": true
+      },
+      "passed": false,
+      "representativeSnippets": [
+        "Mặt trời đã chìm hẳn sau dãy núi Tuyết Lãnh từ lâu, nhưng con đường mòn dẫn ra phía bắc vẫn còn in bóng một đoàn người. Ba con la thồ hàng, bốn kỵ sĩ mặc giáp đã bạc màu, và cậu — pháp sư trẻ nhất trong đoàn, người duy nhất mang theo một ch",
+        "Giữa lúc bốn kỵ sĩ đang im lặng chờ lệnh, tôi ép mình bước lên một bước. Cảm giác nặng trịch của chiếc rương sắt sau lưng như đang đè thẳng xuống tim, nhưng không phải vì trọng lượng — mà vì thứ nằm bên trong.\n\nTôi ngẩng đầu nhìn thẳng vào "
+      ]
+    },
+    {
+      "sequence": 6,
+      "caseId": "vi-romance-01",
+      "language": "vi",
+      "passed": false,
+      "failure": "opening_GENERATION_FAILED"
+    },
+    {
+      "sequence": 7,
+      "caseId": "vi-adventure-01",
+      "language": "vi",
+      "genre": "adventure",
+      "openingPlusContinuationTurns": 4,
+      "continuationTurns": 3,
+      "turnResults": [
+        {
+          "turn": "opening",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_1",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_2",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        },
+        {
+          "turn": "continuation_3",
+          "status": "CONTINUE_READY",
+          "calls": 1
+        }
+      ],
+      "checks": {
+        "continuation_1_action_delivered": true,
+        "continuation_2_action_delivered": true,
+        "continuation_3_action_delivered": true,
+        "configuredIdentityInOpening": true,
+        "noProhibitedContinuationCopy": true,
+        "noRandomTerminalEnding": true,
+        "crossBranchCanonIsolated": true,
+        "oldBranchIntact": true
+      },
+      "observations": {
+        "factMarkerSurfaceAfterExplicitMissionPrompt": true,
+        "configuredAddressTermsSurface": null
+      },
+      "passed": true,
+      "representativeSnippets": [
+        "Nắng gắt như đổ lửa xuống mặt biển, nhưng gió thì bắt đầu đổi hướng — cái thứ gió lạnh lẻo chạy sát mặt nước, mang theo mùi muối và một thứ gì đó ẩm ướt, nặng nề. Cơn bão chẳng còn là lời đồn trên bờ nữa; nó đang rình rập phía chân trời, ph",
+        "Ông Bình cởi phăng cái áo bạt, ném lên vách khoang. Da ngăm đen lấm tấm mồ hôi, những vết sẹo dài chạy dọc cánh tay như bản đồ những cơn gió dữ. Ông chui xuống khoang máy, nơi tối om chỉ lọt vào vài tia nắng xuyên qua khe ván, mùi dầu máy n"
+      ]
+    },
+    {
+      "sequence": 8,
+      "caseId": "vi-romance-01",
+      "language": "vi",
+      "passed": false,
+      "failure": "opening_GENERATION_FAILED"
+    }
+  ],
+  "calls": [
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1067,
+      "outputTokens": 842,
+      "cacheHitTokens": 1024,
+      "cacheMissTokens": 43,
+      "costMicros": 245,
+      "latencyMs": 8887,
+      "failureClass": "missing_required_fields",
+      "schemaIssues": [
+        {
+          "path": "canon_candidates.0.scope",
+          "code": "invalid_type"
+        },
+        {
+          "path": "canon_candidates.1.scope",
+          "code": "invalid_type"
+        },
+        {
+          "path": "canon_candidates.2.scope",
+          "code": "invalid_type"
+        }
+      ],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 1122,
+      "outputTokens": 780,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 1122,
+      "costMicros": 1167,
+      "latencyMs": 14009,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1452,
+      "outputTokens": 811,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 556,
+      "costMicros": 307,
+      "latencyMs": 9130,
+      "failureClass": "invalid_json",
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Introduce yourself honestly as a wandering healer and offer to show your medicines as proof.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 1470,
+      "outputTokens": 992,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 1470,
+      "costMicros": 1502,
+      "latencyMs": 18099,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Introduce yourself honestly as a wandering healer and offer to show your medicines as proof.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1950,
+      "outputTokens": 863,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 1054,
+      "costMicros": 392,
+      "latencyMs": 8371,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Captain Ysolde Marrow to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 2247,
+      "outputTokens": 723,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 1095,
+      "costMicros": 359,
+      "latencyMs": 7043,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Ask why the village needed a new iron gate — what happened to warrant such fear",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1055,
+      "outputTokens": 1000,
+      "cacheHitTokens": 1024,
+      "cacheMissTokens": 31,
+      "costMicros": 287,
+      "latencyMs": 10876,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1563,
+      "outputTokens": 738,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 667,
+      "costMicros": 303,
+      "latencyMs": 7643,
+      "failureClass": "invalid_json",
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Step into the kitchen and put your knife rail back, telling him your way stands until you've agreed on anything together.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 1581,
+      "outputTokens": 851,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 1581,
+      "costMicros": 1428,
+      "latencyMs": 16288,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Step into the kitchen and put your knife rail back, telling him your way stands until you've agreed on anything together.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1980,
+      "outputTokens": 1105,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 1084,
+      "costMicros": 464,
+      "latencyMs": 11556,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Idris Callahan to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 2506,
+      "outputTokens": 1125,
+      "cacheHitTokens": 1280,
+      "cacheMissTokens": 1226,
+      "costMicros": 490,
+      "latencyMs": 11327,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Grant conditional approval: let the copper pans and spice rack stay, but demand the fifteen-minute rule goes to a vote before service",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1069,
+      "outputTokens": 914,
+      "cacheHitTokens": 1024,
+      "cacheMissTokens": 45,
+      "costMicros": 265,
+      "latencyMs": 9761,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1531,
+      "outputTokens": 793,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 635,
+      "costMicros": 313,
+      "latencyMs": 8833,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Push through to the reef while the tide still allows, gamble on the engine holding",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1949,
+      "outputTokens": 740,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 1053,
+      "costMicros": 357,
+      "latencyMs": 8084,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Captain Reyes to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 2236,
+      "outputTokens": 909,
+      "cacheHitTokens": 1280,
+      "cacheMissTokens": 956,
+      "costMicros": 392,
+      "latencyMs": 9934,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Ask Reyes what the last decision just cost us — what happens if the engine dies now",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1067,
+      "outputTokens": 843,
+      "cacheHitTokens": 1024,
+      "cacheMissTokens": 43,
+      "costMicros": 245,
+      "latencyMs": 8205,
+      "failureClass": "quality_gate",
+      "schemaIssues": [],
+      "qualityFailures": [
+        "character_identity_missing"
+      ],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 1103,
+      "outputTokens": 754,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 1103,
+      "costMicros": 1136,
+      "latencyMs": 13994,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1422,
+      "outputTokens": 531,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 526,
+      "costMicros": 225,
+      "latencyMs": 5225,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Tell her honestly: you're a healer, and you've heard the village suffers.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1612,
+      "outputTokens": 1146,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 716,
+      "costMicros": 424,
+      "latencyMs": 12189,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Ask Captain Ysolde Marrow to restate the current mission and the consequence of the last decision before acting."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 2208,
+      "outputTokens": 1005,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 1056,
+      "costMicros": 432,
+      "latencyMs": 11013,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Accept the terms and step through the gate to meet the fevered girl.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1176,
+      "outputTokens": 1257,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 24,
+      "costMicros": 359,
+      "latencyMs": 13360,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1788,
+      "outputTokens": 1288,
+      "cacheHitTokens": 896,
+      "cacheMissTokens": 892,
+      "costMicros": 488,
+      "latencyMs": 12627,
+      "failureClass": "quality_gate",
+      "schemaIssues": [],
+      "qualityFailures": [
+        "excessive_repetition"
+      ],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Trình giấy thông hành của quan trấn thủ và nhân danh triều đình yêu cầu được qua ải",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 1812,
+      "outputTokens": 1376,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 1812,
+      "costMicros": 1985,
+      "latencyMs": 20276,
+      "failureClass": "quality_gate",
+      "schemaIssues": [],
+      "qualityFailures": [
+        "excessive_repetition"
+      ],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Trình giấy thông hành của quan trấn thủ và nhân danh triều đình yêu cầu được qua ải",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1800,
+      "outputTokens": 1113,
+      "cacheHitTokens": 1664,
+      "cacheMissTokens": 136,
+      "costMicros": 335,
+      "latencyMs": 10556,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Hỏi Tướng Lâm Vũ nhắc lại nhiệm vụ hiện tại và hậu quả của quyết định vừa rồi trước khi hành động."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 2285,
+      "outputTokens": 1559,
+      "cacheHitTokens": 1024,
+      "cacheMissTokens": 1261,
+      "costMicros": 616,
+      "latencyMs": 15418,
+      "failureClass": "valid_json_wrong_shape",
+      "schemaIssues": [
+        {
+          "path": "canon_candidates.1.fact_key",
+          "code": "invalid_string"
+        }
+      ],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Thú thật với tướng quân về viên ngọc trấn yểm và nghĩa vụ hộ tống về kinh đô",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 2339,
+      "outputTokens": 1686,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 2339,
+      "costMicros": 2484,
+      "latencyMs": 22449,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Thú thật với tướng quân về viên ngọc trấn yểm và nghĩa vụ hộ tống về kinh đô",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1160,
+      "outputTokens": 1449,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 8,
+      "costMicros": 410,
+      "latencyMs": 12984,
+      "failureClass": "quality_gate",
+      "schemaIssues": [],
+      "qualityFailures": [
+        "character_identity_missing"
+      ],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 1196,
+      "outputTokens": 1064,
+      "cacheHitTokens": 0,
+      "cacheMissTokens": 1196,
+      "costMicros": 1446,
+      "latencyMs": 21839,
+      "failureClass": "invalid_json",
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1161,
+      "outputTokens": 1401,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 9,
+      "costMicros": 397,
+      "latencyMs": 13403,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1795,
+      "outputTokens": 1402,
+      "cacheHitTokens": 1024,
+      "cacheMissTokens": 771,
+      "costMicros": 503,
+      "latencyMs": 14393,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Cởi áo, chui vào khoang máy sửa cho bằng được, bảo hai thợ lặn giữ neo và canh dòng chảy.",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 2590,
+      "outputTokens": 1458,
+      "cacheHitTokens": 1024,
+      "cacheMissTokens": 1566,
+      "costMicros": 630,
+      "latencyMs": 14706,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "custom_action",
+      "selectedChoiceLabel": null,
+      "playerAction": "Hỏi Thuyền trưởng Bình nhắc lại nhiệm vụ hiện tại và hậu quả của quyết định vừa rồi trước khi hành động."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 3492,
+      "outputTokens": 1679,
+      "cacheHitTokens": 1408,
+      "cacheMissTokens": 2084,
+      "costMicros": 766,
+      "latencyMs": 16406,
+      "failureClass": null,
+      "schemaIssues": [],
+      "qualityFailures": [],
+      "actionType": "choice",
+      "selectedChoiceLabel": "Quyết định cùng ông Bình sửa máy thuyền trước, chấp nhận bỏ lỡ con tàu",
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputTokens": 1160,
+      "outputTokens": 1533,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 8,
+      "costMicros": 434,
+      "latencyMs": 15395,
+      "failureClass": "quality_gate",
+      "schemaIssues": [],
+      "qualityFailures": [
+        "character_identity_missing"
+      ],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputTokens": 1196,
+      "outputTokens": 1559,
+      "cacheHitTokens": 1152,
+      "cacheMissTokens": 44,
+      "costMicros": 1380,
+      "latencyMs": 21234,
+      "failureClass": "quality_gate",
+      "schemaIssues": [],
+      "qualityFailures": [
+        "character_identity_missing"
+      ],
+      "actionType": "start",
+      "selectedChoiceLabel": null,
+      "playerAction": null
+    }
+  ]
+}

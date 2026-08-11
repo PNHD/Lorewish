@@ -12,18 +12,19 @@ import type {
   ContextCanonFact,
   ContextCharacter,
   ContextScene,
+  StorySetup,
   StructuredGenerationResult,
 } from "./types.ts";
 
-export interface StorySetup {
-  premise: string;
-  genre: string;
-  contentLanguage: string;
-  storyMode: "narrative" | "adventure";
-}
-
 export type PrecheckOutcome =
-  | { status: "proceed"; turnId: string; playerRunId: string; runBranchId: string; sourceSceneId: string | null }
+  | {
+      status: "proceed";
+      turnId: string;
+      playerRunId: string;
+      runBranchId: string;
+      sourceSceneId: string | null;
+      selectedChoiceLabel: string | null;
+    }
   | { status: "in_flight"; turnId: string }
   | { status: "committed"; turnId: string; scene: SceneRow }
   | { status: "ALLOWANCE_EXHAUSTED"; resetAt: string }

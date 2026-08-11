@@ -1,0 +1,4 @@
+Local CI-equivalent gates passed: typecheck, 91 Vitest tests, Expo lint, Expo web export, migration lint/dry-run, staged diff check, and secret scans.
+Remote GitHub Actions run 31453808840 on implementation SHA 48217de: PASS. Web / JS checks, native-affecting change detection, Android preview APK, and iOS simulator build/install/launch all completed successfully.
+No live provider call is part of routine CI; live campaigns are owner-initiated scripts only.
+The EN/VI player-message localization change was correctly classified as native-affecting, so Android and iOS validation ran.

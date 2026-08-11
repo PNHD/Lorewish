@@ -11,16 +11,16 @@
  */
 
 import { assembleContext } from "./context-assembler.ts";
-import { moderateOutputText } from "./moderation.ts";
-import { runQualityGate } from "./quality-gate.ts";
+import { evaluateGeneratedResult, type SanitizedGenerationFailureClass } from "./generation-validation.ts";
 import type { TurnRepository } from "./repository.ts";
 import {
-  StructuredGenerationResultSchema,
   type ActionType,
   type NarrativeProvider,
+  type ProviderCallMetadata,
+  type StorySetup,
   type StructuredGenerationResult,
 } from "./types.ts";
-import { ProviderTransportError } from "./types.ts";
+import { ProviderOutputError, ProviderTransportError } from "./types.ts";
 
 export interface SubmitTurnRequest {
   turnId: string;
@@ -28,12 +28,7 @@ export interface SubmitTurnRequest {
   actionType: ActionType;
   selectedChoiceId?: string | null;
   rawAction?: string | null;
-  storySetup?: {
-    premise: string;
-    genre: string;
-    contentLanguage: string;
-    storyMode: "narrative" | "adventure";
-  } | null;
+  storySetup?: StorySetup | null;
 }
 
 export type SubmitTurnResult =
@@ -48,7 +43,13 @@ async function attemptGeneration(
   contextInput: Parameters<typeof assembleContext>[0]
 ): Promise<
   | { ok: true; result: StructuredGenerationResult; metadata: { provider: string; model: string; inputTokens: number; outputTokens: number; costMicros: number; latencyMs: number } }
-  | { ok: false; errorClass: "output_blocked" | "unusable_output" | "transport_failure"; costMicros: number }
+  | {
+      ok: false;
+      errorClass: "output_blocked" | "unusable_output" | "transport_failure";
+      failureClass: SanitizedGenerationFailureClass;
+      repairInstruction: string;
+      metadata: ProviderCallMetadata | null;
+    }
 > {
   const context = assembleContext(contextInput);
 
@@ -57,7 +58,22 @@ async function attemptGeneration(
     raw = await provider.generateTurn(context);
   } catch (err) {
     if (err instanceof ProviderTransportError) {
-      return { ok: false, errorClass: "transport_failure", costMicros: 0 };
+      return {
+        ok: false,
+        errorClass: "transport_failure",
+        failureClass: err.failureKind,
+        repairInstruction: err.failureKind,
+        metadata: null,
+      };
+    }
+    if (err instanceof ProviderOutputError) {
+      return {
+        ok: false,
+        errorClass: "unusable_output",
+        failureClass: err.failureKind,
+        repairInstruction: err.failureKind,
+        metadata: err.metadata,
+      };
     }
     // LW-M2-R2 fix: any other adapter-level throw (a provider returning a
     // response that could not even be parsed into a candidate `result` —
@@ -71,27 +87,27 @@ async function attemptGeneration(
     // CONTINUOUS_PLAY_CONTRACT.md §2's five defined play states. No cost is
     // attributed: the adapter never returned a ProviderCallResult to read a
     // cost from.
-    return { ok: false, errorClass: "unusable_output", costMicros: 0 };
+    return { ok: false, errorClass: "unusable_output", failureClass: "other", repairInstruction: "other", metadata: null };
   }
 
-  const parsed = StructuredGenerationResultSchema.safeParse(raw.result);
-  if (!parsed.success) {
-    return { ok: false, errorClass: "unusable_output", costMicros: raw.metadata.costMicros };
-  }
-
-  const moderation = moderateOutputText(parsed.data.narrative);
-  if (moderation.blocked) {
-    return { ok: false, errorClass: "output_blocked", costMicros: raw.metadata.costMicros };
-  }
-
-  const gate = runQualityGate(parsed.data, context.contentLanguage);
-  if (!gate.passed) {
-    return { ok: false, errorClass: "unusable_output", costMicros: raw.metadata.costMicros };
+  const validation = evaluateGeneratedResult(
+    raw.result,
+    context.contentLanguage,
+    context.recentScenes.length === 0 ? context.characters : []
+  );
+  if (!validation.ok) {
+    return {
+      ok: false,
+      errorClass: validation.pipelineErrorClass,
+      failureClass: validation.failureClass,
+      repairInstruction: validation.repairInstruction,
+      metadata: raw.metadata,
+    };
   }
 
   return {
     ok: true,
-    result: parsed.data,
+    result: validation.result,
     metadata: {
       provider: raw.metadata.provider,
       model: raw.metadata.model,
@@ -106,7 +122,8 @@ async function attemptGeneration(
 export async function submitTurn(
   repo: TurnRepository,
   provider: NarrativeProvider,
-  request: SubmitTurnRequest
+  request: SubmitTurnRequest,
+  repairProvider: NarrativeProvider = provider
 ): Promise<SubmitTurnResult> {
   const precheck = await repo.precheckAndStartTurn({
     turnId: request.turnId,
@@ -136,16 +153,29 @@ export async function submitTurn(
     ...contextInputs,
     actionType: request.actionType,
     playerAction: request.rawAction ?? null,
-    selectedChoiceLabel: null, // choice label resolution lives with the source scene; not needed by the fake pipeline path
+    selectedChoiceLabel: precheck.selectedChoiceLabel,
     repairReason: null as string | null,
   };
 
   let totalCost = 0;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalLatencyMs = 0;
+  const attemptedModels: string[] = [];
+  const accumulate = (metadata: ProviderCallMetadata | null) => {
+    if (!metadata) return;
+    totalCost += metadata.costMicros;
+    totalInputTokens += metadata.inputTokens;
+    totalOutputTokens += metadata.outputTokens;
+    totalLatencyMs += metadata.latencyMs;
+    attemptedModels.push(metadata.model);
+  };
+
   let attempt = await attemptGeneration(provider, baseContextInput);
   let attemptCount = 1;
 
   if (!attempt.ok) {
-    totalCost += attempt.costMicros;
+    accumulate(attempt.metadata);
     if (attempt.errorClass === "transport_failure") {
       // "At most one transparent automatic retry, transport-level failures
       // only, under the same key" (CONTINUOUS_PLAY_CONTRACT.md §8).
@@ -154,16 +184,16 @@ export async function submitTurn(
     } else {
       // Quality-gate / moderation failure: at most one automatic repair
       // (NARRATIVE_QUALITY_CONTRACT.md §D), with the failure reason fed back.
-      attempt = await attemptGeneration(provider, {
+      attempt = await attemptGeneration(repairProvider, {
         ...baseContextInput,
-        repairReason: attempt.errorClass,
+        repairReason: attempt.repairInstruction,
       });
       attemptCount += 1;
     }
   }
 
   if (!attempt.ok) {
-    totalCost += attempt.costMicros;
+    accumulate(attempt.metadata);
     const fail = await repo.failTurn({
       turnId: request.turnId,
       errorClass: attempt.errorClass,
@@ -173,17 +203,17 @@ export async function submitTurn(
     return { status: "GENERATION_FAILED", turnId: fail.turnId, errorClass: fail.errorClass };
   }
 
-  totalCost += attempt.metadata.costMicros;
+  accumulate(attempt.metadata);
   const commit = await repo.commitTurn({
     turnId: request.turnId,
     result: attempt.result,
     generationAttemptCount: attemptCount,
     provider: attempt.metadata.provider,
-    model: attempt.metadata.model,
-    inputTokens: attempt.metadata.inputTokens,
-    outputTokens: attempt.metadata.outputTokens,
+    model: attemptedModels.join(" -> ") || attempt.metadata.model,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
     costMicros: totalCost,
-    latencyMs: attempt.metadata.latencyMs,
+    latencyMs: totalLatencyMs,
   });
 
   return { status: commit.status, scene: commit.scene, turnId: commit.turnId };

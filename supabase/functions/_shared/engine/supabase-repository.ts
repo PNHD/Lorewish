@@ -20,8 +20,8 @@
  */
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { ActionType, BoundaryKind, ContextCanonFact, ContextCharacter, ContextScene, StructuredGenerationResult } from "./types.ts";
-import type { CommitOutcome, ContextInputs, FailOutcome, PrecheckOutcome, SceneRow, StorySetup, TurnRepository } from "./repository.ts";
+import type { ActionType, BoundaryKind, ContextCanonFact, ContextCharacter, ContextScene, StorySetup, StructuredGenerationResult } from "./types.ts";
+import type { CommitOutcome, ContextInputs, FailOutcome, PrecheckOutcome, SceneRow, TurnRepository } from "./repository.ts";
 import { RepositoryForbiddenError, RepositoryValidationError } from "./repository.ts";
 
 /**
@@ -101,6 +101,25 @@ export class SupabaseTurnRepository implements TurnRepository {
             genre: args.storySetup.genre,
             content_language: args.storySetup.contentLanguage,
             story_mode: args.storySetup.storyMode,
+            starting_character: args.storySetup.startingCharacter
+              ? {
+                  name: args.storySetup.startingCharacter.name,
+                  identity: args.storySetup.startingCharacter.identity,
+                  relationship: args.storySetup.startingCharacter.relationship,
+                  address_terms: args.storySetup.startingCharacter.addressTerms
+                    ? {
+                        speaker_self_reference:
+                          args.storySetup.startingCharacter.addressTerms.speakerSelfReference,
+                        speaker_addresses_target_as:
+                          args.storySetup.startingCharacter.addressTerms.speakerAddressesTargetAs,
+                        target_self_reference:
+                          args.storySetup.startingCharacter.addressTerms.targetSelfReference,
+                        target_addresses_speaker_as:
+                          args.storySetup.startingCharacter.addressTerms.targetAddressesSpeakerAs,
+                      }
+                    : null,
+                }
+              : null,
           }
         : null,
     });
@@ -114,6 +133,7 @@ export class SupabaseTurnRepository implements TurnRepository {
         playerRunId: data.player_run_id,
         runBranchId: data.run_branch_id,
         sourceSceneId: data.source_scene_id ?? null,
+        selectedChoiceLabel: data.selected_choice_label ?? null,
       };
     }
     if (status === "in_flight") return { status: "in_flight", turnId: data.turn_id };
@@ -222,12 +242,23 @@ export class SupabaseTurnRepository implements TurnRepository {
       playerAction: null,
     }));
 
-    const contextCharacters: ContextCharacter[] = (characters ?? []).map((c) => ({
-      name: c.name,
-      aliases: c.aliases ?? [],
-      description: c.description,
-      storyRelationship: c.story_relationship,
-    }));
+    const contextCharacters: ContextCharacter[] = (characters ?? []).map((c) => {
+      const terms = c.address_terms as Record<string, string> | null;
+      return {
+        name: c.name,
+        aliases: c.aliases ?? [],
+        description: c.description,
+        storyRelationship: c.story_relationship,
+        addressTerms: terms
+          ? {
+              speakerSelfReference: terms.speaker_self_reference,
+              speakerAddressesTargetAs: terms.speaker_addresses_target_as,
+              targetSelfReference: terms.target_self_reference,
+              targetAddressesSpeakerAs: terms.target_addresses_speaker_as,
+            }
+          : undefined,
+      };
+    });
 
     return {
       contentLanguage: story?.content_language ?? "en",

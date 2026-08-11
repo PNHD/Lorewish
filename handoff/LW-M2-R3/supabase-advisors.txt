@@ -1,0 +1,10 @@
+Security advisors after both LW-M2-R3 migrations:
+- INFO rls_enabled_no_policy on alpha_generation_access: intentional deny-all client design; no anon/authenticated policies or grants.
+- WARN authenticated SECURITY DEFINER RPCs: existing M2 RPC architecture. Verified search_path is empty, anon/public EXECUTE false, authenticated EXECUTE true, and functions authorize via auth.uid()/ownership.
+- Corrective policy migration added no new security warning. adult_confirmed_at is deprecated/ignored; enabled tester count is zero.
+Remediation reference: https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable
+
+Performance advisors after migration:
+- Six pre-existing INFO unindexed foreign-key notices on canon_facts, player_runs, scenes, and turns.
+- No new performance notice for alpha_generation_access.
+Remediation reference: https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys

@@ -183,4 +183,17 @@ describe("quality gate — QUALITY test category", () => {
     const gate = runQualityGate(result, "en");
     expect(gate.failures).toContain("malformed_choices");
   });
+
+  it("requires 2-4 choices for every non-ending scene", () => {
+    expect(runQualityGate(baseResult({ next_choices: [] }), "en").failures).toContain(
+      "malformed_choices"
+    );
+    expect(
+      runQualityGate(baseResult({ next_choices: [{ id: "only", label: "Only option" }] }), "en")
+        .failures
+    ).toContain("malformed_choices");
+    expect(
+      runQualityGate(baseResult({ boundary_kind: "ending", next_choices: [] }), "en").failures
+    ).not.toContain("malformed_choices");
+  });
 });

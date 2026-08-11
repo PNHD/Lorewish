@@ -172,13 +172,13 @@ client-callable `lw_*` function, same as LW-M2-R1), **0 performance findings**. 
 verification above is itself a security regression check for the two functions this migration
 changed.
 
-## `PRODUCTION_POLICY_CONSTRAINT`
+## `PRODUCTION_POLICY_CONSTRAINT` — historical LW-M2-R2 finding, superseded in LW-M2-R3
 
-Recorded in full in NARRATIVE_MODEL_EVALUATION.md §9, not repeated here in full: both Gemini's and
-DeepSeek's current API terms restrict the calling service to an 18+ audience, while Lorewish is an
-explicitly 13+, not-18+ product. **Lorewish's age policy was not changed** — this is flagged for
-owner/legal review before either provider is treated as production-eligible, per the task brief's
-explicit instruction not to resolve this automatically.
+The LW-M2-R2 interpretation is retained as historical evidence. LW-M2-R3 re-verified the current
+terms and supersedes it: DeepSeek allows users below 18/applicable local minimum age with guardian
+consent, while Gemini API still bars API Clients likely accessed by under-18 users. Current state:
+`GENERAL_AUDIENCE_13_PLUS`, `MINOR_GUARDIAN_CONSENT_REQUIRED`, and
+`PRODUCTION_POLICY_REVIEW_REQUIRED`. Gemini is not enabled for this path.
 
 ## Known Issues / Unresolved (LW-M2-R2)
 
@@ -1444,3 +1444,29 @@ feature-branch commit (application source, config, and assets); 6 files touched 
 ## Recommended Next Task
 
 **LW-M1-R2 — Dev Supabase + Auth + Android/iOS Foundation.** Do not begin it in this task/session.
+
+---
+
+# LW-M2-R3 — DeepSeek Flash Alpha Soak + Reliability Hardening + Authenticated Live E2E
+
+- Baseline main: `4eb535037cc72f3cddeca3f931f2ac0a74626e33`
+- Branch: `feature/lw-m2-deepseek-alpha`
+- Exact API model alias: `deepseek-v4-flash` (thinking disabled; dated display alias not hard-coded)
+- Structured output: official JSON object mode plus authoritative Lorewish Zod/moderation/quality gate
+- Soak: 48 initial; 47 initial pass (97.9167%); 1 repair (2.0833%); 48 final pass; 0 final failure
+- Final soak cost/latency: $0.009461; median 5759 ms; p95 8739 ms
+- Continuity: 8/8 sequences; 4 EN + 4 VI; 24/24 continuation turns; $0.009039
+- Flash vs Pro: Pro repair did not improve the strict-tool failure count and increased cost/latency; not selected
+- Alpha policy: `DEEPSEEK_FLASH_ALPHA_APPROVED` for DEV alpha only
+- Alpha allowlist: live `alpha_generation_access`; RLS; service/admin-controlled; runtime requires only `enabled = true`; not age verification
+- Real provider deployment: DEV `sfarcofvqfeobtcizxyv`; `submit-turn` ACTIVE v8; JWT verification enabled
+- Live web: `https://lorewish.pages.dev`; final deployment `https://35d2e67b.lorewish.pages.dev`
+- EN/VI public shell E2E: `/preview` and signed-out `/play` verified; `PUBLIC_REAL_AI_BROWSER_E2E_DEFERRED`
+- Auth roadmap: `USER_AUTH_UX_DEFERRED`; `SOCIAL_AUTH_DEFERRED`; guest-first access is future work
+- Allowlist status: `DEFERRED_AUTH_INFRASTRUCTURE`; zero enabled testers; not an M2 closeout blocker
+- Provider policy: `GENERAL_AUDIENCE_13_PLUS`; `MINOR_GUARDIAN_CONSENT_REQUIRED`; `PRODUCTION_POLICY_REVIEW_REQUIRED`
+- Research: `GEMINI_3_6_BAKEOFF_DEFERRED`
+- Implementation HEAD: `48217de` (policy/runtime/docs closeout; final evidence-pack commit follows)
+- CI: GitHub Actions run `31453808840` PASS on `48217de` (Web/JS, path detection, Android, iOS)
+- M2 verdict: **CLOSED** under the owner-revised technical/server/UI-shell closeout bar
+- Next milestone after M2 close only: M3 — Character Memory + Advanced Setup + Roleplay UX; not started

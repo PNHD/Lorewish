@@ -72,6 +72,17 @@ export interface SubmitTurnArgs {
     genre: string;
     contentLanguage: ContentLanguage;
     storyMode: StoryMode;
+    startingCharacter?: {
+      name: string;
+      identity: string;
+      relationship: string;
+      addressTerms?: {
+        speakerSelfReference: string;
+        speakerAddressesTargetAs: string;
+        targetSelfReference: string;
+        targetAddressesSpeakerAs: string;
+      };
+    };
   };
 }
 
