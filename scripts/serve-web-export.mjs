@@ -23,7 +23,16 @@ function resolveRequestPath(pathname) {
   if (existsSync(candidate) && statSync(candidate).isDirectory()) return join(candidate, "index.html");
   if (existsSync(candidate)) return candidate;
   const htmlCandidate = `${candidate}.html`;
-  return existsSync(htmlCandidate) ? htmlCandidate : null;
+  if (existsSync(htmlCandidate)) return htmlCandidate;
+  const dynamicRoutes = [
+    { pattern: /^play\/[^/]+\/characters\/[^/]+\/?$/, file: "play/[runId]/characters/[characterId].html" },
+    { pattern: /^play\/[^/]+\/characters\/?$/, file: "play/[runId]/characters.html" },
+    { pattern: /^play\/[^/]+\/?$/, file: "play/[runId].html" },
+  ];
+  const dynamic = dynamicRoutes.find((route) => route.pattern.test(relative.replace(/\\/g, "/")));
+  if (!dynamic) return null;
+  const dynamicPath = join(root, dynamic.file);
+  return existsSync(dynamicPath) ? dynamicPath : null;
 }
 
 createServer((request, response) => {
