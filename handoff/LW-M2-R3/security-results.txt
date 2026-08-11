@@ -1,9 +1,13 @@
 DEV project verified: sfarcofvqfeobtcizxyv. Production ref etmqrpoefkcahyvaimiw was not touched.
 alpha_generation_access: RLS enabled; anon SELECT false; authenticated SELECT/INSERT/UPDATE false; service_role control true.
-Allowlist rows at pre-E2E check: 0.
-submit-turn: ACTIVE v7; verify_jwt=true; import map active.
-Unauthenticated submit-turn request: HTTP 401.
+Allowlist purpose: controlled DEV rollout, abuse protection, and cost protection only; not age verification.
+Policy: GENERAL_AUDIENCE_13_PLUS; MINOR_GUARDIAN_CONSENT_REQUIRED; PRODUCTION_POLICY_REVIEW_REQUIRED.
+Auth status: USER_AUTH_UX_DEFERRED; SOCIAL_AUTH_DEFERRED; PUBLIC_REAL_AI_BROWSER_E2E_DEFERRED.
+alpha_generation_access status: DEFERRED_AUTH_INFRASTRUCTURE; zero enabled testers; not required for M2 closure. Runtime checks only enabled=true.
+Enabled tester rows after corrective migration: 0. adult_confirmed_at constraint removed; column retained deprecated/ignored.
+submit-turn: ACTIVE v8; verify_jwt=true; import map active.
+Unauthenticated submit-turn v8 request: HTTP 401; Edge logs show the v8 probe ended at 401.
 Edge secrets configured: DEEPSEEK_API_KEY, LOREWISH_NARRATIVE_PROVIDER, LOREWISH_NARRATIVE_MODEL, LOREWISH_DEEPSEEK_STRUCTURED_OUTPUT. Values were not printed.
 Web dist exact-secret scan: NO MATCH.
 No repository visibility change. No provider key in browser configuration, database row, Git, handoff, or ZIP source set.
-
+No public anonymous path can invoke DeepSeek: submit-turn retains JWT verification and server-side allowlist enforcement, while the public preview is deterministic only.

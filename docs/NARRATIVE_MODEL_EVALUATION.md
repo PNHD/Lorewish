@@ -32,9 +32,11 @@ This section now summarizes the final state; §0a is kept for how the task start
   a Gemini cost-accounting gap (thinking tokens excluded), and a DeepSeek adapter misconfiguration
   (thinking mode left enabled, which could silently zero out narrative output). Full detail in §11
   and `handoff/LW-M2-R2/narrative-samples/notable-findings/`.
-- **The `PRODUCTION_POLICY_CONSTRAINT` finding stands** (§9): both Gemini's and DeepSeek's current
-  API terms restrict the calling service to an 18+ audience; Lorewish is 13+. Not acted on
-  automatically.
+- **LW-M2-R3 owner policy supersession** (§9): DeepSeek permits users below 18/applicable minimum
+  age to use the service with legal-guardian consent, while Gemini API still bars API Clients
+  directed toward or likely accessed by under-18 users. DeepSeek is the only live alpha provider.
+  Record `GENERAL_AUDIENCE_13_PLUS`, `MINOR_GUARDIAN_CONSENT_REQUIRED`, and
+  `PRODUCTION_POLICY_REVIEW_REQUIRED`.
 - Two known M2-R1 polish issues (cross-user turn submission, invalid `selected_choice_id` both
   returning generic HTTP 500) were fixed and **verified live** against `lorewish-dev` earlier in
   this task — see CURRENT_WORK.md's LW-M2-R2 section, not this document.
@@ -266,7 +268,7 @@ Neither candidate is a reasoning-only model in the sense the task brief warns ag
 general chat/completion models with an optional thinking mode, not a model that can only be used in
 a reasoning-only configuration.
 
-## 9. `PRODUCTION_POLICY_CONSTRAINT` — provider terms vs. Lorewish's age policy
+## 9. `PRODUCTION_POLICY_REVIEW_REQUIRED` — provider terms vs. Lorewish's age policy
 
 **Recorded, not acted on.** The task brief is explicit: record a provider terms/age conflict, do not
 change Lorewish's content rating or user eligibility automatically. Lorewish is **13+ mainstream**,
@@ -278,9 +280,12 @@ explicitly **not an 18+ platform** ([PRODUCT_VISION.md](PRODUCT_VISION.md) — "
   the API must not be used "as part of a website, application, or other service that is directed
   towards or is likely to be accessed by individuals under the age of 18." This reads as a
   service-level restriction on the *audience*, not only the API caller's own age.
-- **DeepSeek API terms of service**: the API specifically requires the caller/operator to be 18+
-  (distinct from DeepSeek's consumer chat product, which has separate minor-with-guardian-consent
-  provisions that do not appear to extend to the API).
+- **DeepSeek Terms of Use** (`https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html`,
+  re-verified 2026-08-11): the Services definition includes APIs. The Account section says the
+  service is primarily intended for adults, while a user below 18 or the applicable local minimum
+  age may use it with legal-guardian consent. This supports the controlled DeepSeek alpha policy
+  `GENERAL_AUDIENCE_13_PLUS` plus `MINOR_GUARDIAN_CONSENT_REQUIRED`; it is not verified age or
+  verified parental consent.
 - **Anthropic**, for comparison (already has an implemented, unverified-live adapter from LW-M2-R1):
   the Commercial API Terms also require an 18+ *account holder*, but Anthropic separately publishes
   "Responsible Use of Anthropic's Models: Guidelines for Organizations Serving Minors," which reads
@@ -288,6 +293,9 @@ explicitly **not an 18+ platform** ([PRODUCT_VISION.md](PRODUCT_VISION.md) — "
   compliance obligations (age verification, monitoring, content moderation, child-privacy-law
   compliance) — a materially different posture from Gemini's blanket "not directed towards / likely
   accessed by under-18s" language.
+
+**Gemini remains disabled for this 13+ path.** Its current Additional Terms expressly bar API Clients
+directed toward or likely accessed by under-18 users; provider-policy circumvention is not allowed.
 
 **This is prose analysis of public terms pages by an engineering task, not a legal opinion.** The
 exact wording, current effective date, and applicability to Lorewish's specific product shape need

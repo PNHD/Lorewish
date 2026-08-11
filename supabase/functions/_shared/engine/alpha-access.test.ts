@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AlphaAccessForbiddenError,
   authorizeAlphaProvider,
+  isAlphaGenerationEnabled,
   mapAlphaAccessError,
   type AlphaAccessGate,
 } from "./alpha-access.ts";
@@ -27,7 +28,13 @@ describe("server-enforced alpha generation access", () => {
     expect(providerFactory).not.toHaveBeenCalled();
   });
 
-  it("constructs the provider only after an enabled adult alpha account passes", async () => {
+  it("uses enabled as the complete rollout gate without an adult-confirmation dependency", () => {
+    expect(isAlphaGenerationEnabled(null)).toBe(false);
+    expect(isAlphaGenerationEnabled({ enabled: false })).toBe(false);
+    expect(isAlphaGenerationEnabled({ enabled: true })).toBe(true);
+  });
+
+  it("constructs the provider only after an enabled alpha account passes", async () => {
     const order: string[] = [];
     const gate: AlphaAccessGate = {
       assertAllowed: vi.fn(async () => {

@@ -172,13 +172,13 @@ client-callable `lw_*` function, same as LW-M2-R1), **0 performance findings**. 
 verification above is itself a security regression check for the two functions this migration
 changed.
 
-## `PRODUCTION_POLICY_CONSTRAINT`
+## `PRODUCTION_POLICY_CONSTRAINT` — historical LW-M2-R2 finding, superseded in LW-M2-R3
 
-Recorded in full in NARRATIVE_MODEL_EVALUATION.md §9, not repeated here in full: both Gemini's and
-DeepSeek's current API terms restrict the calling service to an 18+ audience, while Lorewish is an
-explicitly 13+, not-18+ product. **Lorewish's age policy was not changed** — this is flagged for
-owner/legal review before either provider is treated as production-eligible, per the task brief's
-explicit instruction not to resolve this automatically.
+The LW-M2-R2 interpretation is retained as historical evidence. LW-M2-R3 re-verified the current
+terms and supersedes it: DeepSeek allows users below 18/applicable local minimum age with guardian
+consent, while Gemini API still bars API Clients likely accessed by under-18 users. Current state:
+`GENERAL_AUDIENCE_13_PLUS`, `MINOR_GUARDIAN_CONSENT_REQUIRED`, and
+`PRODUCTION_POLICY_REVIEW_REQUIRED`. Gemini is not enabled for this path.
 
 ## Known Issues / Unresolved (LW-M2-R2)
 
@@ -1458,13 +1458,14 @@ feature-branch commit (application source, config, and assets); 6 files touched 
 - Continuity: 8/8 sequences; 4 EN + 4 VI; 24/24 continuation turns; $0.009039
 - Flash vs Pro: Pro repair did not improve the strict-tool failure count and increased cost/latency; not selected
 - Alpha policy: `DEEPSEEK_FLASH_ALPHA_APPROVED` for DEV alpha only
-- Alpha allowlist: live `alpha_generation_access`; RLS; service/admin-controlled; `adult_confirmed_at` required
-- Real provider deployment: DEV `sfarcofvqfeobtcizxyv`; `submit-turn` ACTIVE v7; JWT verification enabled
-- Live web: `https://lorewish.pages.dev`; deployment `https://15605d08.lorewish.pages.dev`
-- EN E2E: pending owner adult-account login/allowlist
-- VI E2E: pending owner adult-account login/allowlist
-- Provider policy: `AI_ALPHA_18_PLUS_ONLY`; `PRODUCTION_POLICY_CONSTRAINT_OPEN`; not a permanent 18+ product decision
+- Alpha allowlist: live `alpha_generation_access`; RLS; service/admin-controlled; runtime requires only `enabled = true`; not age verification
+- Real provider deployment: DEV `sfarcofvqfeobtcizxyv`; `submit-turn` ACTIVE v8; JWT verification enabled
+- Live web: `https://lorewish.pages.dev`; final deployment `https://35d2e67b.lorewish.pages.dev`
+- EN/VI public shell E2E: `/preview` and signed-out `/play` verified; `PUBLIC_REAL_AI_BROWSER_E2E_DEFERRED`
+- Auth roadmap: `USER_AUTH_UX_DEFERRED`; `SOCIAL_AUTH_DEFERRED`; guest-first access is future work
+- Allowlist status: `DEFERRED_AUTH_INFRASTRUCTURE`; zero enabled testers; not an M2 closeout blocker
+- Provider policy: `GENERAL_AUDIENCE_13_PLUS`; `MINOR_GUARDIAN_CONSENT_REQUIRED`; `PRODUCTION_POLICY_REVIEW_REQUIRED`
 - Research: `GEMINI_3_6_BAKEOFF_DEFERRED`
 - Implementation HEAD at draft time: `80b0819` (handoff/PR commit pending)
-- M2 verdict: OPEN until authenticated EN/VI E2E and VI review surface complete
+- M2 verdict: **CLOSED** under the owner-revised technical/server/UI-shell closeout bar
 - Next milestone after M2 close only: M3 — Character Memory + Advanced Setup + Roleplay UX; not started

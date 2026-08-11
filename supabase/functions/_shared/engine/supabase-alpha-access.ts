@@ -1,5 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { AlphaAccessForbiddenError, type AlphaAccessGate } from "./alpha-access.ts";
+import {
+  AlphaAccessForbiddenError,
+  isAlphaGenerationEnabled,
+  type AlphaAccessGate,
+} from "./alpha-access.ts";
 
 /** Trusted Edge Function implementation; the browser never receives the service-role key. */
 export class SupabaseAlphaAccessGate implements AlphaAccessGate {
@@ -21,11 +25,11 @@ export class SupabaseAlphaAccessGate implements AlphaAccessGate {
     const serviceClient = createClient(this.supabaseUrl, this.serviceRoleKey);
     const { data, error } = await serviceClient
       .from("alpha_generation_access")
-      .select("enabled, adult_confirmed_at")
+      .select("enabled")
       .eq("user_id", userData.user.id)
       .maybeSingle();
 
-    if (error || !data?.enabled || !data.adult_confirmed_at) {
+    if (error || !isAlphaGenerationEnabled(data)) {
       throw new AlphaAccessForbiddenError();
     }
     return { userId: userData.user.id };

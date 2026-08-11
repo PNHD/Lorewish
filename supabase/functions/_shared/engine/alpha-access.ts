@@ -11,6 +11,11 @@ export interface AlphaAccessGate {
   assertAllowed(userJwt: string): Promise<{ userId: string }>;
 }
 
+/** The DEV allowlist is a rollout/cost control, not an age-verification mechanism. */
+export function isAlphaGenerationEnabled(row: { enabled?: boolean | null } | null): boolean {
+  return row?.enabled === true;
+}
+
 /**
  * Ordering is security-significant: provider construction happens only after
  * the server-side allowlist check succeeds.

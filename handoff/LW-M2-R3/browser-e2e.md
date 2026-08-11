@@ -1,15 +1,18 @@
-# Browser E2E
+# Browser E2E — Revised Owner Scope
 
 ## Completed
 
-- Live deployment: `https://15605d08.lorewish.pages.dev` promoted through Pages project `lorewish`; canonical domain `https://lorewish.pages.dev`.
+- Final live deployment: `https://35d2e67b.lorewish.pages.dev` through Pages project `lorewish`; canonical domain `https://lorewish.pages.dev`.
 - `/preview`: public, deterministic sample scene rendered.
 - `/play` signed out: rendered sign-in requirement; no anonymous generation UI.
 - Direct unauthenticated Edge invocation: HTTP 401 before application/provider execution.
 
-## Pending owner-authenticated adult account
+Final browser console review of both `/preview` and signed-out `/play` found zero errors and zero warnings. An earlier account-form accessibility issue is deferred with the auth UX and does not expose inference or block the verified public shell.
 
-The automation browser had no existing session or credentials. No allowlist row was fabricated: live `alpha_generation_access` row count remained zero while waiting for the owner to sign in and explicitly confirm the adult alpha account.
+## Superseded requirements
 
-Still required: non-allowlisted 403/no-provider-call live probe, allowlist insertion, EN and VI real runs, predefined choice, custom action, reload restore, Replay from here, alternate branch, old-branch integrity, 5+ real turns, console/network review, and VI sample extraction.
+The owner explicitly superseded the manually authenticated real-provider browser E2E. No owner login, manual allowlisting, adult declaration, social login, or public anonymous inference is required or permitted for LW-M2-R3.
 
+`PUBLIC_REAL_AI_BROWSER_E2E_DEFERRED`: real DeepSeek correctness is evidenced at the server/engine boundary by the 48-generation soak, 24-turn continuity soak, Edge Function deployment/probes, atomic canonical commit tests, failure/no-partial-Scene tests, one-repair tests, branch-isolation tests, and cost accounting.
+
+`USER_AUTH_UX_DEFERRED` and `SOCIAL_AUTH_DEFERRED`: future product work should be guest-first and must design abuse/rate-limit/account-linking/privacy UX before enabling any public real inference.
