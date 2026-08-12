@@ -1,3 +1,5 @@
+5bfcf75 fix(w5): map cross-guest RPC ownership errors to 403, not 500
+478ce6e docs(w5): distinguish implementation code head from final PR head
 ebfc2aa docs(w5): live-verify Remember-in-story fix, production deploy evidence
 9108b02 docs(w5): HANDOFF.md and git artifacts for LW-W5-R1
 8ac2ec6 docs(w5): visual/accessibility/responsive/browser-e2e review docs

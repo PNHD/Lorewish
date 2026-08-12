@@ -1,26 +1,38 @@
 # LW-W5-R1 — Web Product UX Completion + Visual System + Long-Session Polish
 
-Status: **W5_R1_PASS** — fully live-verified: character-chat Edge Function redeployed and confirmed
-live, actual Cloudflare production deployed and confirmed via deployment metadata (not URL
-inference), and the Remember-in-story fix proven end-to-end against real backend data with real
-DeepSeek generation. See `production-smoke.md` for the full live-verification record.
+Status: **W5_R1_PASS** — fully live-verified across two closeout passes (LW-W5-R1 and
+LW-W5-R1-R1): `character-chat` Edge Function redeployed twice (v6 → v7 → v8) and confirmed live each
+time, actual Cloudflare production deployed and reconfirmed via deployment metadata (not URL
+inference), the Remember-in-story fix proven end-to-end against real backend data and a real page
+reload, and the second pass's two flagged items resolved — a cross-guest error-shape bug (fixed,
+live-verified) and a reported hydration console error (investigated exhaustively, found
+not reproducible, regression-guarded). See `production-smoke.md` for the full live-verification
+record of both passes.
 
 Branch: `feature/lw-w5-product-ux`
 Base: `origin/main` @ `f608f0d` (PR #6, WEB-M4 guest-beta, independently reviewed and merged)
 
-**IMPLEMENTATION_CODE_HEAD**: `9108b02920c3b1d81329e9422496940a7d9aa494` — this is the code that was
-audited, tested, deployed, and live-verified. No source changes were made after this commit; the
-live-closeout session only deployed already-committed code and updated evidence docs.
+**IMPLEMENTATION_CODE_HEAD**: `5bfcf750ddb5fce3c4cdb804482299da154016cd` — the last commit that
+changed source (the cross-guest error-shape fix + hydration regression test). Audited, tested,
+deployed to `character-chat` v8, deployed to Cloudflare production, and live-verified.
 
-**FINAL_PR_HEAD**: `ebfc2aafb6badf0d38cd70d826813cfb7c9d9c11` — one evidence-docs-only commit on top
-of `9108b02` (this live-verification record itself; no source changed).
+**FINAL_PR_HEAD**: one evidence-docs-only commit on top of `5bfcf75` — this HANDOFF.md/
+production-smoke.md/ci-results.txt/git-status.txt/git-log.txt update itself, committed immediately
+after this file is written. A file cannot record its own content-addressed commit SHA in advance
+without becoming stale the moment it's written (the exact failure mode this section exists to avoid
+repeating) — the exact FINAL_PR_HEAD SHA is reported in the chat message accompanying this handoff
+and in `git-log.txt`/`git-status.txt`, generated fresh after the commit exists. No source file
+changes between `5bfcf75` and FINAL_PR_HEAD — only `handoff/LW-W5-R1/*`.
 
 Draft PR: https://github.com/PNHD/Lorewish/pull/7 (open, not merged)
-Exact-head CI:
-- On `9108b02` (IMPLEMENTATION_CODE_HEAD): run `31553617939` — SUCCESS
-- On `ebfc2aa` (FINAL_PR_HEAD, docs-only): run `31555941274` — SUCCESS
-Both runs: typecheck, lint, 164 unit tests, web export, 10 Playwright e2e all green; native jobs
-skipped as configured.
+Exact-head CI (all SUCCESS):
+- `9108b02` (LW-W5-R1 code head): run `31553617939`
+- `ebfc2aa`, `478ce6e` (LW-W5-R1 docs-only commits): runs `31555941274`, `31556108528`
+- `5bfcf75` (LW-W5-R1-R1 code head, current IMPLEMENTATION_CODE_HEAD): run `31570250910`
+- FINAL_PR_HEAD (this evidence commit, on top of `5bfcf75`): CI run reported in the closing chat
+  message once it completes
+All runs so far: typecheck, lint, unit tests (164 → 168 in this pass), web export, Playwright e2e
+(10 → 12 in this pass) all green; native jobs skipped as configured.
 
 ## A. Baseline
 
@@ -117,6 +129,37 @@ into the branch and covered by tests, was not yet live on the actual `sfarcofvqf
 project (the deployed `character-chat` was still v6, pre-W5). Redeployed to v7 and proven live
 end-to-end against real backend data — see §S and `production-smoke.md`.
 
+## K2. LW-W5-R1-R1 — hydration + cross-guest error-shape cleanup
+
+Second live-closeout pass, triggered by independent review of the LW-W5-R1 handoff flagging two
+items. Full detail in `production-smoke.md` §6–10.
+
+- **Hydration console error**: reported as recurring during client-side navigation. Investigated via
+  five independent reproduction methods (local dev server with mocks, local dev server matching the
+  exact new-story `router.replace` transition, real production via clean Playwright automation
+  including the one untried variable — switching UI language mid-session before a real submission —
+  and the same interactive-Browser-pane tool that originally reported it). **Not reproducible under
+  any of them.** Root-cause assessment: most likely a one-time artifact of the interactive Browser
+  pane (independently documented as unstable in the same original session — frame-compositing
+  failures, click timeouts) or a stale/buffered console-message re-report, not a defect in the
+  shipped app. No code changed — there was nothing reproducible to fix, and per instruction,
+  suppressing or monkeypatching around an unlocated issue would have been the wrong move. Added a
+  permanent regression test instead (`tests/e2e/story-setup.spec.ts`, new test asserting zero
+  console errors across Home↔Setup, EN/VI switch+persistence, and real browser back/forward), which
+  will catch a genuine future regression even though it wasn't guarding an actual bug this time.
+- **Cross-guest error shape**: `character-chat`'s `open()`/`send()` threw raw Postgres exception text
+  on an ownership failure, matching neither the `"unauthenticated"` nor `"forbidden"` strings the
+  edge function checks for, landing on a generic `500` instead of `403` (access was already correctly
+  denied either way — this was a response-shape bug, not a security bug).
+  **Fixed**: new `supabase/functions/_shared/engine/ownership-error.ts` maps Postgres SQLSTATE
+  `42501` (the code every cross-owner RPC guard in the character-chat migrations already raises) to
+  the literal `"forbidden"` string, reused at both call sites. No schema change, no ownership check
+  weakened. Unit tested (4 cases). Live-verified after redeploy: a fresh guest attempting cross-owner
+  access now gets `403 {"error":"forbidden"}`, confirmed via direct API call against the redeployed
+  function.
+- Both `character-chat` (v7 → v8) and Cloudflare production were redeployed from this pass's code
+  head (`5bfcf75`) and reverified via deployment metadata / byte-identical source comparison.
+
 ## L. Replay / branch UX
 
 Language was already correct ("Replay from here", "Current path"/"Alternate path", no `fork`/
@@ -165,53 +208,61 @@ and how verification continued through it.
 
 ## S. Production smoke
 
-[production-smoke.md](production-smoke.md) — **performed**, against the real production Cloudflare
-deployment and the live `character-chat` v7 Edge Function. Summary:
+[production-smoke.md](production-smoke.md) — **performed twice** (LW-W5-R1 §1–5, LW-W5-R1-R1 §6–10),
+against the real production Cloudflare deployment and the live `character-chat` Edge Function.
+Current state (after LW-W5-R1-R1):
 
-- `character-chat` redeployed (v6 → v7), verified `ACTIVE`, `verify_jwt: true` unchanged, and the
-  downloaded deployed source is byte-identical to committed source (confirmed `attachPromotionState`
-  live).
-- Cloudflare Pages production deploy confirmed via `wrangler pages deployment list` (not URL
-  inference): **Environment: Production, Branch: main, commit `9108b02`**, deployment ID
-  `acd9a30b-b3cb-4e93-a65a-7d82f00fd133`, immutable URL `https://acd9a30b.lorewish.pages.dev`, stable
-  URL `https://lorewish.pages.dev` confirmed serving the new build.
-- **Remember-in-story proven live end-to-end**: real guest, real Advanced Setup (VI, address preset
-  `tôi/cậu`), real story generation with the model correctly honoring the configured register, real
-  Character Chat, real promotion, server truth confirmed via direct API call, **and confirmed to
-  survive an actual browser page reload** — the literal bug this whole closeout exists for. Also
-  verified: no duplicate `canon_facts` row on a second promote call, cross-guest thread access
-  denied, unauthenticated requests denied (401).
-- Full 14-item smoke checklist: 13 clean passes, 1 partial (a pre-existing, non-W5, non-fatal React
-  hydration warning on client-side in-app navigation — investigated and isolated, does not affect any
-  flow's success). Full detail and the exact investigation steps are in `production-smoke.md`.
-- Real provider spend: 5 confirmed real DeepSeek-generating calls, within the 8-attempt budget.
+- `character-chat` redeployed twice this handoff (v6 → v7 → v8), verified `ACTIVE`,
+  `verify_jwt: true` unchanged both times, downloaded deployed source byte-identical to committed
+  source both times.
+- Cloudflare Pages production reconfirmed via `wrangler pages deployment list` (not URL inference):
+  **Environment: Production, Branch: main, commit `5bfcf75`**, deployment ID
+  `53c0b39a-c06f-444a-9ccd-25b819490975`, immutable URL `https://53c0b39a.lorewish.pages.dev`, stable
+  URL `https://lorewish.pages.dev` confirmed serving it.
+- **Remember-in-story**: proven live end-to-end in the first pass (real guest, real Advanced Setup
+  VI, real generation honoring the configured register, real promotion, server truth via direct API
+  call, survives an actual browser reload, no duplicate `canon_facts` row). That mechanism
+  (`attachPromotionState`/`loadThread`) was not touched by the second pass — confirmed unchanged via
+  the byte-identical source check — so the proof carries forward rather than being re-spent.
+- **Cross-guest access**: was `500 internal_error` (correctly denied, wrong shape) in the first pass;
+  now **`403 {"error":"forbidden"}`**, live-verified against the v8 deployment.
+- **Console-clean on client-side navigation**: not fully clean at the end of the first pass (one
+  reported hydration warning); exhaustively investigated in the second pass, found not reproducible
+  under any controlled condition, and reconfirmed **zero console errors** on a fresh re-run against
+  the current deployment covering every required transition.
+- Real provider spend across both passes: 5 (first pass) + ~3–4 (second pass, establishing fresh runs
+  for the navigation/console checks) — no real-provider "campaign" in either pass.
 
 ## T. Tests / CI
 
 - `npm run typecheck` — clean
 - `npm run lint` — clean
-- `npx vitest run` — **164/164 passing**, 21 files, including new `chat-memory-promotion.test.ts`
+- `npx vitest run` — **168/168 passing**, 22 files (added `ownership-error.test.ts`, 4 cases, on top
+  of LW-W5-R1's 164)
 - `npm run export:web` — succeeds
-- `npx playwright test` — **10/10 passing**, both projects, including new Remember-in-story
-  regression test
-- Exact-head CI (GitHub Actions, PR #7): `31553617939` on `9108b02` (code head) and `31555941274` on
-  `ebfc2aa` (final PR head, docs-only) — both **SUCCESS**
+- `npx playwright test` — **12/12 passing**, both projects (added the hydration regression test on
+  top of LW-W5-R1's 10)
+- `git diff --check` — clean (no whitespace errors)
+- Exact-head CI (GitHub Actions, PR #7), all **SUCCESS**:
+  - `31553617939` on `9108b02` (LW-W5-R1 code head)
+  - `31555941274`, `31556108528` on `ebfc2aa`/`478ce6e` (LW-W5-R1 docs-only)
+  - `31570250910` on `5bfcf75` (LW-W5-R1-R1 code head — current FINAL_PR_HEAD)
 - Raw output: [test-results.txt](test-results.txt), [ci-results.txt](ci-results.txt)
 
 ## U. Implementation head
 
-**IMPLEMENTATION_CODE_HEAD** = `9108b02920c3b1d81329e9422496940a7d9aa494` — the code that was
-audited, tested, deployed to `character-chat` v7, deployed to Cloudflare production, and
-live-verified. 10 commits over `origin/main` @ `f608f0d`.
+**IMPLEMENTATION_CODE_HEAD = `5bfcf750ddb5fce3c4cdb804482299da154016cd`** — the last commit that
+changed source in either closeout pass (the LW-W5-R1-R1 cross-guest fix + hydration regression
+test). Audited, tested, deployed to `character-chat` v8, deployed to Cloudflare production, and
+live-verified. 11 commits over `origin/main` @ `f608f0d` (10 from LW-W5-R1, 1 from LW-W5-R1-R1; the
+LW-W5-R1 evidence-docs commits `ebfc2aa`/`478ce6e` sit between them and changed no source).
 
-**FINAL_PR_HEAD** = `ebfc2aafb6badf0d38cd70d826813cfb7c9d9c11` — one additional evidence-docs-only
-commit recording the live-verification results themselves (this HANDOFF.md, production-smoke.md,
-ci-results.txt, git-status.txt, git-log.txt). No source file changed between these two commits —
-confirmed by the commit's own diffstat (5 files, all under `handoff/LW-W5-R1/`).
+**FINAL_PR_HEAD**: one further evidence-docs-only commit on top of `5bfcf75` (this update). Exact
+SHA reported in the closing chat message and in [git-log.txt](git-log.txt)/
+[git-status.txt](git-status.txt), both regenerated after that commit exists — not predicted here.
 
-See [git-log.txt](git-log.txt) and [git-diff.patch](git-diff.patch) (the patch is generated against
-the code head, `9108b02`, since that's the diff that matters for review — the docs-only commit on
-top is evidence, not implementation).
+See [git-diff.patch](git-diff.patch) (generated against the code head, `5bfcf75`, since that's the
+diff that matters for review).
 
 ## V. Draft PR
 
@@ -224,44 +275,47 @@ entry count, and SHA-256 of `Lorewish_LW-W5-R1_handoff.zip`.
 
 ## X. Known limitations
 
+Resolved in LW-W5-R1-R1 (kept here for the audit trail, not open items):
+
+- ~~Cross-guest access denial returns a generic `500 internal_error`~~ — **fixed**. Now returns
+  `403 forbidden`, live-verified against the redeployed function (see §K2).
+- ~~A React hydration console warning appears during client-side navigation~~ — **investigated
+  exhaustively and found not reproducible** under five independent methods, including the exact
+  original sequence run against real production. Most likely a one-time tooling artifact, not an
+  application defect (see §K2 and `production-smoke.md` §6). A permanent regression test now guards
+  against a genuine future occurrence.
+
+Still open, carried forward unchanged from LW-W5-R1:
+
 - **No scene-transition motion was implemented.** `docs/MOTION_GUIDELINES.md` specifies a detailed
   contract (scene fade/slide, choice micro-feedback, Reduce Motion fallback), but nothing in the
   current codebase animates beyond a pressed-opacity change. Implementing it correctly (performance
   budget, Reduce Motion collapse, no more than one concurrent animation) is real production work, not
-  a tightening pass — deliberately left for a dedicated future task rather than rushed under this
-  audit-driven pass. Nothing regresses because nothing animates today; `useReducedMotion` is in place
-  ready for when this work happens.
+  a tightening pass — deliberately left for a dedicated future task. Nothing regresses because
+  nothing animates today; `useReducedMotion` is in place ready for when this work happens.
 - **Screen-reader-specific manual testing was not performed.** Accessibility verification in this
   pass was accessibility-tree- and computed-style-based (roles, states, focus outlines, contrast
   ratios), not assistive-technology-based (no VoiceOver/TalkBack/NVDA pass). Flagged honestly rather
   than claimed.
-- **The interactive Browser pane stopped compositing frames mid-session** (see `browser-e2e.md`).
-  Verification continued via read-only DOM/accessibility-tree tools and via Playwright's independent
-  headless capture, which is what actually caught the Home CTA bug — but this means the "manual
-  walkthrough" portion of QA was cut shorter than originally planned and automated coverage carried
-  more of the burden than intended.
-- **Cross-guest access denial returns a generic `500 internal_error`** rather than a clean 401/403
-  (see `production-smoke.md` §2 item 9). Access is correctly denied either way — no data crosses the
-  guest boundary — but the error shape isn't as clean as it could be. Pre-existing behavior in
-  `supabase/functions/character-chat/index.ts`'s error-message pattern-matching, not introduced by
-  W5, and out of scope for this pass ("do not redesign"). Worth a small bounded fix in a future round.
-- **A pre-existing, non-fatal React hydration console warning** (`Minified React error #418`) appears
-  during client-side in-app navigation between routes on the production build. Isolated via testing
-  fresh-tab full-page loads of every route (clean) versus in-app navigation (warning present) —
-  confirmed this predates W5 (no i18n/SSR/routing code was touched in this pass) and does not affect
-  any flow's functional success. See `production-smoke.md` §3 item 12 for the full investigation.
-  Worth a dedicated follow-up, not fixed here.
+- **The interactive Browser pane stopped compositing frames during the LW-W5-R1 session** (see
+  `browser-e2e.md`). Verification continued via read-only DOM/accessibility-tree tools and via
+  Playwright's independent headless capture. Not encountered as a blocker in LW-W5-R1-R1 (the pane
+  worked normally when used again in this pass), so likely was session-specific rather than a
+  persistent environment issue — noted for awareness, not further action.
 
 ## Y. Verdict
 
-**W5_R1_PASS.** Every item in the original closeout gate is now live-verified: local CI green on the
-exact head, browser QA green, the `character-chat` Edge Function redeployed and confirmed live, the
-Remember-in-story fix proven end-to-end against real backend data and a real page reload, actual
-Cloudflare production deployed and confirmed via deployment metadata, a bounded real-provider smoke
-pass completed (5 real calls, within the 8-call budget), no console errors on any fresh page load, no
+**W5_R1_PASS.** Every item in the original closeout gate, plus both items raised in the
+LW-W5-R1-R1 independent review, are now live-verified: local CI green on the exact head (both
+passes), browser QA green, the `character-chat` Edge Function redeployed twice and confirmed live
+each time, the Remember-in-story fix proven end-to-end against real backend data and a real page
+reload, the cross-guest error shape fixed and live-verified (`403`, not `500`), production
+client-side navigation reconfirmed console-clean after exhaustive investigation of the reported
+hydration warning, actual Cloudflare production deployed and reconfirmed via deployment metadata, no
 horizontal overflow, no auth/guest-isolation regression, and existing engine/memory/branch behavior
-intact. The two items noted above (§X) are pre-existing, non-blocking, and explicitly deferred to a
-future bounded pass — neither was introduced by this work and neither affects W5_R1_PASS.
+intact (168/168 unit tests, 12/12 e2e). The two remaining items in §X (motion, screen-reader manual
+testing) are pre-existing, non-blocking, and explicitly deferred to a future bounded pass — neither
+was introduced by this work and neither affects W5_R1_PASS.
 
 ## Z. Next task
 

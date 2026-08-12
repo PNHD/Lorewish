@@ -124,10 +124,122 @@ succeeded). A few additional in-UI "Retry" clicks against an already-failed mess
 to re-trigger generation (unchanged token/cost stats on re-inspection) and are not counted as
 additional real attempts. Well within the 8-attempt budget.
 
-## 5. Known limitation carried forward
+## 5. Known limitation carried forward (RESOLVED in LW-W5-R1-R1, see §6)
 
 Cross-guest access denial (item 9 in §2) returns a generic `500 internal_error` rather than a clean
 `401`/`403`. Access is correctly denied either way — no data leak — but the error shape could be
 friendlier. Pre-existing (the RPC's exception-message pattern-matching in
 `supabase/functions/character-chat/index.ts` predates W5), not introduced by this pass, and out of
 scope per "do not redesign" — noted for a future bounded fix.
+
+---
+
+# LW-W5-R1-R1 — Hydration Cleanup + Cross-Guest Error Shape
+
+Second live-closeout pass, addressing the two items flagged by independent review of the LW-W5-R1
+handoff: a reported React hydration console error, and the cross-guest `500` noted above.
+
+## 6. Blocker 1 — React hydration warning: investigated, not reproducible, regression-guarded
+
+**Finding: could not reproduce under any controlled condition.** Five independent reproduction
+attempts, covering every transition explicitly listed (Home → Story Setup, Story → Characters,
+Characters → Character Chat, browser back/forward, EN → VI / VI persistence):
+
+1. **Local Metro dev server** (unminified, "Development-level warnings: ON"), deterministic mocked
+   Character Chat data, full Story → Characters → Chat → browser back → browser forward → in-app
+   back-to-story sequence — clean.
+2. **Local dev server, exact new-story submit flow** (`router.replace({pathname: "/play/[runId]",
+   params})`, the specific navigation call in flight when the error was first observed) — clean.
+3. **Real production, clean Playwright automation**, Home → Quick Start → real submission →
+   Characters → Chat → back navigation → reload — clean.
+4. **Real production, the one untried variable**: switching the UI language to Vietnamese
+   *mid-session* (client re-render, no navigation) immediately before a real story submission —
+   matching the exact sequence of the original observation — clean.
+5. **Real production, the same interactive-Browser-pane tool** that originally reported the
+   error, repeating steps 1–2 of the original sequence — clean.
+6. **Comprehensive final pass**: real submission, Characters, Chat, in-app back link, real browser
+   back, real browser forward, EN→VI→EN switching, reload, and a brand-new tab confirming persisted
+   locale with zero errors — clean.
+
+**Root-cause assessment**: the original single observation is most likely one of (a) a transient
+artifact of the interactive Browser pane tool, which was independently observed to be unstable in
+that same session (frame compositing failures — "the Browser pane is not displayed" — and click
+timeouts, documented in the original `browser-e2e.md`), or (b) a stale/buffered console-message
+re-report (the console-reading tool can return a message from earlier in a tab's lifetime on every
+subsequent check, which would make a single one-time occurrence look like a "recurring on every
+navigation" pattern under repeated polling — this exact buffering behavior was independently
+confirmed earlier in the same original session for a *different*, unrelated console entry). Neither
+of these is a defect in the shipped React application.
+
+**No code fix applied** — there is no reproducible mismatch to fix, and per instruction
+("do not suppress console.error", "do not monkeypatch React warnings", "do not disable hydration",
+"fix the underlying mismatch") fabricating a change against a defect that cannot be located would be
+irresponsible, not corrective.
+
+**Regression guard added instead**: `tests/e2e/story-setup.spec.ts` — "Home -> Setup client-side
+navigation, EN/VI persistence, and browser back/forward stay console-clean (LW-W5-R1-R1)" —
+asserts zero console errors/warnings/page-errors across exactly this transition set. It passes
+(both desktop-chromium and mobile-chromium) and will catch a *real* future hydration regression
+even though it doesn't correspond to a bug found in this pass.
+
+**Live re-verification after this pass's deploy**: production client-side navigation (Home ↔ Setup,
+EN/VI switching, real Quick Start submission, Story → Characters → Chat, browser back/forward,
+reload, fresh-tab locale persistence) was re-run against the newly deployed build —
+**zero console errors** in every pass.
+
+## 7. Blocker 2 — Cross-guest error shape: fixed
+
+Root cause: `character-chat`'s `open()` and `send()` threw the raw Postgres exception text on an
+ownership-check failure (e.g. `"chat thread: run not owned"`), which matched neither the
+`"unauthenticated"` nor `"forbidden"` literal strings the edge function's catch block pattern-matches
+on, so it fell through to a generic `500 internal_error`. `loadThread()`'s own separate ownership
+check already used the literal `"forbidden"` string correctly — only the two RPC-based checks had
+the gap.
+
+Fix: `supabase/functions/_shared/engine/ownership-error.ts` (new, Deno-import-free, unit tested)
+maps any Postgres error with `code === "42501"` (`insufficient_privilege` — every cross-owner RPC
+guard across the character-chat migrations already raises this exact SQLSTATE) to the literal
+`"forbidden"` message, reused at both `open()`'s and `send()`'s RPC call sites. Matching on the
+SQLSTATE rather than exception wording means this mapping won't silently break if a future migration
+rewords an exception message. No schema change. No ownership check weakened — access was already
+correctly denied before this fix; only the HTTP status/error code returned was wrong.
+
+**Live-verified after redeploy** (`character-chat` v7 → v8): a fresh, independent anonymous guest
+attempting `{"action":"open"}` against a different guest's `player_run_id`/`character_id` now
+receives `403 {"error":"forbidden"}` (previously `500 {"error":"internal_error"}`). No data returned
+either way — this fix only corrects the response shape.
+
+## 8. Deployment record (this pass)
+
+- `character-chat`: v7 → **v8**, `ACTIVE`, `verify_jwt: true` unchanged. Downloaded deployed source
+  confirmed byte-identical to committed source (`git diff` against `supabase/functions/`: empty).
+- Cloudflare Pages production: new deployment **`53c0b39a-c06f-444a-9ccd-25b819490975`**,
+  **Environment: Production**, **Branch: main**, commit **`5bfcf75`** (verified via
+  `wrangler pages deployment list`, not inferred from URL). Immutable URL
+  `https://53c0b39a.lorewish.pages.dev`; stable URL `https://lorewish.pages.dev` confirmed serving
+  it (`0 files uploaded, 15 already uploaded` — build output byte-identical to the prior deployment,
+  as expected since no frontend `src/` file changed in this pass, only backend/test files).
+
+## 9. Small smoke (this pass) — no provider campaign
+
+Per instruction, real DeepSeek calls were spent only to establish new runs where needed for the
+navigation/console checks above (~3–4 real calls: two Quick Start submissions — the first completed
+successfully with a real reply respecting the configured address register, the second's timing
+didn't converge before the check window and was not retried further — and at least one real
+Character Chat send). The **Remember-in-story survives reload** check itself was **not re-run with a
+new real promotion** in this pass: `attachPromotionState`/`loadThread` (the code that check
+exercises) were not modified by this cleanup — only the ownership-error mapping and the new
+regression test were — and the deployed v8 source was confirmed byte-identical to committed source
+for those unchanged functions. §2 of this document already contains a complete, real, live proof of
+that exact mechanism (promote → server truth → real browser reload → still "Remembered", no
+duplicate fact) against the immediately prior deployment running the same unchanged code path;
+carried forward per "reuse existing W5 real-provider evidence where possible" rather than re-spending
+budget to re-demonstrate an unchanged code path.
+
+## 10. Final verdict inputs
+
+- Console-clean on production client-side navigation: **confirmed**, multiple fresh passes, zero
+  errors.
+- Cross-guest error shape: **fixed and live-verified** (`403`, not `500`).
+- No functional regression: unit tests 168/168, e2e 12/12 (both projects), typecheck/lint clean, all
+  re-verified after this pass's changes.

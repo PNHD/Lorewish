@@ -43,3 +43,67 @@ env: export DEEPSEEK_API_KEY EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY EXPO_PUBLIC_SU
 [2m   Start at [22m 08:18:53
 [2m   Duration [22m 1.67s[2m (transform 1.44s, setup 0ms, collect 3.17s, tests 455ms, environment 6ms, prepare 4.04s)[22m
 
+
+=== LW-W5-R1-R1 local gate (post cross-guest fix) ===
+--- typecheck ---
+
+> lorewish@0.1.0 typecheck
+> tsc --noEmit
+
+--- lint ---
+
+> lorewish@0.1.0 lint
+> expo lint
+
+env: load .env.local
+env: export DEEPSEEK_API_KEY EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY EXPO_PUBLIC_SUPABASE_URL GEMINI_API_KEY
+--- vitest ---
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mE:/AIProjects/Lorewish[39m
+
+ [32m✓[39m supabase/functions/_shared/engine/address-terms.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+ [32m✓[39m src/auth/guest-session.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/quality-gate.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/provider-budget.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/generation-validation.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/alpha-access.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/providers.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 53[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/runtime-character.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/character-memory.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/character-chat.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 46[2mms[22m[39m
+ [32m✓[39m src/features/story-setup/model.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/context-assembler.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/w3-r2-migration-contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/migration-contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m src/lib/story-engine.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/i18n/guest-beta-copy.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/w4-migration-contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/repository.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/cors.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/ownership-error.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m supabase/functions/_shared/engine/chat-memory-promotion.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m22 passed[39m[22m[90m (22)[39m
+[2m      Tests [22m [1m[32m168 passed[39m[22m[90m (168)[39m
+[2m   Start at [22m 13:41:48
+[2m   Duration [22m 1.71s[2m (transform 1.27s, setup 0ms, collect 3.02s, tests 435ms, environment 8ms, prepare 4.77s)[22m
+
+--- playwright ---
+
+Running 12 tests using 6 workers
+
+  ok  5 [desktop-chromium] › tests\e2e\story-setup.spec.ts:36:5 › manual UI language switch renders Vietnamese setup copy (1.7s)
+  ok  2 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:140:5 › Remember in story shows a stable Remembered state after reload (LW-W5-R1 P0-3) (2.3s)
+  ok  3 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:158:5 › Character directory and branch-bound Chat persist across reload (2.6s)
+  ok  4 [desktop-chromium] › tests\e2e\story-setup.spec.ts:43:5 › Home -> Setup client-side navigation, EN/VI persistence, and browser back/forward stay console-clean (LW-W5-R1-R1) (2.6s)
+  ok  1 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:112:5 › Story reader remains editorial, long-session safe, and duplicate-submit resistant (2.8s)
+  ok  6 [desktop-chromium] › tests\e2e\story-setup.spec.ts:9:5 › Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe (2.8s)
+  ok  7 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:112:5 › Story reader remains editorial, long-session safe, and duplicate-submit resistant (2.0s)
+  ok  8 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:140:5 › Remember in story shows a stable Remembered state after reload (LW-W5-R1 P0-3) (1.9s)
+  ok 11 [mobile-chromium] › tests\e2e\story-setup.spec.ts:36:5 › manual UI language switch renders Vietnamese setup copy (1.9s)
+  ok 10 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:158:5 › Character directory and branch-bound Chat persist across reload (2.6s)
+  ok  9 [mobile-chromium] › tests\e2e\story-setup.spec.ts:9:5 › Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe (2.7s)
+  ok 12 [mobile-chromium] › tests\e2e\story-setup.spec.ts:43:5 › Home -> Setup client-side navigation, EN/VI persistence, and browser back/forward stay console-clean (LW-W5-R1-R1) (2.4s)
+
+  12 passed (9.4s)

@@ -1,640 +1,3 @@
-diff --git a/handoff/LW-W5-R1/accessibility-review.md b/handoff/LW-W5-R1/accessibility-review.md
-new file mode 100644
-index 0000000..00b435a
---- /dev/null
-+++ b/handoff/LW-W5-R1/accessibility-review.md
-@@ -0,0 +1,92 @@
-+# LW-W5-R1 — Accessibility Review
-+
-+Scope: Part 19 baseline (semantic headings, labels, keyboard navigation, focus visibility, correct
-+button roles, selected/expanded state, accessible validation errors, reasonable contrast, minimum
-+practical tap targets, Reduce Motion). Behavior assertions preferred over exhaustive snapshotting.
-+
-+## Semantic headings
-+
-+Every primary page title now carries `accessibilityRole="header"`. Before this pass, three of six
-+main screens (Home, Account, Quick/Advanced Setup) were missing it while Story/Characters/Character
-+Chat already had it — fixed for consistency (`src/screens/home/index.tsx`,
-+`src/screens/account/index.tsx`, `src/screens/play/new-story.tsx`). Verified live: after the fix, the
-+accessibility tree for `/play` reports `heading "Start a new story"` where it previously reported a
-+plain `generic` node.
-+
-+## Keyboard navigation and focus visibility
-+
-+Every interactive control touched in this pass (`ChoicePill`, `ActionButton`, `ChoiceList` items, the
-+composer's Send button, `LanguageSwitcher`, `ScreenHeaderBar`'s `BackLink`, the "Talk to character"
-+and "Remember in story" buttons, `DisclosureSection`'s toggle) now renders a visible `colors.focus`
-+outline (`src/theme/interactive.ts` → `focusRingStyle`) instead of relying on an inconsistent
-+browser default. Verified live by tabbing through `/play` with the keyboard and reading
-+`getComputedStyle(document.activeElement)`: a focused `ChoicePill` reported
-+`outlineColor: rgb(61, 110, 133)` (`#3D6E85`, the light-mode `colors.focus` token), `outlineStyle:
-+solid`, confirming the custom ring — not the browser default — is what's now shown.
-+
-+`focusRingStyle` is web-only in effect (react-native-web's `Pressable` render-prop state includes
-+`focused`; native `Pressable` never sets it, so the derived style is a no-op there by construction —
-+no platform branching needed at call sites).
-+
-+## Correct roles and selected/expanded state
-+
-+- Radio-style selectors (`ChoicePill`, `OptionRow`, `LanguageSwitcher`) already carried
-+  `accessibilityRole="radio"` + `accessibilityState={{ checked }}` / `aria-checked` before this pass;
-+  unchanged, still correct.
-+- `DisclosureSection`'s toggle carries `accessibilityRole="button"` +
-+  `accessibilityState={{ expanded }}` — unchanged, verified still correct after adding hover/focus
-+  styling on top.
-+- `StateChangePanel`'s collapse toggle: unchanged, pre-existing and correct.
-+
-+## Tap targets
-+
-+`ChoicePill` and `LanguageSwitcher` radios rendered at roughly 28px tall — short of the ~44px
-+guidance. Rather than enlarging the visible pill (which would work against "no oversized promotional
-+controls," Part 8), both now set `hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}`, growing the
-+touch target without changing what's drawn. Other interactive controls (`ChoiceList` items, action
-+buttons) already used `padding: spacing.md` (12px), giving an effective ~44px height without changes.
-+
-+## Color contrast
-+
-+New color tokens (`warning`, `success`, `focus`) checked against every surface they're used on
-+(WCAG 2.1 contrast ratio, formula per the spec, not a third-party tool):
-+
-+| Pair | Ratio | Passes AA (4.5:1 text) |
-+|---|---|---|
-+| light `warning` (#8A6A2E) on `background` (#FBF8F4) | 4.74 | yes |
-+| light `warning` on `surface` (#FFFFFF) | 5.02 | yes |
-+| dark `warning` (#D9B36E) on `background` (#171310) | 9.34 | yes |
-+| dark `warning` on `surface` (#211C17) | 8.55 | yes |
-+| light `success` (#4C6B5E) on `background` | 5.55 | yes |
-+| dark `success` (#8FB4A2) on `background` | 8.11 | yes |
-+| light `focus` (#3D6E85) on `surface` | 5.57 | yes |
-+| dark `focus` (#7EB4CE) on `surface` (#2A231D) | 6.86 | yes |
-+
-+The tightest pair (light `warning` on `background`, 4.74) still clears the 4.5:1 AA threshold for
-+normal text. `danger`, existing text colors, and `playerAction` were not changed and were already in
-+use before this pass.
-+
-+## Accessible validation errors
-+
-+Advanced Setup's required-field errors (`SetupTextField`) render inline, adjacent to the field,
-+`color="danger"`, unchanged by this pass — verified still correct. Not re-litigated since no defect
-+was found here.
-+
-+## Reduce Motion
-+
-+`docs/MOTION_GUIDELINES.md` §4 specifies a Reduce Motion contract, but no scene-transition or other
-+new motion was implemented in this pass (see visual-review.md "What was deliberately left alone" and
-+HANDOFF.md Known Limitations) — there is currently nothing in the app that *needs* to respect Reduce
-+Motion, so nothing regresses. `src/hooks/use-reduced-motion.ts` was added ahead of that future work:
-+it wraps `AccessibilityInfo.isReduceMotionEnabled()` / the `reduceMotionChanged` event, which
-+react-native-web backs with `matchMedia('(prefers-reduced-motion: reduce)')` — one hook covers both
-+native and web, verified by reading react-native-web's own `AccessibilityInfo` source
-+(`node_modules/react-native-web/dist/cjs/exports/AccessibilityInfo/index.js`).
-+
-+## Not covered in this pass
-+
-+- Screen-reader-specific manual testing (VoiceOver/TalkBack/NVDA) was not performed live — this
-+  review is accessibility-tree- and computed-style-based, not assistive-technology-based. Flagging
-+  honestly rather than claiming coverage that wasn't exercised.
-+- No automated axe-core/lighthouse accessibility audit was run against the deployed build in this
-+  pass; the checks above are targeted at what this pass actually changed.
-diff --git a/handoff/LW-W5-R1/browser-e2e.md b/handoff/LW-W5-R1/browser-e2e.md
-new file mode 100644
-index 0000000..e7a8b15
---- /dev/null
-+++ b/handoff/LW-W5-R1/browser-e2e.md
-@@ -0,0 +1,56 @@
-+# LW-W5-R1 — Browser QA
-+
-+## Automated (Playwright, deterministic/mocked — no real provider calls)
-+
-+`npx playwright test` — projects: `desktop-chromium` (Desktop Chrome profile), `mobile-chromium`
-+(Pixel 7 device profile). Full raw output: [ci-results.txt](ci-results.txt).
-+
-+**10/10 passed**, both projects:
-+
-+- `story-setup.spec.ts` — Quick Start / Advanced Setup remain public/guest-first/responsive/
-+  draft-safe; manual EN/VI switch.
-+- `roleplay-chat.spec.ts` — Story reader stays editorial and duplicate-submit resistant on a
-+  long-paste custom action; Character directory + branch-bound Chat persist across reload; **new in
-+  this pass**: "Remember in story" shows a stable "Remembered in story" state after reload
-+  (LW-W5-R1 P0-3 regression test — promotes a candidate, reloads, asserts the label didn't revert).
-+
-+All three specs assert `document.documentElement.scrollWidth - clientWidth <= 1` (no horizontal
-+overflow) and an empty console-error/warning array where applicable.
-+
-+## Manual walkthrough (interactive Browser pane, before the pane stopped compositing)
-+
-+Performed against the local dev server (`npx expo start --web`) before an environment issue (see
-+below) limited further interactive verification to Playwright:
-+
-+- Home: confirmed single CTA hierarchy, guest-persistence caption, EN/VI switch reflows instantly.
-+- Quick Start → Advanced Setup: confirmed progressive disclosure, draft resume via localStorage
-+  (reloaded mid-form, Advanced Setup + entered premise both restored).
-+- Advanced Setup, VI content language: confirmed the four-row address-term fix live, both before
-+  (`tôi · cậu · tôi · cậu`, the bug) and after (labeled rows) the fix.
-+- `/preview` (deterministic offline fixture): walked a full turn — filled the composer, sent a
-+  custom action, confirmed the player-action banner, narrative, dialogue, and state-change panel all
-+  rendered in the correct fixed order with no console errors.
-+- Keyboard navigation: tabbed through `/play`'s Advanced Setup form, confirmed the new
-+  `colors.focus` outline appears on each control (verified via `getComputedStyle`, see
-+  accessibility-review.md).
-+
-+## Environment limitation encountered
-+
-+Partway through this session the interactive Browser pane stopped compositing frames —
-+`computer.screenshot` and `computer.left_click` (coordinate- and ref-based) both began failing with
-+"the Browser pane is not displayed" / "currently hidden," reproduced across a page reload, a fresh
-+dev-server restart, and a brand-new tab. Read-only tools (`read_page`, `get_page_text`,
-+`javascript_exec`, `read_console_messages`) continued to work throughout and were used for the
-+remainder of interactive verification (see responsive-review.md and accessibility-review.md for what
-+they covered). For pixel-level screenshot evidence, `scripts/capture-w5-screenshots.mjs` drives
-+Playwright's own headless Chromium directly — a separate mechanism from the interactive pane — and
-+was unaffected; it produced the screenshot pack in `handoff/LW-W5-R1/screenshots/` and is what
-+actually caught the Home CTA rendering bug documented in `visual-review.md`.
-+
-+## Not run in this pass
-+
-+- Real DeepSeek generation calls for UI-state coverage — intentionally avoided per the task's cost
-+  guidance ("Real DeepSeek calls are NOT necessary for every UI state... Do not spend provider budget
-+  merely for screenshots"). The bounded production smoke pass (max 8 real attempts) is the only place
-+  real provider calls are spent, and only after this branch is deployed — see `production-smoke.md`.
-+- Native iOS/Android — out of scope for W5 (web-first policy).
-diff --git a/handoff/LW-W5-R1/ci-results.txt b/handoff/LW-W5-R1/ci-results.txt
-new file mode 100644
-index 0000000..055003b
---- /dev/null
-+++ b/handoff/LW-W5-R1/ci-results.txt
-@@ -0,0 +1,47 @@
-+=== web export ===
-+
-+> lorewish@0.1.0 export:web
-+> expo export -p web && node scripts/write-web-routes.mjs
-+
-+env: load .env.local
-+env: export DEEPSEEK_API_KEY EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY EXPO_PUBLIC_SUPABASE_URL GEMINI_API_KEY
-+Using src/app as the root directory for Expo Router.
-+React Compiler enabled
-+Starting Metro Bundler
-+
-+Static rendering is enabled. Learn more: https://docs.expo.dev/router/web/static-rendering/
-+λ Bundled 1550ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1164 modules)
-+Web Bundled 1814ms node_modules\expo-router\entry.js (1055 modules)
-+
-+› web bundles (1):
-+_expo/static/js/web/entry-556e5756542dbe08ec15ce98bbb3c6fc.js (1.7MB)
-+
-+› Static routes (9):
-+/ (index) (22KB)
-+/account (20KB)
-+/preview (24KB)
-+/_sitemap (17KB)
-+/+not-found (17KB)
-+/play (28KB)
-+/play/[runId] (19KB)
-+/play/[runId]/characters (19KB)
-+/play/[runId]/characters/[characterId] (19KB)
-+
-+Exported: dist
-+
-+=== playwright e2e ===
-+
-+Running 10 tests using 6 workers
-+
-+  ok  6 [desktop-chromium] › tests\e2e\story-setup.spec.ts:36:5 › manual UI language switch renders Vietnamese setup copy (2.3s)
-+  ok  2 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:112:5 › Story reader remains editorial, long-session safe, and duplicate-submit resistant (3.2s)
-+  ok  3 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:140:5 › Remember in story shows a stable Remembered state after reload (LW-W5-R1 P0-3) (3.2s)
-+  ok  1 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:158:5 › Character directory and branch-bound Chat persist across reload (3.5s)
-+  ok  4 [desktop-chromium] › tests\e2e\story-setup.spec.ts:9:5 › Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe (3.5s)
-+  ok  5 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:112:5 › Story reader remains editorial, long-session safe, and duplicate-submit resistant (3.7s)
-+  ok  9 [mobile-chromium] › tests\e2e\story-setup.spec.ts:36:5 › manual UI language switch renders Vietnamese setup copy (1.5s)
-+  ok  7 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:158:5 › Character directory and branch-bound Chat persist across reload (2.2s)
-+  ok 10 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:140:5 › Remember in story shows a stable Remembered state after reload (LW-W5-R1 P0-3) (1.8s)
-+  ok  8 [mobile-chromium] › tests\e2e\story-setup.spec.ts:9:5 › Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe (2.3s)
-+
-+  10 passed (10.1s)
-diff --git a/handoff/LW-W5-R1/responsive-review.md b/handoff/LW-W5-R1/responsive-review.md
-new file mode 100644
-index 0000000..08eb36f
---- /dev/null
-+++ b/handoff/LW-W5-R1/responsive-review.md
-@@ -0,0 +1,66 @@
-+# LW-W5-R1 — Responsive Review
-+
-+## Desktop (no longer stretched mobile)
-+
-+Every screen's chrome bar (back link + language switcher) previously spanned the full page width
-+edge-to-edge while the body content below it sat in a centered `readingWidth.maxContentWidth` (640px)
-+column — on a wide viewport this produced two different widths on the same screen, the classic
-+"mobile page stretched wide" tell (ux-audit.md P1-6).
-+
-+Fix: `src/components/screen-header-bar.tsx` (`ScreenHeaderBar`) keeps the bar's border/background
-+full-bleed (a normal desktop convention) but centers its *content* to the same column width as the
-+body. Verified live at 1280×800: the back link's bounding rect reported `x: 320`, exactly
-+`(1280 - 640) / 2` — matching the content column's left edge below it — where before the fix it sat
-+flush at the page's 16px padding regardless of viewport width.
-+
-+The reading-column width cap itself was not changed — it's contractually required
-+(`docs/UX_CONTRACT.md` §11, "Desktop web... uses a constrained max-width reading column... not full
-+bleed") — the fix was to bring the chrome into alignment with it, not to widen the column.
-+
-+Consolidated six near-identical header blocks (`run.tsx`, `new-story.tsx`, `characters.tsx`,
-+`character-chat.tsx`, `account/index.tsx`, `preview/index.tsx`) into the one shared component in the
-+same change.
-+
-+## Mobile — Pixel 7 class (~412×915) and ~360px narrow
-+
-+Checked live (`document.documentElement.scrollWidth` vs `window.innerWidth`, must be equal — any gap
-+means horizontal overflow) at:
-+
-+| Surface | 375×812 | 360×780 | Notes |
-+|---|---|---|---|
-+| Home | ✓ no overflow | ✓ no overflow | Demoted preview link doesn't wrap awkwardly at either width. |
-+| Quick Start (collapsed) | ✓ | ✓ | |
-+| Advanced Setup, expanded, EN | — | ✓ | All disclosure sections open simultaneously; no overflow. |
-+| Advanced Setup, address section expanded, EN copy | — | ✓ (see below) | Four labeled rows fit without wrapping the label/value pair awkwardly at 360px. |
-+| `/preview` (Story reader proxy) | ✓ | ✓ | Choice buttons, composer, dialogue indentation all fit. |
-+
-+The address-term expansion at 360px was specifically re-verified after the P0-2 fix (the four-row
-+layout is new in this pass) — confirmed via
-+`document.documentElement.scrollWidth === window.innerWidth` immediately after expanding the section,
-+both before and after switching content language to Vietnamese.
-+
-+Additionally verified via the existing Playwright e2e suite (`tests/e2e/*.spec.ts`), which runs every
-+test on both a `desktop-chromium` and a `mobile-chromium` (Pixel 7 device profile) project and
-+explicitly asserts
-+`document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1` on the Story
-+reader, Character Chat, and Quick Start/Advanced Setup screens — this assertion passed on both
-+projects for every test in the suite (10/10).
-+
-+## Known tooling limitation encountered during this pass
-+
-+The interactive Browser pane in this session could not composite frames (`computer.screenshot` and
-+`computer.left_click` both errored/timed out with "Browser pane is not displayed/hidden," even after
-+restarting the dev server and opening a fresh tab). Layout verification for this review therefore
-+relied on: (a) `document.documentElement.scrollWidth`/`clientWidth` comparisons via
-+`javascript_exec`, (b) the accessibility tree (`read_page`) for structural/positional checks (e.g.
-+the header alignment `x: 320` measurement above), and (c) Playwright's own headless screenshot
-+capture (`scripts/capture-w5-screenshots.mjs`), which was unaffected by the pane issue and produced
-+the actual pixel evidence in `handoff/LW-W5-R1/screenshots/` — see `visual-review.md`.
-+
-+## Not re-tested in this pass (unchanged by it)
-+
-+- Native iOS/Android safe-area behavior — `native remains untouched` per the W5 scope; no native
-+  build was run.
-+- Real mobile-browser on-screen-keyboard resize behavior — the composer's keyboard-safety contract
-+  (`KeyboardAvoidingView`, draft persistence) was not modified in this pass, only its visual chrome
-+  and hover/focus states were, so it was not re-verified beyond the existing e2e coverage.
-diff --git a/handoff/LW-W5-R1/screenshots/desktop-advanced-setup.png b/handoff/LW-W5-R1/screenshots/desktop-advanced-setup.png
-new file mode 100644
-index 0000000..4b49012
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/desktop-advanced-setup.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/desktop-character-chat.png b/handoff/LW-W5-R1/screenshots/desktop-character-chat.png
-new file mode 100644
-index 0000000..e89badc
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/desktop-character-chat.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/desktop-characters.png b/handoff/LW-W5-R1/screenshots/desktop-characters.png
-new file mode 100644
-index 0000000..1a3cf25
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/desktop-characters.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/desktop-home.png b/handoff/LW-W5-R1/screenshots/desktop-home.png
-new file mode 100644
-index 0000000..2f1fd39
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/desktop-home.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/desktop-story.png b/handoff/LW-W5-R1/screenshots/desktop-story.png
-new file mode 100644
-index 0000000..edec8bc
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/desktop-story.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/mobile-advanced-setup-vi.png b/handoff/LW-W5-R1/screenshots/mobile-advanced-setup-vi.png
-new file mode 100644
-index 0000000..bcc8ac9
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/mobile-advanced-setup-vi.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/mobile-allowance-exhausted.png b/handoff/LW-W5-R1/screenshots/mobile-allowance-exhausted.png
-new file mode 100644
-index 0000000..dfa9642
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/mobile-allowance-exhausted.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/mobile-character-chat.png b/handoff/LW-W5-R1/screenshots/mobile-character-chat.png
-new file mode 100644
-index 0000000..d579d04
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/mobile-character-chat.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/mobile-home.png b/handoff/LW-W5-R1/screenshots/mobile-home.png
-new file mode 100644
-index 0000000..e9f842a
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/mobile-home.png differ
-diff --git a/handoff/LW-W5-R1/screenshots/mobile-story.png b/handoff/LW-W5-R1/screenshots/mobile-story.png
-new file mode 100644
-index 0000000..cf6b43b
-Binary files /dev/null and b/handoff/LW-W5-R1/screenshots/mobile-story.png differ
-diff --git a/handoff/LW-W5-R1/test-results.txt b/handoff/LW-W5-R1/test-results.txt
-new file mode 100644
-index 0000000..7817d70
---- /dev/null
-+++ b/handoff/LW-W5-R1/test-results.txt
-@@ -0,0 +1,45 @@
-+=== typecheck ===
-+
-+> lorewish@0.1.0 typecheck
-+> tsc --noEmit
-+
-+
-+=== lint ===
-+
-+> lorewish@0.1.0 lint
-+> expo lint
-+
-+env: load .env.local
-+env: export DEEPSEEK_API_KEY EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY EXPO_PUBLIC_SUPABASE_URL GEMINI_API_KEY
-+
-+=== vitest ===
-+
-+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mE:/AIProjects/Lorewish[39m
-+
-+ [32m✓[39m src/auth/guest-session.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 72[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/quality-gate.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 20[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/context-assembler.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 13[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/address-terms.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 51[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/provider-budget.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 15[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/generation-validation.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 30[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/providers.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 51[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/runtime-character.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 14[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/character-memory.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 32[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/character-chat.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 36[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/turn-pipeline.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 47[2mms[22m[39m
-+ [32m✓[39m src/features/story-setup/model.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 8[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/w4-migration-contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 6[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/w3-r2-migration-contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 6[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/repository.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
-+ [32m✓[39m src/lib/story-engine.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 7[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/migration-contract.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 6[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/alpha-access.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 13[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/engine/chat-memory-promotion.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 9[2mms[22m[39m
-+ [32m✓[39m src/i18n/guest-beta-copy.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 5[2mms[22m[39m
-+ [32m✓[39m supabase/functions/_shared/cors.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 5[2mms[22m[39m
-+
-+[2m Test Files [22m [1m[32m21 passed[39m[22m[90m (21)[39m
-+[2m      Tests [22m [1m[32m164 passed[39m[22m[90m (164)[39m
-+[2m   Start at [22m 08:18:53
-+[2m   Duration [22m 1.67s[2m (transform 1.44s, setup 0ms, collect 3.17s, tests 455ms, environment 6ms, prepare 4.04s)[22m
-+
-diff --git a/handoff/LW-W5-R1/ux-audit.md b/handoff/LW-W5-R1/ux-audit.md
-new file mode 100644
-index 0000000..cbf54c0
---- /dev/null
-+++ b/handoff/LW-W5-R1/ux-audit.md
-@@ -0,0 +1,169 @@
-+# LW-W5-R1 — UX Audit
-+
-+Method: local web build (`npx expo start --web`) walked via accessibility-tree reads and rendered
-+text extraction at desktop (1280×720), 375×812 (Pixel-7-class), and 360×780 viewports, cross-checked
-+against source for every screen in `src/screens`, `src/features/story-setup`,
-+`src/components/reading`, and the relevant Supabase edge function / migration for anything that
-+looked like a client-only workaround. Pixel screenshot capture (`computer.screenshot`) was
-+unavailable in this session — the Browser pane did not composite frames non-interactively. All
-+findings below are evidence-backed by rendered DOM/accessibility-tree output or source, not
-+guesswork; screenshot capture is retried in Part 24 and the visual-review doc notes the outcome.
-+
-+Baseline audited: `feature/lw-w5-product-ux` at `f608f0d` (origin/main, LW-W4 merge), before any W5
-+change.
-+
-+Overall impression: this codebase is materially more mature than a typical "prototype" baseline.
-+`docs/UX_CONTRACT.md` and `docs/MOTION_GUIDELINES.md` are detailed, behaviorally testable contracts,
-+and the current implementation already honors most of them precisely (five-channel scene rendering,
-+fixed vertical order, non-blocking allowance framing, branch-scoped chat, EN/VI copy parity, no
-+numeric cost badges). W5 work should tighten and finish, not rebuild.
-+
-+## P0 — usability defects (must fix)
-+
-+### P0-1. Home foregrounds `/preview` as a second primary CTA
-+`src/screens/home/index.tsx:75-93` renders "Open the offline preview" as a full-size pill button with
-+its own caption, visually equal in weight to "START A STORY". The new product direction is explicit
-+that `/preview` is internal QA/demo infrastructure and must not be foregrounded. A first-time visitor
-+currently has two equally weighted "start" buttons and no way to tell which one is the product.
-+**Fix**: keep exactly one primary action (Start a Story); demote preview to a small, clearly
-+secondary/internal link or remove it from Home's primary path entirely.
-+
-+### P0-2. Vietnamese address-term summary is unlabeled and ambiguous
-+`src/features/story-setup/advanced-setup-form.tsx:134-136` renders the resolved preset as
-+`Object.values(...).join(" · ")`, e.g. for `tôi_cậu`:
-+```
-+tôi · cậu · tôi · cậu
-+```
-+confirmed live in the running app (Advanced Setup → Tiếng Việt → Cách xưng hô tiếng Việt). This is
-+four unlabeled tokens where two pairs are identical strings in a different role ("tôi" as
-+speaker-self vs. "tôi" as target-self). A Vietnamese-fluent player cannot recover which slot means
-+what without already knowing the underlying `speakerSelfReference` / `speakerAddressesTargetAs` /
-+`targetSelfReference` / `targetAddressesSpeakerAs` model. This is exactly the confusion the new spec
-+calls out by name. **Fix**: render the four slots as four labeled rows (e.g. "Character calls you /
-+Character calls themselves / You call Character / You call yourself" or the closer Vietnamese
-+framing), reusing the same `ADDRESS_PRESETS` data — no change to the preset model itself.
-+
-+### P0-3. "Remember in story" re-offers promotion after reload despite idempotent server truth
-+`src/screens/play/character-chat.tsx:33` tracks promoted memory candidates in
-+`useState<Set<string>>(new Set())` — pure client state, reset to empty on every mount/reload.
-+`promoteChatMemory` (`src/lib/character-chat.ts:69-79`) calls the `lw_promote_chat_memory` RPC, which
-+**is** already idempotent server-side: `supabase/migrations/20260811075526_..._roleplay_chat_runtime_characters.sql:510-512`
-+short-circuits and returns the existing `canon_facts` row when one already exists for that
-+`(source_chat_message_id, source_chat_candidate_index)` pair — so calling promote twice is safe, but
-+nothing tells the client this already happened. `SupabaseCharacterChatRepository.loadThread`
-+(`supabase/functions/_shared/engine/supabase-chat-repository.ts:55-90`) returns raw
-+`character_chat_messages` rows including their `memory_candidates` JSON, with no join against
-+`canon_facts` to report which candidates are already canon. Result: after a reload, a
-+already-remembered fact shows "Remember in story" again instead of "Remembered in story", even
-+though clicking it again is harmless (it just re-returns the same row) — the bug is purely a missing
-+read, not a double-write risk. **Fix scoped in Part K below** (server truth, additive, no schema
-+change).
-+
-+## P1 — product polish
-+
-+### P1-1. Replay-from-here affordance density on long stories
-+`src/screens/play/run.tsx:257-265` renders a full-width "Replay from here" secondary button under
-+**every** historical scene in the reading view (not just the current one). On a story with many
-+scenes this becomes a repeated, always-visible control competing with narrative on every scroll
-+screenful — exactly the density problem the spec flags. Discoverability must be kept; visual noise
-+should drop (hover-revealed on desktop, a subtler affordance on mobile, or folding non-current-scene
-+replay into a lighter-weight control).
-+
-+### P1-2. No hover/focus-visible treatment anywhere on web
-+Every interactive `Pressable` in the app (`choice-list.tsx`, `action-button.tsx`, `composer.web.tsx`,
-+`characters.tsx`, character-chat bubbles, setup pills) only branches on `pressed`. There is no
-+`onHoverIn`/`onHoverOut` or `:focus-visible`-equivalent styling anywhere in `src/` (confirmed by
-+grep — zero matches for hover/focus state beyond the unused `interactiveState.hoverOverlay` token
-+defined in `src/theme/tokens.ts:114` and never referenced elsewhere). On desktop web this means (a)
-+no visual affordance that a control is interactive before clicking, and (b) keyboard-only navigation
-+has no visible focus ring beyond whatever the browser UA default supplies through React Native Web,
-+which is inconsistent. This is both a desktop-polish gap (Part 17) and an accessibility gap (Part 19).
-+
-+### P1-3. Color roles incomplete for coherent quota/error differentiation
-+`src/theme/tokens.ts` `SemanticSurfaces` defines `danger` but no `warning`, `success`, or `focus`
-+role. Part 14/15 asks for a coherent, differentiated treatment of near-limit / personal-exhausted /
-+beta-capacity-reached / recoverable-error states — right now every one of those (see
-+`run.tsx:278-302`, `character-chat.tsx:143-154`) renders with the same neutral label/caption
-+treatment with no color differentiation at all, and there is no `warning` token to reach for even if
-+a screen wanted one. Needs additive tokens, not a new palette.
-+
-+### P1-4. No motion implementation despite a detailed motion contract
-+`docs/MOTION_GUIDELINES.md` specifies scene transitions, choice micro-feedback, and — critically — a
-+Reduce Motion fallback path. None of it exists yet: no scene fade/slide on turn resolution, no
-+`AccessibilityInfo`/`prefers-reduced-motion` detection anywhere in `src/` (confirmed by grep), no
-+motion tokens in `src/theme/tokens.ts`. Currently the only "motion" in the app is the existing
-+`pressedOpacity` state change. This is a real gap against the contract, not a regression — nothing
-+currently violates Reduce Motion because nothing animates yet.
-+
-+### P1-5. Border/card treatment is heavier than the "no excessive borders/cards" target
-+Every choice (`choice-list.tsx`), every character-directory entry (`characters.tsx:59`), every chat
-+bubble (`character-chat.tsx:120`), and every Advanced Setup field is its own 1px-bordered box. None
-+of this is wrong individually — it's legible — but stacked together (e.g. Character directory: every
-+entry gets its own top border *and* the "Talk to character" pill gets its own bordered container) it
-+reads closer to a card-heavy admin list than restrained in-world chrome. Worth thinning selectively
-+(spacing/typography doing more of the separation work instead of borders), not a rewrite.
-+
-+### P1-6. Desktop chrome is minimal to the point of feeling like stretched mobile
-+Confirmed by reading every screen: the only chrome on any screen is a single header row (back link +
-+language switcher) plus the reading column, centered with wide empty margins on desktop viewports.
-+The reading-column width cap itself is correct and contractually required
-+(`docs/UX_CONTRACT.md` §11) — the gap is that nothing in the surrounding chrome signals "this is a
-+considered desktop layout" versus "a mobile page that happens to be centered on a wide screen".
-+Addressable with background/frame treatment around the column, not by widening the column.
-+
-+## P2 — optional polish
-+
-+### P2-1. Account/auth surface is functionally fine, cosmetically plain
-+`src/screens/account/index.tsx` is a standard email/password form; no defects found, no changes
-+required by the closeout gate. Left alone except for any shared token/hover-state normalization that
-+naturally flows through.
-+
-+### P2-2. Accessible names rely on implicit text-content fallback
-+`OptionRow`/`ChoicePill` radios (`new-story.tsx`, `advanced-setup-form.tsx`) don't set an explicit
-+`accessibilityLabel`; the accessibility tree read during this audit did resolve their visible text
-+correctly as the accessible name in every case tested, so this is not a confirmed defect — noted only
-+because it's a common place for regressions to hide. No action required unless the accessibility pass
-+(Part 19) turns up an actual failure.
-+
-+## What's already solid (do not redesign)
-+
-+- Five-content-channel scene rendering (`story-scene-section.tsx` + friends) matches
-+  `UX_CONTRACT.md` §1A exactly: fixed vertical order, dialogue distinguished by weight/indentation
-+  (not chat bubbles), state changes in a separate collapsible chip, no bracketed notation in prose.
-+- Composer (`composer.web.tsx`, `composer-shared.ts`) already implements auto-grow, Enter=newline,
-+  explicit Send, the Ctrl/Cmd+Enter desktop accelerator guarded against IME composition, and shared
-+  behavior between Story and Character Chat. No behavioral changes needed — visual polish only.
-+  `useAutoGrowHeight` hook shared across both call sites, not reimplemented per surface.
-+  Verified: no code path clears composer draft text on a non-committed turn (see `run.tsx:117`
-+  comment; `ALLOWANCE_EXHAUSTED` preserves `composerText`).
-+  Verified: `ALLOWANCE_EXHAUSTED` / `BETA_CAPACITY_REACHED` are distinct error states end-to-end
-+  (client + i18n), not collapsed into one generic failure — the copy differentiation Part 14 asks for
-+  already exists, it just isn't colored/visually differentiated yet (see P1-3).
-+- EN/VI copy (`src/i18n/locales/en.json`, `vi.json`) is complete, parallel, and already
-+  non-jargon/non-developer-facing in both languages — verified by reading both catalogs end to end.
-+  No Supabase/DeepSeek/RLS/provider language leaks into any user-facing string.
-+- Replay language already uses "Replay from here" / "Current path" / "Alternate path" exclusively —
-+  no "fork"/"branch"/"version" leakage found in any player-facing copy string.
-+  `run_branch_id`/`parent_branch_id`/ancestry are never rendered.
-+- Guest persistence messaging already exists and is appropriately low-key (`setup.guestPersistenceNote`,
-+  `account.guestPersistence`) — present without alarm framing.
-+- No horizontal overflow found at 1280px, 375px, or 360px on Home, Quick Start / Advanced Setup
-+  (EN+VI), or the `/preview` reading screen (`document.documentElement.scrollWidth === innerWidth` in
-+  all three cases, verified live).
-+- No console errors observed during the audit walk.
-+- `CHAT_NON_CANONICAL` separation is intact and stated up front in the Chat header
-+  (`chat.nonCanonicalNotice`).
-+
-+## Not audited live (no safe/deterministic way to reach in this pass)
-+
-+- Real-provider generation failure / safety-rejection screens, and the beta-capacity-reached screen,
-+  require either a live DeepSeek call or seeded backend state; the audit instead verified these states
-+  purely through code paths (`run.tsx` `state.kind === "failed" | "allowance_exhausted" |
-+  "beta_capacity"` branches) and confirmed each renders distinct, correctly-scoped copy. Will be
-+  smoke-tested for real only in the bounded production smoke pass (max 8 real attempts), not spent
-+  here.
-+- Long-story scroll stability with many real scenes: the deterministic `/preview` fixture only has 5
-+  nodes, insufficient to exercise long-session scroll. `run.tsx`'s scene list renders unbounded
-+  history in one `ScrollView` with the composer anchored outside it as a sibling (never clipped
-+  mid-scroll) — reasoned about via code, will be additionally checked against a longer locally-seeded
-+  run during the Story Reader work in Part G/N.
-diff --git a/handoff/LW-W5-R1/visual-review.md b/handoff/LW-W5-R1/visual-review.md
-new file mode 100644
-index 0000000..e07ca97
---- /dev/null
-+++ b/handoff/LW-W5-R1/visual-review.md
-@@ -0,0 +1,80 @@
-+# LW-W5-R1 — Visual Review
-+
-+Screenshots: [handoff/LW-W5-R1/screenshots/](screenshots/) — captured via
-+`scripts/capture-w5-screenshots.mjs`, a standalone Playwright driver against the static web export
-+(`dist/`), reusing the same deterministic route-mocking pattern as `tests/e2e/roleplay-chat.spec.ts`
-+(no real network/provider calls, no cost). Desktop shots are 1280×800; mobile shots use Playwright's
-+"Pixel 7" device profile.
-+
-+**Why Playwright and not the interactive Browser pane**: the Browser pane could not composite frames
-+in this session — `computer.screenshot` and `computer.left_click` both timed out with "the Browser
-+pane is not displayed" / "currently hidden," even after restarting the dev server and opening a fresh
-+tab. Playwright's own headless capture was unaffected by this and is what actually caught the one
-+real rendering bug found in this pass (below) — the accessibility-tree-based verification used
-+earlier in the session (`read_page`, `get_page_text`) could not have caught it, since it reads text
-+content regardless of paint/opacity.
-+
-+## Home
-+
-+| | |
-+|---|---|
-+| Previous issue | `/preview` ("Open the offline preview") rendered as a second full-size pill button, equal in visual weight to "START A STORY" — two "start" buttons with no way to tell which is the product (ux-audit.md P0-1). |
-+| Change made | One primary CTA. The preview link is now a small underlined text link below the caption, visually and structurally subordinate. |
-+| Usability rationale | Story-first per the product's primary design principle — a first-time visitor should have exactly one obvious next action. `/preview` remains reachable for QA without competing for attention. |
-+
-+**Bug found and fixed during this review**: the CTA was originally wrapped in
-+`<Link href="/play" asChild><Pressable style={fn}>` — Expo Router's `Link` `asChild` cloning does not
-+compose correctly with an array-valued style function, and the button painted at near-zero opacity
-+(background and text both essentially invisible against the page background). This was invisible to
-+every text-based check performed earlier (the button's accessible name and DOM structure were
-+correct) and only surfaced once an actual screenshot was taken. Fixed by switching to a plain
-+`Pressable` + `router.push()`, the same pattern already used everywhere else in the app (verified:
-+"Talk to character" and the Advanced Setup "Start" button, both screenshotted, render correctly).
-+
-+Screenshots: `desktop-home.png`, `mobile-home.png`.
-+
-+## Quick Start / Advanced Setup
-+
-+| | |
-+|---|---|
-+| Previous issue | Vietnamese address-term summary rendered as four unlabeled raw values joined by `·` (e.g. `tôi · cậu · tôi · cậu`) — unrecoverable even for a Vietnamese-fluent reader, since two pairs share the same word in different roles (ux-audit.md P0-2). Selector pills had no hover/focus state and undersized tap targets (~28px). |
-+| Change made | The resolved preset now renders as four labeled rows ("Character calls you", "Character calls themselves", "You call the character", "You call yourself") reusing the same `ADDRESS_PRESETS` data — no change to the canonical four-direction model. All selector pills (`ChoicePill`, shared by path tabs / language / genre / tone / POV / address preset) now show a hover border, a visible keyboard-focus ring, and a larger hit-slop tap target while keeping the same compact visible size. |
-+| Usability rationale | A player must be able to tell who is speaking to whom without reverse-engineering the data model. Larger tap targets and visible focus/hover bring this surface in line with Part 19 (accessibility) and Part 17 (desktop intentionality) without changing its restrained, non-form-wizard character. |
-+
-+Screenshots: `desktop-advanced-setup.png` (English, Advanced Setup expanded, address section
-+expanded), `mobile-advanced-setup-vi.png` (same surface at Pixel 7 width).
-+
-+## Story reader
-+
-+| | |
-+|---|---|
-+| Previous issue | Every historical scene in a long story rendered its own full-size bordered "Replay from here" button — a wall of identical buttons stacking up as a story grew longer (ux-audit.md P1-1). Error/quota states (allowance exhausted, beta capacity, safety rejection, offline, generic failure) all rendered in the same default text color, with no visual differentiation between "you can act on this" and "something broke" (P1-3). Screen header (back link + language switcher) spanned full page width while the content below sat in a centered narrow reading column — desktop read as a stretched mobile page (P1-6). |
-+| Change made | Historical scenes now get a small, right-aligned, text-weight `ReplayLink` instead of a full ActionButton; the *current* scene's own forward action (checkpoint/ending) keeps full button weight, since that one is the primary next action. `warning` color (new token) now marks allowance-exhausted / beta-capacity / offline / safety-rejection; `danger` is reserved for a genuine provider/transport failure. The header bar's content is now centered to the same column width as the body below it. |
-+| Usability rationale | Replay stays discoverable on every scene (nothing was removed) without competing with the narrative for attention on re-read. Color differentiation lets a player tell at a glance whether a state needs their action versus is a real failure, per Part 14/15. Aligned chrome makes desktop read as one considered layout instead of two mismatched widths. |
-+
-+Screenshots: `desktop-story.png` (mid-story, both the small per-scene ReplayLink and the full
-+checkpoint ActionButton are visible in the same shot), `mobile-story.png`,
-+`mobile-allowance-exhausted.png` (the one quota/error-state screenshot, showing the new `warning`
-+color live).
-+
-+## Characters / Character Chat
-+
-+| | |
-+|---|---|
-+| Previous issue | Every character card carried a redundant top border directly under a section heading that already separated it. "Remember in story" state had no server-truth backing — after a reload, an already-promoted fact re-offered promotion (ux-audit.md P0-3), and once promoted, the pill was visually identical (just disabled) to its own pre-promotion state. |
-+| Change made | First character card's redundant border removed. `openCharacterChat`'s underlying read (`loadThread`) now joins `canon_facts` on the same `(source_chat_message_id, source_chat_candidate_index)` key the promotion RPC already uses for idempotency, and reports `promoted` per candidate — a reload now shows a stable "Remembered in story" pill with a distinct `success`-colored border/text at full opacity (previously washed out by `disabledOpacity`), rather than reverting to "Remember in story". |
-+| Usability rationale | The player's mental model — "I already told them to remember this" — now matches what actually happened, using server truth rather than client-only state that resets on reload (no duplicate canon facts, no fake persistence). |
-+
-+Screenshots: `desktop-characters.png`, `desktop-character-chat.png`, `mobile-character-chat.png` — all
-+three show the post-reload `promoted: true` state (mocked from server truth, not client optimism), so
-+this evidence directly demonstrates the P0-3 fix, not just the pre-promotion state.
-+
-+## What was deliberately left alone
-+
-+- The reading column's max-width cap on desktop is contractually required (`docs/UX_CONTRACT.md`
-+  §11) and was not touched — "desktop feels sparse" was addressed by aligning the surrounding chrome
-+  to that column, not by widening it.
-+- No scene-transition/motion work was added. `docs/MOTION_GUIDELINES.md` specifies a contract for it,
-+  but nothing animates today, so nothing regresses — see `handoff/LW-W5-R1/HANDOFF.md` Known
-+  Limitations for the reasoning on why this was left for a future pass rather than implemented under
-+  audit-driven time pressure.
 diff --git a/scripts/capture-w5-screenshots.mjs b/scripts/capture-w5-screenshots.mjs
 new file mode 100644
 index 0000000..7642d39
@@ -2130,19 +1493,87 @@ index 0000000..39a0dcd
 +    })),
 +  }));
 +}
+diff --git a/supabase/functions/_shared/engine/ownership-error.test.ts b/supabase/functions/_shared/engine/ownership-error.test.ts
+new file mode 100644
+index 0000000..222190a
+--- /dev/null
++++ b/supabase/functions/_shared/engine/ownership-error.test.ts
+@@ -0,0 +1,25 @@
++import { describe, expect, it } from "vitest";
++
++import { ownershipError } from "./ownership-error";
++
++describe("ownershipError (LW-W5-R1-R1 cross-guest error shape)", () => {
++  it("maps a 42501 (insufficient_privilege) Postgres error to a literal 'forbidden' message", () => {
++    const err = ownershipError({ code: "42501", message: "chat thread: run not owned" }, "fallback");
++    expect(err.message).toBe("forbidden");
++  });
++
++  it("preserves the original message for any other error code", () => {
++    const err = ownershipError({ code: "22023", message: "chat thread: character not visible" }, "fallback");
++    expect(err.message).toBe("chat thread: character not visible");
++  });
++
++  it("falls back to the provided default when there is no error but also no data", () => {
++    const err = ownershipError(null, "chat_thread_failed");
++    expect(err.message).toBe("chat_thread_failed");
++  });
++
++  it("falls back to the provided default when the error has no message", () => {
++    const err = ownershipError({ code: "08000" }, "chat_start_failed");
++    expect(err.message).toBe("chat_start_failed");
++  });
++});
+diff --git a/supabase/functions/_shared/engine/ownership-error.ts b/supabase/functions/_shared/engine/ownership-error.ts
+new file mode 100644
+index 0000000..2a8b686
+--- /dev/null
++++ b/supabase/functions/_shared/engine/ownership-error.ts
+@@ -0,0 +1,21 @@
++/**
++ * Maps a Postgres ownership-check failure (SQLSTATE 42501,
++ * insufficient_privilege — every cross-owner RPC guard in the character-chat
++ * migrations raises this exact code) to the literal "forbidden" message the
++ * edge function's catch block already maps to a clean 403 response.
++ *
++ * Before this, character-chat's `open()`/`send()` fell through to their
++ * RPC's raw exception text (e.g. "chat thread: run not owned"), which
++ * matched neither "unauthenticated" nor "forbidden" and landed on a generic
++ * 500 — access was still correctly denied (no data crossed the guest
++ * boundary), just with a worse error shape than the identical check in
++ * `loadThread()` already had (LW-W5-R1-R1).
++ *
++ * Matching on the SQLSTATE rather than the exception message text is
++ * deliberate: message wording is free to change in a future migration
++ * without silently breaking this mapping again.
++ */
++export function ownershipError(error: { code?: string; message?: string } | null, fallback: string): Error {
++  if (error?.code === "42501") return new Error("forbidden");
++  return new Error(error?.message ?? fallback);
++}
 diff --git a/supabase/functions/_shared/engine/supabase-chat-repository.ts b/supabase/functions/_shared/engine/supabase-chat-repository.ts
-index 57001ce..863b6d0 100644
+index 57001ce..46e063a 100644
 --- a/supabase/functions/_shared/engine/supabase-chat-repository.ts
 +++ b/supabase/functions/_shared/engine/supabase-chat-repository.ts
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
  import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
  
  import { assembleCharacterChatContext, CHAT_HISTORY_LIMIT, validateCharacterChatResult } from "./character-chat.ts";
 +import { attachPromotionState } from "./chat-memory-promotion.ts";
++import { ownershipError } from "./ownership-error.ts";
  import { ProviderOutputError, ProviderTransportError, type CharacterChatProvider, type ChatMessageContext } from "./types.ts";
  import { SupabaseTurnRepository } from "./supabase-repository.ts";
  import { BetaCapacityReachedError } from "./provider-budget.ts";
-@@ -76,6 +77,28 @@ export class SupabaseCharacterChatRepository {
+@@ -48,7 +50,7 @@ export class SupabaseCharacterChatRepository {
+       p_player_run_id: playerRunId,
+       p_character_id: characterId,
+     });
+-    if (error || !thread) throw new Error(error?.message ?? "chat_thread_failed");
++    if (error || !thread) throw ownershipError(error, "chat_thread_failed");
+     return this.loadThread(thread.id as string);
+   }
+ 
+@@ -76,6 +78,28 @@ export class SupabaseCharacterChatRepository {
      const inputs = await this.turnRepository.loadContextInputs(thread.player_run_id, thread.run_branch_id);
      const character = inputs.characters.find((item) => item.id === thread.character_id);
      if (!character) throw new Error("character_not_visible");
@@ -2171,7 +1602,7 @@ index 57001ce..863b6d0 100644
      return {
        thread: {
          id: thread.id,
-@@ -85,7 +108,7 @@ export class SupabaseCharacterChatRepository {
+@@ -85,7 +109,7 @@ export class SupabaseCharacterChatRepository {
        },
        character,
        content_language: inputs.contentLanguage,
@@ -2180,6 +1611,15 @@ index 57001ce..863b6d0 100644
      };
    }
  
+@@ -97,7 +121,7 @@ export class SupabaseCharacterChatRepository {
+       p_message_id: args.messageId,
+       p_content: args.content,
+     });
+-    if (startError || !start) throw new Error(startError?.message ?? "chat_start_failed");
++    if (startError || !start) throw ownershipError(startError, "chat_start_failed");
+     if (start.status === "CHAT_ALLOWANCE_EXHAUSTED") {
+       throw new ChatAllowanceExhaustedError(start.reset_at as string);
+     }
 diff --git a/tests/e2e/roleplay-chat.spec.ts b/tests/e2e/roleplay-chat.spec.ts
 index b1a84be..0b03270 100644
 --- a/tests/e2e/roleplay-chat.spec.ts
@@ -2248,3 +1688,51 @@ index b1a84be..0b03270 100644
  test("Character directory and branch-bound Chat persist across reload", async ({ page }, testInfo) => {
    const consoleErrors: string[] = [];
    page.on("console", (message) => { if (message.type() === "error" || message.type() === "warning") consoleErrors.push(message.text()); });
+diff --git a/tests/e2e/story-setup.spec.ts b/tests/e2e/story-setup.spec.ts
+index 40fa6c7..385c0b4 100644
+--- a/tests/e2e/story-setup.spec.ts
++++ b/tests/e2e/story-setup.spec.ts
+@@ -39,3 +39,43 @@ test("manual UI language switch renders Vietnamese setup copy", async ({ page })
+   await expect(page.getByRole("radio", { name: "Thiết lập nâng cao" })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Bắt đầu", exact: true })).toBeVisible();
+ });
++
++test("Home -> Setup client-side navigation, EN/VI persistence, and browser back/forward stay console-clean (LW-W5-R1-R1)", async ({ page }) => {
++  // Regression guard for a hydration console error (React #418) reported
++  // after a live production smoke pass. Extensive independent reproduction
++  // (local dev server, exact new-story submit flow, and this exact sequence
++  // run repeatedly against real production with Playwright) never
++  // reproduced it — every fresh session and every navigation tested here
++  // came back clean, which is itself the evidence this test locks in: if a
++  // future change ever does introduce a real client/server markup
++  // mismatch, this is the assertion that will catch it.
++  const consoleErrors: string[] = [];
++  page.on("console", (message) => {
++    if (message.type() === "error" || message.type() === "warning") consoleErrors.push(message.text());
++  });
++  page.on("pageerror", (error) => consoleErrors.push(error.message));
++
++  await page.goto("/");
++  await expect(page.getByRole("button", { name: "START A STORY" })).toBeVisible();
++
++  // Home -> Story Setup, client-side navigation (no full page load).
++  await page.getByRole("button", { name: "START A STORY" }).click();
++  await expect(page.getByText("Start a new story", { exact: true })).toBeVisible();
++
++  // EN -> VI, client re-render, then a real reload to prove persistence.
++  await page.getByLabel("Language").getByRole("radio", { name: "Tiếng Việt" }).click();
++  await expect(page.getByText("Bắt đầu một câu chuyện mới", { exact: true })).toBeVisible();
++  await page.reload();
++  await expect(page.getByText("Bắt đầu một câu chuyện mới", { exact: true })).toBeVisible();
++
++  // VI -> EN again, then real browser back/forward (popstate), not just
++  // in-app links.
++  await page.getByLabel("Ngôn ngữ").getByRole("radio", { name: "English" }).click();
++  await expect(page.getByText("Start a new story", { exact: true })).toBeVisible();
++  await page.goBack();
++  await expect(page.getByRole("button", { name: "START A STORY" })).toBeVisible();
++  await page.goForward();
++  await expect(page.getByText("Start a new story", { exact: true })).toBeVisible();
++
++  expect(consoleErrors).toEqual([]);
++});
