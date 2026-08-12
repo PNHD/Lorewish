@@ -49,7 +49,7 @@ export function HomeScreen() {
           <ThemedText variant="label" color="secondary">
             {t("common.appName")}
           </ThemedText>
-          <ThemedText variant="display" style={{ textAlign: "center" }}>
+          <ThemedText variant="display" accessibilityRole="header" style={{ textAlign: "center" }}>
             {t("home.heading")}
           </ThemedText>
           <ThemedText variant="body" color="secondary" style={{ textAlign: "center" }}>

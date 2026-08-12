@@ -102,7 +102,7 @@ export function NewStoryScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.xl }}>
           <View style={{ gap: spacing.sm }}>
-            <ThemedText variant="heading">{t("play.newStoryHeading")}</ThemedText>
+            <ThemedText variant="heading" accessibilityRole="header">{t("play.newStoryHeading")}</ThemedText>
             <ThemedText variant="body" color="secondary">{t("setup.subheading")}</ThemedText>
           </View>
 

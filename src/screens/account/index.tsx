@@ -262,7 +262,7 @@ export function AccountScreen() {
 
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl }}>
         <View style={{ maxWidth: readingWidth.maxContentWidth, width: "100%", gap: spacing.xl }}>
-          <ThemedText variant="display" style={{ textAlign: "center" }}>
+          <ThemedText variant="display" accessibilityRole="header" style={{ textAlign: "center" }}>
             {t("account.screenTitle")}
           </ThemedText>
 
