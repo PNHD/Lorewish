@@ -25,6 +25,10 @@ export function ChoicePill({ selected, label, onPress }: ChoicePillProps) {
       accessibilityState={{ checked: selected }}
       aria-checked={selected}
       onPress={onPress}
+      // Visible pill stays compact (Part 8: no oversized promotional
+      // controls); hitSlop grows the touch target toward the ~44px
+      // recommendation without changing what's drawn (Part 19).
+      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
       style={(state: PressableVisualState) => [
         {
           borderWidth: 1,
