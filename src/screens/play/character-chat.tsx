@@ -144,7 +144,10 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
                         borderRadius: radius.pill,
                         paddingHorizontal: spacing.md,
                         paddingVertical: spacing.xs,
-                        opacity: isPromoted ? interactiveState.disabledOpacity : state.pressed ? interactiveState.pressedOpacity : 1,
+                        // Promoted is a confirmed state, not a low-emphasis
+                        // disabled one — full opacity keeps the success
+                        // color legible instead of washing it out.
+                        opacity: isPromoted ? 1 : state.pressed ? interactiveState.pressedOpacity : 1,
                       },
                       focusRingStyle(state, colors),
                     ]}

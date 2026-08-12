@@ -1,4 +1,4 @@
-import { Link } from "expo-router";
+import { Link, router } from "expo-router";
 import { Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -56,25 +56,29 @@ export function HomeScreen() {
             {t("home.subheading")}
           </ThemedText>
 
-          <Link href="/play" asChild>
-            <Pressable
-              accessibilityRole="button"
-              style={(state: PressableVisualState) => [
-                {
-                  backgroundColor: colors.accent,
-                  borderRadius: radius.pill,
-                  paddingVertical: spacing.md,
-                  paddingHorizontal: spacing.xxl,
-                  opacity: hoverOpacity(state),
-                },
-                focusRingStyle(state, colors),
-              ]}
-            >
-              <ThemedText variant="label" color="onAccent">
-                {t("home.newStoryCta")}
-              </ThemedText>
-            </Pressable>
-          </Link>
+          {/* Plain Pressable + router.push, not <Link asChild> — Link's
+              child-cloning does not compose correctly with an array-valued
+              function style (confirmed via screenshot: background/text
+              rendered at near-zero opacity). Every other primary button in
+              the app already uses this same onPress pattern. */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/play")}
+            style={(state: PressableVisualState) => [
+              {
+                backgroundColor: colors.accent,
+                borderRadius: radius.pill,
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.xxl,
+                opacity: hoverOpacity(state),
+              },
+              focusRingStyle(state, colors),
+            ]}
+          >
+            <ThemedText variant="label" color="onAccent">
+              {t("home.newStoryCta")}
+            </ThemedText>
+          </Pressable>
           <ThemedText variant="caption" color="secondary" style={{ textAlign: "center" }}>
             {t("home.newStoryCaption")}
           </ThemedText>
