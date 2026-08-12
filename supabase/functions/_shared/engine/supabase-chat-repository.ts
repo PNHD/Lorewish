@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 import { assembleCharacterChatContext, CHAT_HISTORY_LIMIT, validateCharacterChatResult } from "./character-chat.ts";
 import { attachPromotionState } from "./chat-memory-promotion.ts";
+import { ownershipError } from "./ownership-error.ts";
 import { ProviderOutputError, ProviderTransportError, type CharacterChatProvider, type ChatMessageContext } from "./types.ts";
 import { SupabaseTurnRepository } from "./supabase-repository.ts";
 import { BetaCapacityReachedError } from "./provider-budget.ts";
@@ -49,7 +50,7 @@ export class SupabaseCharacterChatRepository {
       p_player_run_id: playerRunId,
       p_character_id: characterId,
     });
-    if (error || !thread) throw new Error(error?.message ?? "chat_thread_failed");
+    if (error || !thread) throw ownershipError(error, "chat_thread_failed");
     return this.loadThread(thread.id as string);
   }
 
@@ -120,7 +121,7 @@ export class SupabaseCharacterChatRepository {
       p_message_id: args.messageId,
       p_content: args.content,
     });
-    if (startError || !start) throw new Error(startError?.message ?? "chat_start_failed");
+    if (startError || !start) throw ownershipError(startError, "chat_start_failed");
     if (start.status === "CHAT_ALLOWANCE_EXHAUSTED") {
       throw new ChatAllowanceExhaustedError(start.reset_at as string);
     }
