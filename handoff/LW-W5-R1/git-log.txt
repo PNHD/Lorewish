@@ -1,0 +1,10 @@
+8ac2ec6 docs(w5): visual/accessibility/responsive/browser-e2e review docs
+d872c15 fix(w5): Home CTA rendered invisible under Link asChild; screenshot pack
+2e2a674 test(w5): e2e regression for Remember-in-story reload state
+cf79059 fix(w5): mark primary page titles as accessibility headers
+8574718 fix(w5): grow small-pill tap targets, extend focus ring to LanguageSwitcher
+53cf147 refactor(w5): consolidate ChoicePill, add hover/focus to Start CTA
+f1ff970 feat(w5): align screen chrome to the reading column on desktop
+82feb30 feat(w5): differentiate quota/error color, thin character screens
+218a84c feat(w5): visual foundation + fix P0 UX defects
+d48be66 docs(w5): add UX audit for LW-W5-R1
