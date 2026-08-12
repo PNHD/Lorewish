@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 
+import { ChoicePill } from "@/components/choice-pill";
 import { ThemedText } from "@/components/themed-text";
 import { radius, spacing } from "@/theme/tokens";
+import { focusRingStyle, hoverSurfaceTint, type PressableVisualState } from "@/theme/interactive";
 import { useAppTheme } from "@/theme/use-app-theme";
 
 import {
@@ -24,43 +26,38 @@ function OptionRow<T extends string>({
   options: readonly { id: T; label: string }[];
   onChange: (value: T) => void;
 }) {
-  const { colors } = useAppTheme();
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      {options.map((option) => {
-        const selected = option.id === value;
-        return (
-          <Pressable
-            key={option.id}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: selected }}
-            aria-checked={selected}
-            onPress={() => onChange(option.id)}
-            style={{
-              borderWidth: 1,
-              borderColor: selected ? colors.accent : colors.border,
-              backgroundColor: selected ? colors.accent : colors.surface,
-              borderRadius: radius.pill,
-              paddingVertical: spacing.xs,
-              paddingHorizontal: spacing.md,
-            }}
-          >
-            <ThemedText variant="label" color={selected ? "onAccent" : "primary"}>
-              {option.label}
-            </ThemedText>
-          </Pressable>
-        );
-      })}
+      {options.map((option) => (
+        <ChoicePill key={option.id} selected={option.id === value} label={option.label} onPress={() => onChange(option.id)} />
+      ))}
     </View>
   );
 }
 
 function DisclosureSection({ title, initiallyOpen = false, children }: { title: string; initiallyOpen?: boolean; children: ReactNode }) {
-  const { colors } = useAppTheme();
+  const { colors, mode } = useAppTheme();
   const [open, setOpen] = useState(initiallyOpen);
   return (
     <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.md }}>
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((value) => !value)} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((value) => !value)}
+        style={(state: PressableVisualState) => [
+          {
+            flexDirection: "row" as const,
+            justifyContent: "space-between" as const,
+            alignItems: "center" as const,
+            borderRadius: radius.sm,
+            marginHorizontal: -spacing.xs,
+            paddingHorizontal: spacing.xs,
+            paddingVertical: spacing.xs / 2,
+            backgroundColor: hoverSurfaceTint(state, mode),
+          },
+          focusRingStyle(state, colors),
+        ]}
+      >
         <ThemedText variant="heading">{title}</ThemedText>
         <ThemedText variant="label" color="secondary">{open ? "−" : "+"}</ThemedText>
       </Pressable>
@@ -131,9 +128,26 @@ export function AdvancedSetupForm({
               label: id === "anh_em" ? "anh / em" : id === "chi_em" ? "chị / em" : id === "toi_cau" ? "tôi / cậu" : "ta / ngươi",
             }))}
           />
-          <ThemedText variant="caption" color="secondary">
-            {Object.values(ADDRESS_PRESETS[draft.addressPreset]).join(" · ")}
-          </ThemedText>
+          {/* Four labeled rows, not a bare joined string (LW-W5-R1 P0-2) — the
+              preset resolves to two same-language pronouns used in two
+              different roles (e.g. "tôi" as both the player's and the
+              character's self-reference), which is unrecoverable from a
+              plain `Object.values().join()`. */}
+          <View style={{ gap: spacing.xs }}>
+            {(
+              [
+                ["addressCharacterCallsYou", "targetAddressesSpeakerAs"],
+                ["addressCharacterCallsSelf", "targetSelfReference"],
+                ["addressYouCallCharacter", "speakerAddressesTargetAs"],
+                ["addressYouCallSelf", "speakerSelfReference"],
+              ] as const
+            ).map(([labelKey, field]) => (
+              <View key={field} style={{ flexDirection: "row", justifyContent: "space-between", gap: spacing.md }}>
+                <ThemedText variant="caption" color="secondary">{copy[labelKey]}</ThemedText>
+                <ThemedText variant="label">{ADDRESS_PRESETS[draft.addressPreset][field]}</ThemedText>
+              </View>
+            ))}
+          </View>
           </View>
         </DisclosureSection>
       ) : null}

@@ -2,6 +2,7 @@ import { Pressable, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
+import { focusRingStyle, hoverSurfaceTint, type PressableVisualState } from "@/theme/interactive";
 import { radius, spacing } from "@/theme/tokens";
 import { useAppTheme } from "@/theme/use-app-theme";
 
@@ -12,7 +13,7 @@ import { useAppTheme } from "@/theme/use-app-theme";
  */
 export function LanguageSwitcher() {
   const { t, locale, setLocale } = useTranslation();
-  const { colors } = useAppTheme();
+  const { colors, mode } = useAppTheme();
 
   const options: { value: "en" | "vi"; label: string }[] = [
     { value: "en", label: t("common.languageEnglish") },
@@ -34,12 +35,16 @@ export function LanguageSwitcher() {
             accessibilityState={{ selected }}
             aria-checked={selected}
             onPress={() => setLocale(option.value)}
-            style={{
-              paddingVertical: spacing.xs,
-              paddingHorizontal: spacing.md,
-              borderRadius: radius.pill,
-              backgroundColor: selected ? colors.accent : "transparent",
-            }}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            style={(state: PressableVisualState) => [
+              {
+                paddingVertical: spacing.xs,
+                paddingHorizontal: spacing.md,
+                borderRadius: radius.pill,
+                backgroundColor: selected ? colors.accent : hoverSurfaceTint(state, mode),
+              },
+              focusRingStyle(state, colors),
+            ]}
           >
             <ThemedText variant="label" color={selected ? "onAccent" : "secondary"}>
               {option.label}

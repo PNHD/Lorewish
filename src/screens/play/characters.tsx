@@ -4,10 +4,12 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
+import { BackLink, ScreenHeaderBar } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
 import { getRunState, type RunStateDto } from "@/lib/story-engine";
-import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
+import { focusRingStyle, hoverOpacity, type PressableVisualState } from "@/theme/interactive";
+import { radius, readingWidth, spacing } from "@/theme/tokens";
 import { useAppTheme } from "@/theme/use-app-theme";
 
 export function CharacterDirectoryScreen({ playerRunId }: { playerRunId: string }) {
@@ -38,11 +40,9 @@ export function CharacterDirectoryScreen({ playerRunId }: { playerRunId: string 
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, padding: spacing.lg }}>
-        <Pressable accessibilityRole="link" onPress={() => router.replace(`/play/${playerRunId}`)}>
-          <ThemedText variant="label" color="secondary">{"‹ "}{t("characters.backToStory")}</ThemedText>
-        </Pressable>
-      </View>
+      <ScreenHeaderBar>
+        <BackLink label={t("characters.backToStory")} onPress={() => router.replace(`/play/${playerRunId}`)} />
+      </ScreenHeaderBar>
       <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.xl }}>
         <View style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center", gap: spacing.sm }}>
           <ThemedText variant="display" accessibilityRole="header">{t("characters.heading")}</ThemedText>
@@ -55,8 +55,19 @@ export function CharacterDirectoryScreen({ playerRunId }: { playerRunId: string 
             <ThemedText variant="body" color="secondary" style={{ textAlign: "center" }}>{t("characters.empty")}</ThemedText>
           </View>
         )}
-        {run?.characters.map((character) => (
-          <View key={character.id} style={{ width: "100%", maxWidth: readingWidth.maxContentWidth, alignSelf: "center", borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.lg, gap: spacing.xs }}>
+        {run?.characters.map((character, index) => (
+          <View
+            key={character.id}
+            style={{
+              width: "100%",
+              maxWidth: readingWidth.maxContentWidth,
+              alignSelf: "center",
+              borderTopWidth: index === 0 ? 0 : 1,
+              borderTopColor: colors.border,
+              paddingTop: index === 0 ? 0 : spacing.lg,
+              gap: spacing.xs,
+            }}
+          >
             <ThemedText variant="heading">{character.name}</ThemedText>
             {character.role && <ThemedText variant="label" color="secondary">{character.role}</ThemedText>}
             {character.relationship && <ThemedText variant="body">{character.relationship}</ThemedText>}
@@ -64,7 +75,10 @@ export function CharacterDirectoryScreen({ playerRunId }: { playerRunId: string 
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push(`/play/${playerRunId}/characters/${character.id}`)}
-              style={({ pressed }) => ({ alignSelf: "flex-start", marginTop: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accent, opacity: pressed ? interactiveState.pressedOpacity : 1 })}
+              style={(state: PressableVisualState) => [
+                { alignSelf: "flex-start" as const, marginTop: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accent, opacity: hoverOpacity(state) },
+                focusRingStyle(state, colors),
+              ]}
             >
               <ThemedText variant="label" color="onAccent">{t("characters.openChat")}</ThemedText>
             </Pressable>

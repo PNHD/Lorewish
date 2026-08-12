@@ -103,6 +103,10 @@
     "aliasesPlaceholder": "Phân cách bằng dấu phẩy, không bắt buộc",
     "addressSection": "Cách xưng hô tiếng Việt",
     "addressHint": "Bốn ô dữ liệu giữ rõ ai đang nói và đang gọi ai. Các cách xưng hô sẽ được khóa khi câu chuyện bắt đầu.",
+    "addressCharacterCallsYou": "Nhân vật gọi bạn là",
+    "addressCharacterCallsSelf": "Nhân vật tự xưng là",
+    "addressYouCallCharacter": "Bạn gọi nhân vật là",
+    "addressYouCallSelf": "Bạn tự xưng là",
     "requiredError": "Trường này là bắt buộc."
   },
   "play": {

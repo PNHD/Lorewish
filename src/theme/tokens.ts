@@ -64,6 +64,13 @@ export type SemanticSurfaces = {
   systemChip: string;
   systemChipText: string;
   danger: string;
+  /** Personal-limit framing (e.g. near-limit, allowance exhausted) — distinct from `danger`, which is reserved for failures. */
+  warning: string;
+  warningText: string;
+  /** Confirmation framing (e.g. a fact was remembered) — used sparingly, never as decoration. */
+  success: string;
+  /** Keyboard-focus ring color, shared by every interactive element (Part 19). */
+  focus: string;
 };
 
 // A warm, low-saturation ink-and-dusk palette — deliberately not a
@@ -83,6 +90,10 @@ const lightSurfaces: SemanticSurfaces = {
   systemChip: "#EFE7DA",
   systemChipText: "#5B5041",
   danger: "#A6493A",
+  warning: "#8A6A2E",
+  warningText: "#8A6A2E",
+  success: "#4C6B5E",
+  focus: "#3D6E85",
 };
 
 const darkSurfaces: SemanticSurfaces = {
@@ -100,6 +111,10 @@ const darkSurfaces: SemanticSurfaces = {
   systemChip: "#2E2721",
   systemChipText: "#C9BCA6",
   danger: "#E08571",
+  warning: "#D9B36E",
+  warningText: "#D9B36E",
+  success: "#8FB4A2",
+  focus: "#7EB4CE",
 };
 
 export const surfaces: Record<ThemeMode, SemanticSurfaces> = {
@@ -112,4 +127,17 @@ export const interactiveState = {
   pressedOpacity: 0.7,
   disabledOpacity: 0.4,
   hoverOverlay: "rgba(0,0,0,0.04)",
+  hoverOverlayDark: "rgba(255,255,255,0.06)",
+  focusRingWidth: 2,
+} as const;
+
+/**
+ * Motion durations (docs/MOTION_GUIDELINES.md). `reduced*` values are the
+ * Reduce Motion fallback (§4) — components choose between the two via
+ * `useReducedMotion()`, never animate past the reduced budget when it's on.
+ */
+export const motion = {
+  sceneTransitionMs: 300,
+  reducedSceneTransitionMs: 100,
+  choiceFeedbackMs: 150,
 } as const;

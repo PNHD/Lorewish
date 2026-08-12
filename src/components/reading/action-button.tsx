@@ -1,7 +1,8 @@
 import { Pressable } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
-import { interactiveState, radius, spacing } from "@/theme/tokens";
+import { radius, spacing } from "@/theme/tokens";
+import { focusRingStyle, hoverBorderColor, hoverOpacity, type PressableVisualState } from "@/theme/interactive";
 import { useAppTheme } from "@/theme/use-app-theme";
 
 export type ActionButtonProps = {
@@ -26,17 +27,18 @@ export function ActionButton({ label, onPress, variant = "primary" }: ActionButt
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [
+      style={(state: PressableVisualState) => [
         {
           borderWidth: isPrimary ? 0 : 1,
-          borderColor: colors.border,
+          borderColor: isPrimary ? undefined : hoverBorderColor(state, colors),
           backgroundColor: isPrimary ? colors.accent : "transparent",
           borderRadius: radius.pill,
           paddingVertical: spacing.sm,
           paddingHorizontal: spacing.lg,
           alignItems: "center" as const,
-          opacity: pressed ? interactiveState.pressedOpacity : 1,
+          opacity: hoverOpacity(state),
         },
+        focusRingStyle(state, colors),
       ]}
     >
       <ThemedText variant="label" color={isPrimary ? "onAccent" : "primary"}>

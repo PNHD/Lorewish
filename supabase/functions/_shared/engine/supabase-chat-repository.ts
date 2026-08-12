@@ -1,6 +1,8 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 import { assembleCharacterChatContext, CHAT_HISTORY_LIMIT, validateCharacterChatResult } from "./character-chat.ts";
+import { attachPromotionState } from "./chat-memory-promotion.ts";
+import { ownershipError } from "./ownership-error.ts";
 import { ProviderOutputError, ProviderTransportError, type CharacterChatProvider, type ChatMessageContext } from "./types.ts";
 import { SupabaseTurnRepository } from "./supabase-repository.ts";
 import { BetaCapacityReachedError } from "./provider-budget.ts";
@@ -48,7 +50,7 @@ export class SupabaseCharacterChatRepository {
       p_player_run_id: playerRunId,
       p_character_id: characterId,
     });
-    if (error || !thread) throw new Error(error?.message ?? "chat_thread_failed");
+    if (error || !thread) throw ownershipError(error, "chat_thread_failed");
     return this.loadThread(thread.id as string);
   }
 
@@ -76,6 +78,28 @@ export class SupabaseCharacterChatRepository {
     const inputs = await this.turnRepository.loadContextInputs(thread.player_run_id, thread.run_branch_id);
     const character = inputs.characters.find((item) => item.id === thread.character_id);
     if (!character) throw new Error("character_not_visible");
+
+    // Report already-promoted candidates from server truth (canon_facts),
+    // so a reload shows a stable "Remembered" state instead of re-offering
+    // promotion for a fact that's already canon (LW-W5-R1 P0-3). The
+    // promotion RPC (lw_promote_chat_memory) is already idempotent on
+    // (source_chat_message_id, source_chat_candidate_index) — this only
+    // adds the missing read of that same idempotency key, no schema change.
+    const characterMessageIds = (messages ?? [])
+      .filter((message) => message.role === "character")
+      .map((message) => message.id);
+    let promotedFacts: { source_chat_message_id: string | null; source_chat_candidate_index: number | null }[] = [];
+    if (characterMessageIds.length > 0) {
+      const { data, error: promotedError } = await this.serviceClient
+        .from("canon_facts")
+        .select("source_chat_message_id, source_chat_candidate_index")
+        .in("source_chat_message_id", characterMessageIds)
+        .not("source_chat_candidate_index", "is", null);
+      if (promotedError) throw new Error("chat_history_failed");
+      promotedFacts = data ?? [];
+    }
+    const messagesWithPromotion = attachPromotionState(messages ?? [], promotedFacts);
+
     return {
       thread: {
         id: thread.id,
@@ -85,7 +109,7 @@ export class SupabaseCharacterChatRepository {
       },
       character,
       content_language: inputs.contentLanguage,
-      messages: messages ?? [],
+      messages: messagesWithPromotion,
     };
   }
 
@@ -97,7 +121,7 @@ export class SupabaseCharacterChatRepository {
       p_message_id: args.messageId,
       p_content: args.content,
     });
-    if (startError || !start) throw new Error(startError?.message ?? "chat_start_failed");
+    if (startError || !start) throw ownershipError(startError, "chat_start_failed");
     if (start.status === "CHAT_ALLOWANCE_EXHAUSTED") {
       throw new ChatAllowanceExhaustedError(start.reset_at as string);
     }

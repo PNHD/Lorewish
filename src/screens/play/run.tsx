@@ -8,9 +8,11 @@ import { ActionButton } from "@/components/reading/action-button";
 import { ChoiceList } from "@/components/reading/choice-list";
 import { PlayerActionBanner } from "@/components/reading/player-action-banner";
 import { PlayStateBadge } from "@/components/reading/play-state-badge";
+import { ReplayLink } from "@/components/reading/replay-link";
 import { StorySceneSection } from "@/components/reading/story-scene-section";
 import { Composer } from "@/components/composer";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { BackLink, ScreenHeaderBar, ScreenHeaderRow } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
 import { getRunState, newTurnId, replayFromScene, submitTurn, type SceneDto } from "@/lib/story-engine";
@@ -202,26 +204,12 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: spacing.lg,
-          paddingTop: spacing.sm,
-          paddingBottom: spacing.sm,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        }}
-      >
-        <Pressable accessibilityRole="link" onPress={() => router.push("/")}>
-          <ThemedText variant="label" color="secondary">
-            {"‹ "}
-            {t("play.backToHome")}
-          </ThemedText>
-        </Pressable>
-        <LanguageSwitcher />
-      </View>
+      <ScreenHeaderBar>
+        <ScreenHeaderRow>
+          <BackLink label={t("play.backToHome")} onPress={() => router.push("/")} />
+          <LanguageSwitcher />
+        </ScreenHeaderRow>
+      </ScreenHeaderBar>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView ref={scrollRef} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.lg, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
@@ -255,13 +243,11 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
           <View key={historyScene.id} style={{ gap: spacing.md }}>
             <StorySceneSection scene={historyScene} whatChanged={t("play.whatChanged")} sceneLabel={t("play.sceneLabel")} isFirst={index === 0} sceneNumber={index + 1} />
             {state.kind === "ready" && historyScene.id !== scene.id && (
-              <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%" }}>
-                <ActionButton
-                  label={replayingSceneId === historyScene.id ? t("play.replayingLabel") : t("play.replayFromHereLabel")}
-                  variant="secondary"
-                  onPress={() => void handleReplayFromHere(historyScene.id)}
-                />
-              </View>
+              <ReplayLink
+                label={replayingSceneId === historyScene.id ? t("play.replayingLabel") : t("play.replayFromHereLabel")}
+                disabled={replayingSceneId !== null}
+                onPress={() => void handleReplayFromHere(historyScene.id)}
+              />
             )}
           </View>
         ))}
@@ -275,9 +261,18 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
           </View>
         )}
 
+        {/* Color differentiates a real failure (danger) from a boundary the
+            player can act on themselves (warning) — previously all three
+            states below rendered in the same default text color
+            (LW-W5-R1 P1-3). Personal allowance vs. beta capacity stay the
+            same warning tone (both are "not broken, just wait"); the copy
+            itself carries the distinction between "your limit" and
+            "everyone's limit" per Part 14. */}
         {state.kind === "failed" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ThemedText variant="label">{t(state.errorClass === "input_rejected" ? "play.safetyRejectedHeading" : state.errorClass === "network_error" ? "play.networkErrorHeading" : "play.failedHeading")}</ThemedText>
+            <ThemedText variant="label" color={state.errorClass === "input_rejected" || state.errorClass === "network_error" ? "warning" : "danger"}>
+              {t(state.errorClass === "input_rejected" ? "play.safetyRejectedHeading" : state.errorClass === "network_error" ? "play.networkErrorHeading" : "play.failedHeading")}
+            </ThemedText>
             <ThemedText variant="caption" color="secondary">
               {t(state.errorClass === "input_rejected" ? "play.safetyRejectedBody" : state.errorClass === "network_error" ? "play.networkErrorBody" : "play.failedBody")}
             </ThemedText>
@@ -287,7 +282,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
         {state.kind === "allowance_exhausted" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ThemedText variant="label">{t("play.allowanceExhaustedHeading")}</ThemedText>
+            <ThemedText variant="label" color="warning">{t("play.allowanceExhaustedHeading")}</ThemedText>
             <ThemedText variant="caption" color="secondary">
               {t("play.allowanceExhaustedBody")}
             </ThemedText>
@@ -296,7 +291,7 @@ export function RunScreen({ playerRunId }: { playerRunId: string }) {
 
         {state.kind === "beta_capacity" && (
           <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.sm }}>
-            <ThemedText variant="label">{t("play.betaCapacityHeading")}</ThemedText>
+            <ThemedText variant="label" color="warning">{t("play.betaCapacityHeading")}</ThemedText>
             <ThemedText variant="caption" color="secondary">{t("play.betaCapacityBody")}</ThemedText>
           </View>
         )}

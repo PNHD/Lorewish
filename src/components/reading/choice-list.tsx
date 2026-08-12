@@ -2,6 +2,7 @@ import { Pressable, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
+import { focusRingStyle, hoverBorderColor, type PressableVisualState } from "@/theme/interactive";
 import { useAppTheme } from "@/theme/use-app-theme";
 
 export type Choice = {
@@ -38,15 +39,16 @@ export function ChoiceList({ heading, choices, onSelect, disabled }: ChoiceListP
           accessibilityRole="button"
           disabled={disabled}
           onPress={() => onSelect(choice.id)}
-          style={({ pressed }) => [
+          style={(state: PressableVisualState) => [
             {
               borderWidth: 1,
-              borderColor: colors.border,
+              borderColor: hoverBorderColor(state, colors),
               backgroundColor: colors.surface,
               borderRadius: radius.md,
               padding: spacing.md,
-              opacity: disabled ? interactiveState.disabledOpacity : pressed ? interactiveState.pressedOpacity : 1,
+              opacity: disabled ? interactiveState.disabledOpacity : state.pressed ? interactiveState.pressedOpacity : 1,
             },
+            focusRingStyle(state, colors),
           ]}
         >
           <ThemedText variant="body">{choice.label}</ThemedText>

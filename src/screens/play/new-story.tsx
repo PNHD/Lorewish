@@ -4,7 +4,9 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
+import { ChoicePill } from "@/components/choice-pill";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { BackLink, ScreenHeaderBar, ScreenHeaderRow } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { AdvancedSetupForm } from "@/features/story-setup/advanced-setup-form";
 import {
@@ -20,30 +22,9 @@ import {
 import { useStorySetupDraft } from "@/features/story-setup/use-story-setup-draft";
 import { useTranslation } from "@/i18n";
 import { newTurnId, submitTurn, type ContentLanguage } from "@/lib/story-engine";
+import { focusRingStyle, hoverOpacity, type PressableVisualState } from "@/theme/interactive";
 import { readingWidth, radius, spacing } from "@/theme/tokens";
 import { useAppTheme } from "@/theme/use-app-theme";
-
-function ChoicePill({ selected, label, onPress }: { selected: boolean; label: string; onPress: () => void }) {
-  const { colors } = useAppTheme();
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ checked: selected }}
-      aria-checked={selected}
-      onPress={onPress}
-      style={{
-        borderWidth: 1,
-        borderColor: selected ? colors.accent : colors.border,
-        backgroundColor: selected ? colors.accent : colors.surface,
-        borderRadius: radius.pill,
-        paddingVertical: spacing.xs,
-        paddingHorizontal: spacing.md,
-      }}
-    >
-      <ThemedText variant="label" color={selected ? "onAccent" : "primary"}>{label}</ThemedText>
-    </Pressable>
-  );
-}
 
 export function NewStoryScreen() {
   const { t, locale } = useTranslation();
@@ -104,22 +85,24 @@ export function NewStoryScreen() {
     characterDescriptionPlaceholder: t("setup.characterDescriptionPlaceholder"), characterRelationship: t("setup.characterRelationship"),
     characterRelationshipPlaceholder: t("setup.characterRelationshipPlaceholder"), aliases: t("setup.aliases"), aliasesPlaceholder: t("setup.aliasesPlaceholder"),
     addressSection: t("setup.addressSection"), addressHint: t("setup.addressHint"), requiredError: t("setup.requiredError"),
+    addressCharacterCallsYou: t("setup.addressCharacterCallsYou"), addressCharacterCallsSelf: t("setup.addressCharacterCallsSelf"),
+    addressYouCallCharacter: t("setup.addressYouCallCharacter"), addressYouCallSelf: t("setup.addressYouCallSelf"),
   };
   const starter = STARTER_OPTIONS[draft.genre];
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Pressable accessibilityRole="link" onPress={() => router.push("/")}>
-          <ThemedText variant="label" color="secondary">{"‹ "}{t("play.backToHome")}</ThemedText>
-        </Pressable>
-        <LanguageSwitcher />
-      </View>
+      <ScreenHeaderBar>
+        <ScreenHeaderRow>
+          <BackLink label={t("play.backToHome")} onPress={() => router.push("/")} />
+          <LanguageSwitcher />
+        </ScreenHeaderRow>
+      </ScreenHeaderBar>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         <View style={{ maxWidth: readingWidth.maxContentWidth, alignSelf: "center", width: "100%", gap: spacing.xl }}>
           <View style={{ gap: spacing.sm }}>
-            <ThemedText variant="heading">{t("play.newStoryHeading")}</ThemedText>
+            <ThemedText variant="heading" accessibilityRole="header">{t("play.newStoryHeading")}</ThemedText>
             <ThemedText variant="body" color="secondary">{t("setup.subheading")}</ThemedText>
           </View>
 
@@ -162,7 +145,10 @@ export function NewStoryScreen() {
             accessibilityState={{ disabled: submitting }}
             disabled={submitting}
             onPress={handleStart}
-            style={{ backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center", opacity: submitting ? 0.5 : 1 }}
+            style={(state: PressableVisualState) => [
+              { backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center" as const, opacity: hoverOpacity(state, submitting) },
+              focusRingStyle(state, colors),
+            ]}
           >
             <ThemedText variant="label" color="onAccent">{submitting || status === "guest_creating" ? t("play.creatingStory") : t("play.startButton")}</ThemedText>
           </Pressable>

@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
 import { Composer } from "@/components/composer";
+import { BackLink, ScreenHeaderBar } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslation } from "@/i18n";
 import {
@@ -15,6 +16,7 @@ import {
   type CharacterChatStateDto,
 } from "@/lib/character-chat";
 import { interactiveState, radius, readingWidth, spacing } from "@/theme/tokens";
+import { focusRingStyle, hoverBorderColor, type PressableVisualState } from "@/theme/interactive";
 import { useAppTheme } from "@/theme/use-app-theme";
 
 type SendError = "provider_error" | "transport_error" | "validation_error" | "chat_allowance_exhausted" | "beta_capacity_reached" | "network_error" | null;
@@ -93,14 +95,12 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.xs }}>
-          <Pressable accessibilityRole="link" onPress={() => router.replace(`/play/${playerRunId}`)}>
-            <ThemedText variant="label" color="secondary">{"‹ "}{t("chat.backToStory")}</ThemedText>
-          </Pressable>
+        <ScreenHeaderBar>
+          <BackLink label={t("chat.backToStory")} onPress={() => router.replace(`/play/${playerRunId}`)} />
           <ThemedText variant="heading" accessibilityRole="header">{chat?.character.name ?? t("chat.heading")}</ThemedText>
           {chat?.character.storyRelationship && <ThemedText variant="caption" color="secondary">{chat.character.storyRelationship}</ThemedText>}
           <ThemedText variant="caption" color="secondary">{t("chat.nonCanonicalNotice")}</ThemedText>
-        </View>
+        </ScreenHeaderBar>
 
         <ScrollView
           ref={scrollRef}
@@ -124,16 +124,35 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
               </View>
               {message.role === "character" && message.memory_candidates.map((candidate, candidateIndex) => {
                 const key = `${message.id}:${candidateIndex}`;
-                const isPromoted = promoted.has(key);
+                // Server truth (candidate.promoted, from canon_facts) is the
+                // source of what survives a reload; the local `promoted` set
+                // only covers the gap between a successful promote and the
+                // next load() round-trip, so the button doesn't flicker back
+                // to "Remember in story" for the rest of this session.
+                const isPromoted = candidate.promoted || promoted.has(key);
                 return (
                   <Pressable
                     key={key}
                     accessibilityRole="button"
                     disabled={isPromoted}
                     onPress={() => void promote(message.id, candidateIndex)}
-                    style={({ pressed }) => ({ alignSelf: "flex-start", borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, opacity: isPromoted ? interactiveState.disabledOpacity : pressed ? interactiveState.pressedOpacity : 1 })}
+                    style={(state: PressableVisualState) => [
+                      {
+                        alignSelf: "flex-start" as const,
+                        borderWidth: 1,
+                        borderColor: isPromoted ? colors.success : hoverBorderColor(state, colors),
+                        borderRadius: radius.pill,
+                        paddingHorizontal: spacing.md,
+                        paddingVertical: spacing.xs,
+                        // Promoted is a confirmed state, not a low-emphasis
+                        // disabled one — full opacity keeps the success
+                        // color legible instead of washing it out.
+                        opacity: isPromoted ? 1 : state.pressed ? interactiveState.pressedOpacity : 1,
+                      },
+                      focusRingStyle(state, colors),
+                    ]}
                   >
-                    <ThemedText variant="caption">{isPromoted ? t("chat.remembered") : t("chat.rememberInStory")}</ThemedText>
+                    <ThemedText variant="caption" color={isPromoted ? "success" : "primary"}>{isPromoted ? t("chat.remembered") : t("chat.rememberInStory")}</ThemedText>
                   </Pressable>
                 );
               })}
@@ -142,7 +161,9 @@ export function CharacterChatScreen({ playerRunId, characterId }: { playerRunId:
           {sending && <View accessibilityLiveRegion="polite" style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}><ActivityIndicator /><ThemedText variant="caption" color="secondary">{t("chat.sending")}</ThemedText></View>}
           {sendError && (
             <View accessibilityLiveRegion="polite" style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.sm }}>
-              <ThemedText variant="label" color="danger">{
+              {/* warning = a boundary the player can act on or wait out; danger
+                  reserved for a genuine provider/transport failure (P1-3). */}
+              <ThemedText variant="label" color={sendError === "provider_error" || sendError === "transport_error" ? "danger" : "warning"}>{
                 sendError === "validation_error" ? t("chat.validationError")
                   : sendError === "chat_allowance_exhausted" ? t("chat.allowanceExhausted")
                     : sendError === "beta_capacity_reached" ? t("chat.betaCapacity")
