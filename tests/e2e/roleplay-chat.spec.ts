@@ -58,6 +58,11 @@ async function installSignedInMocks(page: Page) {
     id: "88888888-8888-4888-8888-888888888888", role: "character", content: "Tôi vẫn nhớ nơi bạn đã giấu chiếc chìa khóa.",
     generation_status: null, error_class: null, memory_candidates: [{ memory_type: "player_fact", fact_key: "player_hid_key", fact_text: "Bạn đã giấu chiếc chìa khóa dưới bậc đá.", salience: 5 }], created_at: "2026-08-11T00:00:00Z",
   }];
+  // Server-truth promotion tracking (LW-W5-R1 P0-3): mirrors the real
+  // canon_facts idempotency key (source_chat_message_id, candidate_index) so
+  // a reload can prove the "Remembered" state survives without client-only
+  // state — see supabase-chat-repository.ts loadThread / chat-memory-promotion.ts.
+  const promotedCandidates = new Set<string>();
   await page.route("**/functions/v1/character-chat", async (route) => {
     const request = route.request();
     const body = request.postDataJSON() as Record<string, unknown>;
@@ -73,7 +78,14 @@ async function installSignedInMocks(page: Page) {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
       thread: { id: THREAD_ID, player_run_id: RUN_ID, run_branch_id: BRANCH_ID, character_id: CHARACTER_ID },
       character: { id: CHARACTER_ID, name: "Mira", role: "Archive keeper", description: "She remembers the cost of every sealed door.", storyRelationship: "A wary ally", aliases: [] },
-      content_language: "vi", messages: chatMessages,
+      content_language: "vi",
+      messages: chatMessages.map((message) => ({
+        ...message,
+        memory_candidates: message.memory_candidates.map((candidate, index) => ({
+          ...candidate,
+          promoted: promotedCandidates.has(`${message.id}:${index}`),
+        })),
+      })),
     }) });
   });
 
@@ -85,6 +97,10 @@ async function installSignedInMocks(page: Page) {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ run_branch_id: BRANCH_ID, scene: current }) });
   });
   await page.route("**/rest/v1/rpc/lw_promote_chat_memory", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    // Idempotent, same as the real RPC: repeat calls for the same key are
+    // harmless no-ops against a Set.
+    promotedCandidates.add(`${body.p_character_message_id}:${body.p_candidate_index}`);
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }) });
   });
 }
@@ -119,6 +135,24 @@ test("Story reader remains editorial, long-session safe, and duplicate-submit re
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
   expect(consoleErrors).toEqual([]);
+});
+
+test("Remember in story shows a stable Remembered state after reload (LW-W5-R1 P0-3)", async ({ page }) => {
+  await page.goto(`/play/${RUN_ID}/characters`);
+  await page.getByRole("button", { name: "Talk to character" }).click();
+  await expect(page.getByRole("button", { name: "Remember in story" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Remember in story" }).click();
+  await expect(page.getByRole("button", { name: "Remembered in story" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remember in story", exact: true })).toHaveCount(0);
+
+  // The bug this regression test guards against: before LW-W5-R1, promoted
+  // state lived only in client useState and reset on reload even though the
+  // server-side promotion RPC is already idempotent — see
+  // supabase-chat-repository.ts loadThread / chat-memory-promotion.ts.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Remembered in story" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remember in story", exact: true })).toHaveCount(0);
 });
 
 test("Character directory and branch-bound Chat persist across reload", async ({ page }, testInfo) => {
