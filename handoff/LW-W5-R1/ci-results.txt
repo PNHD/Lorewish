@@ -1,0 +1,47 @@
+=== web export ===
+
+> lorewish@0.1.0 export:web
+> expo export -p web && node scripts/write-web-routes.mjs
+
+env: load .env.local
+env: export DEEPSEEK_API_KEY EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY EXPO_PUBLIC_SUPABASE_URL GEMINI_API_KEY
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+Static rendering is enabled. Learn more: https://docs.expo.dev/router/web/static-rendering/
+λ Bundled 1550ms node_modules\expo\node_modules\@expo\cli\node_modules\@expo\router-server\node\render.js (1164 modules)
+Web Bundled 1814ms node_modules\expo-router\entry.js (1055 modules)
+
+› web bundles (1):
+_expo/static/js/web/entry-556e5756542dbe08ec15ce98bbb3c6fc.js (1.7MB)
+
+› Static routes (9):
+/ (index) (22KB)
+/account (20KB)
+/preview (24KB)
+/_sitemap (17KB)
+/+not-found (17KB)
+/play (28KB)
+/play/[runId] (19KB)
+/play/[runId]/characters (19KB)
+/play/[runId]/characters/[characterId] (19KB)
+
+Exported: dist
+
+=== playwright e2e ===
+
+Running 10 tests using 6 workers
+
+  ok  6 [desktop-chromium] › tests\e2e\story-setup.spec.ts:36:5 › manual UI language switch renders Vietnamese setup copy (2.3s)
+  ok  2 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:112:5 › Story reader remains editorial, long-session safe, and duplicate-submit resistant (3.2s)
+  ok  3 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:140:5 › Remember in story shows a stable Remembered state after reload (LW-W5-R1 P0-3) (3.2s)
+  ok  1 [desktop-chromium] › tests\e2e\roleplay-chat.spec.ts:158:5 › Character directory and branch-bound Chat persist across reload (3.5s)
+  ok  4 [desktop-chromium] › tests\e2e\story-setup.spec.ts:9:5 › Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe (3.5s)
+  ok  5 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:112:5 › Story reader remains editorial, long-session safe, and duplicate-submit resistant (3.7s)
+  ok  9 [mobile-chromium] › tests\e2e\story-setup.spec.ts:36:5 › manual UI language switch renders Vietnamese setup copy (1.5s)
+  ok  7 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:158:5 › Character directory and branch-bound Chat persist across reload (2.2s)
+  ok 10 [mobile-chromium] › tests\e2e\roleplay-chat.spec.ts:140:5 › Remember in story shows a stable Remembered state after reload (LW-W5-R1 P0-3) (1.8s)
+  ok  8 [mobile-chromium] › tests\e2e\story-setup.spec.ts:9:5 › Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe (2.3s)
+
+  10 passed (10.1s)
