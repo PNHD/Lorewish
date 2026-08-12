@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth/auth-context";
+import { ChoicePill } from "@/components/choice-pill";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { BackLink, ScreenHeaderBar, ScreenHeaderRow } from "@/components/screen-header-bar";
 import { ThemedText } from "@/components/themed-text";
@@ -21,30 +22,9 @@ import {
 import { useStorySetupDraft } from "@/features/story-setup/use-story-setup-draft";
 import { useTranslation } from "@/i18n";
 import { newTurnId, submitTurn, type ContentLanguage } from "@/lib/story-engine";
+import { focusRingStyle, hoverOpacity, type PressableVisualState } from "@/theme/interactive";
 import { readingWidth, radius, spacing } from "@/theme/tokens";
 import { useAppTheme } from "@/theme/use-app-theme";
-
-function ChoicePill({ selected, label, onPress }: { selected: boolean; label: string; onPress: () => void }) {
-  const { colors } = useAppTheme();
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ checked: selected }}
-      aria-checked={selected}
-      onPress={onPress}
-      style={{
-        borderWidth: 1,
-        borderColor: selected ? colors.accent : colors.border,
-        backgroundColor: selected ? colors.accent : colors.surface,
-        borderRadius: radius.pill,
-        paddingVertical: spacing.xs,
-        paddingHorizontal: spacing.md,
-      }}
-    >
-      <ThemedText variant="label" color={selected ? "onAccent" : "primary"}>{label}</ThemedText>
-    </Pressable>
-  );
-}
 
 export function NewStoryScreen() {
   const { t, locale } = useTranslation();
@@ -165,7 +145,10 @@ export function NewStoryScreen() {
             accessibilityState={{ disabled: submitting }}
             disabled={submitting}
             onPress={handleStart}
-            style={{ backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center", opacity: submitting ? 0.5 : 1 }}
+            style={(state: PressableVisualState) => [
+              { backgroundColor: colors.accent, borderRadius: radius.pill, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: "center" as const, opacity: hoverOpacity(state, submitting) },
+              focusRingStyle(state, colors),
+            ]}
           >
             <ThemedText variant="label" color="onAccent">{submitting || status === "guest_creating" ? t("play.creatingStory") : t("play.startButton")}</ThemedText>
           </Pressable>

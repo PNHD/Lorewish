@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 
+import { ChoicePill } from "@/components/choice-pill";
 import { ThemedText } from "@/components/themed-text";
 import { radius, spacing } from "@/theme/tokens";
-import { focusRingStyle, hoverBorderColor, hoverSurfaceTint, type PressableVisualState } from "@/theme/interactive";
+import { focusRingStyle, hoverSurfaceTint, type PressableVisualState } from "@/theme/interactive";
 import { useAppTheme } from "@/theme/use-app-theme";
 
 import {
@@ -25,36 +26,11 @@ function OptionRow<T extends string>({
   options: readonly { id: T; label: string }[];
   onChange: (value: T) => void;
 }) {
-  const { colors } = useAppTheme();
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.sm }}>
-      {options.map((option) => {
-        const selected = option.id === value;
-        return (
-          <Pressable
-            key={option.id}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: selected }}
-            aria-checked={selected}
-            onPress={() => onChange(option.id)}
-            style={(state: PressableVisualState) => [
-              {
-                borderWidth: 1,
-                borderColor: hoverBorderColor(state, colors, selected),
-                backgroundColor: selected ? colors.accent : colors.surface,
-                borderRadius: radius.pill,
-                paddingVertical: spacing.xs,
-                paddingHorizontal: spacing.md,
-              },
-              focusRingStyle(state, colors),
-            ]}
-          >
-            <ThemedText variant="label" color={selected ? "onAccent" : "primary"}>
-              {option.label}
-            </ThemedText>
-          </Pressable>
-        );
-      })}
+      {options.map((option) => (
+        <ChoicePill key={option.id} selected={option.id === value} label={option.label} onPress={() => onChange(option.id)} />
+      ))}
     </View>
   );
 }
