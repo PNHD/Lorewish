@@ -12,12 +12,15 @@ Base: `origin/main` @ `f608f0d` (PR #6, WEB-M4 guest-beta, independently reviewe
 audited, tested, deployed, and live-verified. No source changes were made after this commit; the
 live-closeout session only deployed already-committed code and updated evidence docs.
 
-**FINAL_PR_HEAD**: same commit, `9108b02`, at close of this session — PR #7 was not advanced with
-new source commits during live closeout, only this evidence-docs commit (see §U).
+**FINAL_PR_HEAD**: `ebfc2aafb6badf0d38cd70d826813cfb7c9d9c11` — one evidence-docs-only commit on top
+of `9108b02` (this live-verification record itself; no source changed).
 
 Draft PR: https://github.com/PNHD/Lorewish/pull/7 (open, not merged)
-Exact-head CI: run `31553617939` — SUCCESS on `9108b02` (Web/JS checks: typecheck, lint, 164 unit
-tests, web export, 10 Playwright e2e; native jobs skipped as configured).
+Exact-head CI:
+- On `9108b02` (IMPLEMENTATION_CODE_HEAD): run `31553617939` — SUCCESS
+- On `ebfc2aa` (FINAL_PR_HEAD, docs-only): run `31555941274` — SUCCESS
+Both runs: typecheck, lint, 164 unit tests, web export, 10 Playwright e2e all green; native jobs
+skipped as configured.
 
 ## A. Baseline
 
@@ -191,15 +194,24 @@ deployment and the live `character-chat` v7 Edge Function. Summary:
 - `npm run export:web` — succeeds
 - `npx playwright test` — **10/10 passing**, both projects, including new Remember-in-story
   regression test
-- Exact-head CI (GitHub Actions, PR #7): run `31553617939` — **SUCCESS** on `9108b02`
+- Exact-head CI (GitHub Actions, PR #7): `31553617939` on `9108b02` (code head) and `31555941274` on
+  `ebfc2aa` (final PR head, docs-only) — both **SUCCESS**
 - Raw output: [test-results.txt](test-results.txt), [ci-results.txt](ci-results.txt)
 
 ## U. Implementation head
 
-**IMPLEMENTATION_CODE_HEAD = FINAL_PR_HEAD = `9108b02920c3b1d81329e9422496940a7d9aa494`**, on
-`feature/lw-w5-product-ux`, 10 commits over `origin/main` @ `f608f0d`. The live-closeout session
-added no new source commits — only Edge Function/Cloudflare deployments (of already-committed code)
-and this evidence-docs update. See [git-log.txt](git-log.txt) and [git-diff.patch](git-diff.patch).
+**IMPLEMENTATION_CODE_HEAD** = `9108b02920c3b1d81329e9422496940a7d9aa494` — the code that was
+audited, tested, deployed to `character-chat` v7, deployed to Cloudflare production, and
+live-verified. 10 commits over `origin/main` @ `f608f0d`.
+
+**FINAL_PR_HEAD** = `ebfc2aafb6badf0d38cd70d826813cfb7c9d9c11` — one additional evidence-docs-only
+commit recording the live-verification results themselves (this HANDOFF.md, production-smoke.md,
+ci-results.txt, git-status.txt, git-log.txt). No source file changed between these two commits —
+confirmed by the commit's own diffstat (5 files, all under `handoff/LW-W5-R1/`).
+
+See [git-log.txt](git-log.txt) and [git-diff.patch](git-diff.patch) (the patch is generated against
+the code head, `9108b02`, since that's the diff that matters for review — the docs-only commit on
+top is evidence, not implementation).
 
 ## V. Draft PR
 

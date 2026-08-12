@@ -1,3 +1,4 @@
+ebfc2aa docs(w5): live-verify Remember-in-story fix, production deploy evidence
 9108b02 docs(w5): HANDOFF.md and git artifacts for LW-W5-R1
 8ac2ec6 docs(w5): visual/accessibility/responsive/browser-e2e review docs
 d872c15 fix(w5): Home CTA rendered invisible under Link asChild; screenshot pack
