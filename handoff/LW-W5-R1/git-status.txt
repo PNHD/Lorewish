@@ -1,2 +1,4 @@
 ## feature/lw-w5-product-ux...origin/feature/lw-w5-product-ux
-?? handoff/LW-W5-R1/git-status.txt
+ M handoff/LW-W5-R1/HANDOFF.md
+ M handoff/LW-W5-R1/git-status.txt
+ M handoff/LW-W5-R1/production-smoke.md

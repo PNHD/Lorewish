@@ -45,3 +45,25 @@ Running 10 tests using 6 workers
   ok  8 [mobile-chromium] › tests\e2e\story-setup.spec.ts:9:5 › Quick Start and Advanced Setup remain public, guest-first, responsive, and draft-safe (2.3s)
 
   10 passed (10.1s)
+
+=== EXACT-HEAD CI VERIFICATION (LIVE CLOSEOUT) ===
+PR #7, commit 9108b02920c3b1d81329e9422496940a7d9aa494
+
+✓ feature/lw-w5-product-ux CI PNHD/Lorewish#7 · 31553617939
+Triggered via pull_request about 40 minutes ago
+
+JOBS
+✓ Web / JS checks in 1m38s (ID 93981390846)
+- Android (preview APK) in 0s (ID 93981391400)
+- iOS Simulator (build, install, launch) in 0s (ID 93981391421)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+Web / JS checks: .github#2
+
+-   10 passed (7.0s)
+Web / JS checks: .github#16
+
+
+For more information about a job, try: gh run view --job=<job-id>
+View this run on GitHub: https://github.com/PNHD/Lorewish/actions/runs/31553617939

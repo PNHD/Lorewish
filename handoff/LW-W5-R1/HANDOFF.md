@@ -1,12 +1,23 @@
 # LW-W5-R1 — Web Product UX Completion + Visual System + Long-Session Polish
 
-Status: **W5_R1_PASS** with one explicit deferral (production deploy + real-provider smoke — held
-for the user's separate go-ahead; everything else in the closeout gate is met).
+Status: **W5_R1_PASS** — fully live-verified: character-chat Edge Function redeployed and confirmed
+live, actual Cloudflare production deployed and confirmed via deployment metadata (not URL
+inference), and the Remember-in-story fix proven end-to-end against real backend data with real
+DeepSeek generation. See `production-smoke.md` for the full live-verification record.
 
 Branch: `feature/lw-w5-product-ux`
 Base: `origin/main` @ `f608f0d` (PR #6, WEB-M4 guest-beta, independently reviewed and merged)
-Head at handoff time: `8ac2ec6`
+
+**IMPLEMENTATION_CODE_HEAD**: `9108b02920c3b1d81329e9422496940a7d9aa494` — this is the code that was
+audited, tested, deployed, and live-verified. No source changes were made after this commit; the
+live-closeout session only deployed already-committed code and updated evidence docs.
+
+**FINAL_PR_HEAD**: same commit, `9108b02`, at close of this session — PR #7 was not advanced with
+new source commits during live closeout, only this evidence-docs commit (see §U).
+
 Draft PR: https://github.com/PNHD/Lorewish/pull/7 (open, not merged)
+Exact-head CI: run `31553617939` — SUCCESS on `9108b02` (Web/JS checks: typecheck, lint, 164 unit
+tests, web export, 10 Playwright e2e; native jobs skipped as configured).
 
 ## A. Baseline
 
@@ -98,6 +109,11 @@ change** — additive read only. Pure mapping logic extracted to
 repository file itself is Deno-only and excluded from vitest); a full end-to-end regression test was
 also added to `tests/e2e/roleplay-chat.spec.ts` (promote → reload → still "Remembered in story").
 
+**Addendum from live closeout**: an independent review correctly caught that this fix, while merged
+into the branch and covered by tests, was not yet live on the actual `sfarcofvqfeobtcizxyv` Supabase
+project (the deployed `character-chat` was still v6, pre-W5). Redeployed to v7 and proven live
+end-to-end against real backend data — see §S and `production-smoke.md`.
+
 ## L. Replay / branch UX
 
 Language was already correct ("Replay from here", "Current path"/"Alternate path", no `fork`/
@@ -146,9 +162,26 @@ and how verification continued through it.
 
 ## S. Production smoke
 
-[production-smoke.md](production-smoke.md) — **not performed**, explicitly deferred pending the
-user's separate go-ahead for an actual production deploy. Technical readiness (gh/wrangler auth,
-green CI on exact head) documented there.
+[production-smoke.md](production-smoke.md) — **performed**, against the real production Cloudflare
+deployment and the live `character-chat` v7 Edge Function. Summary:
+
+- `character-chat` redeployed (v6 → v7), verified `ACTIVE`, `verify_jwt: true` unchanged, and the
+  downloaded deployed source is byte-identical to committed source (confirmed `attachPromotionState`
+  live).
+- Cloudflare Pages production deploy confirmed via `wrangler pages deployment list` (not URL
+  inference): **Environment: Production, Branch: main, commit `9108b02`**, deployment ID
+  `acd9a30b-b3cb-4e93-a65a-7d82f00fd133`, immutable URL `https://acd9a30b.lorewish.pages.dev`, stable
+  URL `https://lorewish.pages.dev` confirmed serving the new build.
+- **Remember-in-story proven live end-to-end**: real guest, real Advanced Setup (VI, address preset
+  `tôi/cậu`), real story generation with the model correctly honoring the configured register, real
+  Character Chat, real promotion, server truth confirmed via direct API call, **and confirmed to
+  survive an actual browser page reload** — the literal bug this whole closeout exists for. Also
+  verified: no duplicate `canon_facts` row on a second promote call, cross-guest thread access
+  denied, unauthenticated requests denied (401).
+- Full 14-item smoke checklist: 13 clean passes, 1 partial (a pre-existing, non-W5, non-fatal React
+  hydration warning on client-side in-app navigation — investigated and isolated, does not affect any
+  flow's success). Full detail and the exact investigation steps are in `production-smoke.md`.
+- Real provider spend: 5 confirmed real DeepSeek-generating calls, within the 8-attempt budget.
 
 ## T. Tests / CI
 
@@ -158,12 +191,15 @@ green CI on exact head) documented there.
 - `npm run export:web` — succeeds
 - `npx playwright test` — **10/10 passing**, both projects, including new Remember-in-story
   regression test
+- Exact-head CI (GitHub Actions, PR #7): run `31553617939` — **SUCCESS** on `9108b02`
 - Raw output: [test-results.txt](test-results.txt), [ci-results.txt](ci-results.txt)
 
 ## U. Implementation head
 
-`8ac2ec6` on `feature/lw-w5-product-ux`, 10 commits over `origin/main` @ `f608f0d`. See
-[git-log.txt](git-log.txt) and [git-diff.patch](git-diff.patch).
+**IMPLEMENTATION_CODE_HEAD = FINAL_PR_HEAD = `9108b02920c3b1d81329e9422496940a7d9aa494`**, on
+`feature/lw-w5-product-ux`, 10 commits over `origin/main` @ `f608f0d`. The live-closeout session
+added no new source commits — only Edge Function/Cloudflare deployments (of already-committed code)
+and this evidence-docs update. See [git-log.txt](git-log.txt) and [git-diff.patch](git-diff.patch).
 
 ## V. Draft PR
 
@@ -192,16 +228,28 @@ entry count, and SHA-256 of `Lorewish_LW-W5-R1_handoff.zip`.
   headless capture, which is what actually caught the Home CTA bug — but this means the "manual
   walkthrough" portion of QA was cut shorter than originally planned and automated coverage carried
   more of the burden than intended.
-- **Production deploy and the bounded real-provider smoke test were not performed**, per the user's
-  explicit choice at the draft-PR checkpoint (see `production-smoke.md`). This is the one item in the
-  original closeout gate not yet satisfied; everything else (tests, CI, browser QA, no
-  console/security regressions, existing engine/memory/branch behavior intact, native untouched) is
-  met on the current branch head.
+- **Cross-guest access denial returns a generic `500 internal_error`** rather than a clean 401/403
+  (see `production-smoke.md` §2 item 9). Access is correctly denied either way — no data crosses the
+  guest boundary — but the error shape isn't as clean as it could be. Pre-existing behavior in
+  `supabase/functions/character-chat/index.ts`'s error-message pattern-matching, not introduced by
+  W5, and out of scope for this pass ("do not redesign"). Worth a small bounded fix in a future round.
+- **A pre-existing, non-fatal React hydration console warning** (`Minified React error #418`) appears
+  during client-side in-app navigation between routes on the production build. Isolated via testing
+  fresh-tab full-page loads of every route (clean) versus in-app navigation (warning present) —
+  confirmed this predates W5 (no i18n/SSR/routing code was touched in this pass) and does not affect
+  any flow's functional success. See `production-smoke.md` §3 item 12 for the full investigation.
+  Worth a dedicated follow-up, not fixed here.
 
 ## Y. Verdict
 
-**W5_R1_PASS**, conditional on the user separately authorizing the production deploy step when ready
-(the one gate item deliberately left open, not a failure of the work itself).
+**W5_R1_PASS.** Every item in the original closeout gate is now live-verified: local CI green on the
+exact head, browser QA green, the `character-chat` Edge Function redeployed and confirmed live, the
+Remember-in-story fix proven end-to-end against real backend data and a real page reload, actual
+Cloudflare production deployed and confirmed via deployment metadata, a bounded real-provider smoke
+pass completed (5 real calls, within the 8-call budget), no console errors on any fresh page load, no
+horizontal overflow, no auth/guest-isolation regression, and existing engine/memory/branch behavior
+intact. The two items noted above (§X) are pre-existing, non-blocking, and explicitly deferred to a
+future bounded pass — neither was introduced by this work and neither affects W5_R1_PASS.
 
 ## Z. Next task
 
