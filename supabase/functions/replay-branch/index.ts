@@ -10,14 +10,10 @@
  */
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
+  const CORS_HEADERS = corsHeaders(req.headers.get("Origin"));
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "method_not_allowed" }), {
@@ -61,9 +57,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // `anonKey` is the client's `apikey` header; the caller's identity is
-  // carried by the separate `Authorization: Bearer <userJwt>` header — see
-  // the equivalent comment on SupabaseTurnRepository's constructor.
   const client = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: `Bearer ${userJwt}` } },
   });
@@ -75,7 +68,7 @@ Deno.serve(async (req) => {
 
   if (error) {
     console.error("[replay-branch] rpc error", error);
-    return new Response(JSON.stringify({ error: "replay_failed", message: error.message }), {
+    return new Response(JSON.stringify({ error: "replay_failed" }), {
       status: 400,
       headers: { ...CORS_HEADERS, "content-type": "application/json" },
     });
